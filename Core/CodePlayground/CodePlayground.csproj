@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net7.0</TargetFramework>
+
+    <HomeDirectory Condition="'$(OS)' == 'Windows_NT'">$(USERPROFILE)\</HomeDirectory>
+    <HomeDirectory Condition="'$(OS)' != 'Windows_NT'">$(HOME)\</HomeDirectory>
+    
+    <NETCorePlatformsVersion>8.0.0-preview.2.23128.3</NETCorePlatformsVersion>
+    <NuGetCacheDirectory>$(HomeDirectory).nuget\packages\</NuGetCacheDirectory>
+    <NETCorePlatformsPackageDir>$(NuGetCacheDirectory)microsoft.netcore.platforms\$(NETCorePlatformsVersion)\</NETCorePlatformsPackageDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETCore.Platforms" Version="$(NETCorePlatformsVersion)" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="$(NETCorePlatformsPackageDir)runtime.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

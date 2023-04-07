@@ -1,0 +1,11 @@
+<Project>
+
+    <PropertyGroup>
+        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="$(MSBuildThisFileDirectory)..\Core\CodePlayground\CodePlayground.csproj" />
+    </ItemGroup>
+
+</Project>
