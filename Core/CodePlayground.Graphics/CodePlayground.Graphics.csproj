@@ -13,6 +13,7 @@
 
   <PropertyGroup>
     <TargetFramework>net7.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
 </Project>
