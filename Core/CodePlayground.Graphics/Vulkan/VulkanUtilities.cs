@@ -1,7 +1,9 @@
+using Silk.NET.Core;
 using Silk.NET.Vulkan;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace CodePlayground.Graphics.Vulkan
 {
@@ -89,6 +91,39 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 usedMarshal.Dispose();
             }
+        }
+
+        private unsafe static T? GetProcAddress<T>(Func<string, PfnVoidFunction> api) where T : Delegate
+        {
+            const string prefix = "PFN_";
+
+            var name = typeof(T).Name;
+            if (!name.StartsWith(prefix))
+            {
+                throw new ArgumentException("Invalid delegate name!");
+            }
+
+            string functionName = name[prefix.Length..];
+            var voidFunction = api(functionName);
+            
+            try
+            {
+                return Marshal.GetDelegateForFunctionPointer<T>((nint)voidFunction.Handle);
+            }
+            catch (ArgumentNullException)
+            {
+                return null;
+            }
+        }
+
+        public static T? GetProcAddress<T>(this Vk api, Instance instance) where T : Delegate
+        {
+            return GetProcAddress<T>(name => api.GetInstanceProcAddr(instance, name));
+        }
+
+        public static T? GetProcAddress<T>(this Vk api, Device device) where T : Delegate
+        {
+            return GetProcAddress<T>(name => api.GetDeviceProcAddr(device, name));
         }
     }
 }

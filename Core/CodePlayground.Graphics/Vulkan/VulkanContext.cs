@@ -1,4 +1,3 @@
-using Silk.NET.Core;
 using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
 using System;
@@ -29,6 +28,12 @@ namespace CodePlayground.Graphics.Vulkan
         public bool Required { get; set; }
     }
 
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    internal unsafe delegate Result PFN_vkCreateDebugUtilsMessengerEXT(Instance instance, DebugUtilsMessengerCreateInfoEXT* createInfo, AllocationCallbacks* allocator, DebugUtilsMessengerEXT* messenger);
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    internal unsafe delegate void PFN_vkDestroyDebugUtilsMessengerEXT(Instance instance, DebugUtilsMessengerEXT messenger, AllocationCallbacks* callbacks);
+
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
     public sealed class RequestedVulkanExtensionAttribute : Attribute
     {
@@ -56,6 +61,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         public VulkanContext()
         {
+            mInstance = null;
+            mDebugMessenger = null;
+
             mInitialized = false;
             mRequestedExtensions = new Dictionary<VulkanExtensionLevel, Dictionary<VulkanExtensionType, Dictionary<string, bool>>>();
         }
@@ -82,6 +90,7 @@ namespace CodePlayground.Graphics.Vulkan
 
             RetrieveRequestedExtensionsAndLayers(application);
             CreateInstance(application.Title, application.Version);
+            CreateDebugMessenger();
 
             mInitialized = true;
         }
@@ -283,6 +292,44 @@ namespace CodePlayground.Graphics.Vulkan
             }, marshal);
         }
 
+        public event Action<DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessengerCallbackDataEXT>? DebugMessage;
+        private unsafe uint DebugMessengerCallback(DebugUtilsMessageSeverityFlagsEXT messageSeverity, DebugUtilsMessageTypeFlagsEXT messageTypes, DebugUtilsMessengerCallbackDataEXT* callbackData, void* userData)
+        {
+            DebugMessage?.Invoke(messageSeverity, messageTypes, *callbackData);
+            return Vk.False;
+        }
+
+        private unsafe void CreateDebugMessenger()
+        {
+#if !DEBUG
+            return;
+#endif
+
+            var instance = mInstance!.Value;
+            var apiFunction = API.GetProcAddress<PFN_vkCreateDebugUtilsMessengerEXT>(instance);
+
+            if (apiFunction is null)
+            {
+                return;
+            }
+
+            var createInfo = VulkanUtilities.Init<DebugUtilsMessengerCreateInfoEXT>() with
+            {
+                MessageSeverity = DebugUtilsMessageSeverityFlagsEXT.InfoBitExt | DebugUtilsMessageSeverityFlagsEXT.WarningBitExt | DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt,
+                MessageType = DebugUtilsMessageTypeFlagsEXT.GeneralBitExt | DebugUtilsMessageTypeFlagsEXT.ValidationBitExt | DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt,
+                PfnUserCallback = (DebugUtilsMessengerCallbackFunctionEXT)DebugMessengerCallback,
+                PUserData = null
+            };
+
+            var debugMessenger = new DebugUtilsMessengerEXT();
+            apiFunction(instance, &createInfo, null, &debugMessenger).Assert(result =>
+            {
+                throw new ArgumentException($"Failed to create debug messenger: {result}");
+            });
+
+            mDebugMessenger = debugMessenger;
+        }
+
         public void Dispose()
         {
             if (!mInitialized)
@@ -301,11 +348,27 @@ namespace CodePlayground.Graphics.Vulkan
                 mRequestedExtensions.Clear();
             }
 
-            API.DestroyInstance(mInstance!.Value, null);
+            var instance = mInstance!.Value;
+            if (mDebugMessenger is not null)
+            {
+                var apiFunction = API.GetProcAddress<PFN_vkDestroyDebugUtilsMessengerEXT>(instance);
+                if (apiFunction is null)
+                {
+                    throw new InvalidOperationException("Failed to destroy debug messenger - function not found!");
+                }
+                else
+                {
+                    apiFunction(instance, mDebugMessenger.Value, null);
+                    mDebugMessenger = null;
+                }
+            }
+
+            API.DestroyInstance(instance, null);
             mInstance = null;
         }
 
         private Instance? mInstance;
+        private DebugUtilsMessengerEXT? mDebugMessenger;
         private readonly Dictionary<VulkanExtensionLevel, Dictionary<VulkanExtensionType, Dictionary<string, bool>>> mRequestedExtensions;
         private bool mInitialized;
     }

@@ -1,19 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <TargetFramework>net7.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <SilkVersion>2.17.0</SilkVersion>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\CodePlayground\CodePlayground.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Silk.NET.Input" Version="2.16.0" />
-    <PackageReference Include="Silk.NET.Vulkan" Version="2.16.0" />
-    <PackageReference Include="Silk.NET.Windowing" Version="2.16.0" />
+    <PackageReference Include="Silk.NET.Input" Version="$(SilkVersion)" />
+    <PackageReference Include="Silk.NET.Vulkan" Version="$(SilkVersion)" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="$(SilkVersion)" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="$(SilkVersion)" />
+    <PackageReference Include="Silk.NET.Windowing" Version="$(SilkVersion)" />
     <PackageReference Include="Ultz.Native.GLFW" Version="3.3.3.1" />
   </ItemGroup>
-
-  <PropertyGroup>
-    <TargetFramework>net7.0</TargetFramework>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-  </PropertyGroup>
 
 </Project>

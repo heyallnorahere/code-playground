@@ -1,6 +1,7 @@
 ﻿using CodePlayground;
 using CodePlayground.Graphics;
 using CodePlayground.Graphics.Vulkan;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 
 [assembly: LoadedApplication(typeof(VulkanTest.VulkanTestApp))]
@@ -18,9 +19,10 @@ namespace VulkanTest
         }
 
         [EventHandler(nameof(Load))]
-        private void OnLoad()
+        private unsafe void OnLoad()
         {
             mContext = CreateGraphicsContext<VulkanContext>();
+            mContext.DebugMessage += (severity, type, data) => Debugger.Break();
         }
 
         [EventHandler(nameof(Closing))]
