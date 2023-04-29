@@ -1,3 +1,4 @@
+using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
 using System;
@@ -131,18 +132,11 @@ namespace CodePlayground.Graphics.Vulkan
         {
             mInstance = null;
             mDebugMessenger = null;
+            mDevice = null;
 
             mInitialized = false;
             mRequestedExtensions = new Dictionary<VulkanExtensionLevel, Dictionary<VulkanExtensionType, Dictionary<string, bool>>>();
-
-            if (deviceScorer is null)
-            {
-                mDeviceScorer = new DefaultVulkanDeviceScorer();
-            }
-            else
-            {
-                mDeviceScorer = deviceScorer;
-            }
+            mDeviceScorer = deviceScorer ?? new DefaultVulkanDeviceScorer();
         }
 
         ~VulkanContext()
@@ -159,7 +153,7 @@ namespace CodePlayground.Graphics.Vulkan
             return options.API.Equals(GraphicsAPI.DefaultVulkan);
         }
 
-        public void Initialize(IWindow window, GraphicsApplication application)
+        public unsafe void Initialize(IWindow window, GraphicsApplication application)
         {
             if (mInitialized)
             {
@@ -169,7 +163,32 @@ namespace CodePlayground.Graphics.Vulkan
             RetrieveRequestedExtensionsAndLayers(application);
             CreateInstance(application.Title, application.Version);
             CreateDebugMessenger();
-            CreateDevice();
+
+            var physicalDevice = ChoosePhysicalDevice();
+            var windowSurface = CreateWindowSurface(physicalDevice, window, out int presentQueue);
+
+            mDevice = new VulkanDevice(new VulkanDeviceCreateInfo
+            {
+                Device = physicalDevice,
+                Extensions = ChooseExtensions(physicalDevice, VulkanExtensionType.Extension),
+                Layers = ChooseExtensions(physicalDevice, VulkanExtensionType.Layer),
+                AdditionalQueueFamilies = new int[] { presentQueue }
+            });
+
+            {
+                // temporary
+                // todo: replace with swapchain creation
+                var instance = mInstance!.Value;
+                var vkDestroySurfaceKHR = API.GetProcAddress<PFN_vkDestroySurfaceKHR>(instance);
+                if (vkDestroySurfaceKHR is null)
+                {
+                    throw new InvalidOperationException("Failed to destroy surface - function not found!");
+                }
+                else
+                {
+                    vkDestroySurfaceKHR(instance, windowSurface, null);
+                }
+            }
 
             mInitialized = true;
         }
@@ -465,19 +484,13 @@ namespace CodePlayground.Graphics.Vulkan
             throw new ArgumentException("Failed to find a valid Vulkan device!");
         }
 
-        private void CreateDevice()
+        private unsafe SurfaceKHR CreateWindowSurface(VulkanPhysicalDevice physicalDevice, IWindow window, out int presentQueue)
         {
-            var device = ChoosePhysicalDevice();
+            var instance = mInstance!.Value;
+            SurfaceKHR surface = window.VkSurface!.Create<AllocationCallbacks>(instance.ToHandle(), null).ToSurface();
 
-            // todo: additional queue families
-
-            mDevice = new VulkanDevice(new VulkanDeviceCreateInfo
-            {
-                Device = device,
-                Extensions = ChooseExtensions(device, VulkanExtensionType.Extension),
-                Layers = ChooseExtensions(device, VulkanExtensionType.Layer),
-                AdditionalQueueFamilies = Array.Empty<int>()
-            });
+            presentQueue = VulkanSwapchain.FindPresentQueueFamily(physicalDevice, instance, surface);
+            return surface;
         }
 
         public void Dispose()
@@ -496,7 +509,9 @@ namespace CodePlayground.Graphics.Vulkan
             if (disposing)
             {
                 mRequestedExtensions.Clear();
+                
                 mDevice?.Dispose();
+                mDevice = null;
             }
 
             var instance = mInstance!.Value;
@@ -524,6 +539,7 @@ namespace CodePlayground.Graphics.Vulkan
         private Instance? mInstance;
         private DebugUtilsMessengerEXT? mDebugMessenger;
         private VulkanDevice? mDevice;
+
         private readonly Dictionary<VulkanExtensionLevel, Dictionary<VulkanExtensionType, Dictionary<string, bool>>> mRequestedExtensions;
         private readonly IGraphicsDeviceScorer mDeviceScorer;
         private bool mInitialized;
