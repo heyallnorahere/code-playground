@@ -51,6 +51,74 @@ namespace CodePlayground.Graphics.Vulkan
         public bool Required { get; set; }
     }
 
+    internal sealed class DefaultVulkanDeviceScorer : IGraphicsDeviceScorer
+    {
+        private static bool CompareExtensions(VulkanPhysicalDevice device, VulkanContext context, VulkanExtensionType type, out int totalPresent)
+        {
+            var requested = context.GetRequestedExtensions(VulkanExtensionLevel.Device, type);
+            var available = context.GetAvailableExtensions(device, type).ToHashSet();
+
+            totalPresent = 0;
+            bool viable = true;
+
+            foreach (string name in requested.Keys)
+            {
+                if (available.Contains(name))
+                {
+                    totalPresent++;
+                }
+                else if (requested[name])
+                {
+                    viable = false;
+                }
+            }
+
+            return viable;
+        }
+
+        public int ScoreDevice(IGraphicsDeviceInfo device, IGraphicsContext context)
+        {
+            if (device is not VulkanPhysicalDevice || context is not VulkanContext)
+            {
+                throw new ArgumentException("Vulkan objects must be passed!");
+            }
+
+            var physicalDevice = (VulkanPhysicalDevice)device;
+            var vulkanContext = (VulkanContext)context;
+
+            int score = physicalDevice.Type switch
+            {
+                DeviceType.Discrete => 5000,
+                DeviceType.Integrated => 3000,
+                _ => 0,
+            };
+
+            var extensionTypes = Enum.GetValues<VulkanExtensionType>();
+            foreach (var extensionType in extensionTypes)
+            {
+                if (!CompareExtensions(physicalDevice, vulkanContext, extensionType, out int totalPresent))
+                {
+                    return 0;
+                }
+
+                score += totalPresent * 1000;
+            }
+
+            physicalDevice.GetProperties(out PhysicalDeviceProperties properties);
+            physicalDevice.GetFeatures(out PhysicalDeviceFeatures features);
+            
+            // todo: change score based off of features/properties
+
+            return score;
+        }
+    }
+
+    internal struct ScoredVulkanDevice
+    {
+        public VulkanPhysicalDevice Device { get; set; }
+        public int Score { get; set; }
+    }
+
     public sealed class VulkanContext : IGraphicsContext
     {
         public static Vk API { get; }
@@ -59,13 +127,22 @@ namespace CodePlayground.Graphics.Vulkan
             API = Vk.GetApi();
         }
 
-        public VulkanContext()
+        public VulkanContext(IGraphicsDeviceScorer? deviceScorer = null)
         {
             mInstance = null;
             mDebugMessenger = null;
 
             mInitialized = false;
             mRequestedExtensions = new Dictionary<VulkanExtensionLevel, Dictionary<VulkanExtensionType, Dictionary<string, bool>>>();
+
+            if (deviceScorer is null)
+            {
+                mDeviceScorer = new DefaultVulkanDeviceScorer();
+            }
+            else
+            {
+                mDeviceScorer = deviceScorer;
+            }
         }
 
         ~VulkanContext()
@@ -91,6 +168,7 @@ namespace CodePlayground.Graphics.Vulkan
             RetrieveRequestedExtensionsAndLayers(application);
             CreateInstance(application.Title, application.Version);
             CreateDebugMessenger();
+            CreateDevice();
 
             mInitialized = true;
         }
@@ -108,7 +186,7 @@ namespace CodePlayground.Graphics.Vulkan
 
             for (uint i = 0; i < extensionCount; i++)
             {
-                var name = Marshal.PtrToStringAuto((nint)extensionArray[i]);
+                var name = Marshal.PtrToStringAnsi((nint)extensionArray[i]);
                 result.Add(name!);
             }
 
@@ -163,85 +241,105 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        private IReadOnlyDictionary<string, bool> GetRequestedExtensions(VulkanExtensionLevel level, VulkanExtensionType type)
+        public IReadOnlyDictionary<string, bool> GetRequestedExtensions(VulkanExtensionLevel level, VulkanExtensionType type)
         {
-            var result = mRequestedExtensions.GetValueOrDefault(level)?.GetValueOrDefault(type);
-            if (result is null)
-            {
-                result = new Dictionary<string, bool>();
-            }
-
-            return result;
+            return mRequestedExtensions.GetValueOrDefault(level)?.GetValueOrDefault(type) ?? new Dictionary<string, bool>();
         }
 
-        private unsafe IEnumerable<string> GetAvailableExtensions(VulkanExtensionLevel level, VulkanExtensionType type)
+        public unsafe IEnumerable<string> GetAvailableExtensions(VulkanPhysicalDevice? device, VulkanExtensionType type)
         {
             switch (type)
             {
                 case VulkanExtensionType.Extension:
-                    switch (level)
+                    if (device is null)
                     {
-                        case VulkanExtensionLevel.Instance:
-                            {
-                                uint extensionCount = 0;
-                                API.EnumerateInstanceExtensionProperties((byte*)null, &extensionCount, null).Assert();
+                        uint extensionCount = 0;
+                        API.EnumerateInstanceExtensionProperties((byte*)null, &extensionCount, null).Assert();
 
-                                var extensions = new ExtensionProperties[extensionCount];
-                                fixed (ExtensionProperties* ptr = extensions)
-                                {
-                                    API.EnumerateInstanceExtensionProperties((byte*)null, &extensionCount, ptr).Assert();
-                                }
+                        var extensions = new ExtensionProperties[extensionCount];
+                        fixed (ExtensionProperties* ptr = extensions)
+                        {
+                            API.EnumerateInstanceExtensionProperties((byte*)null, &extensionCount, ptr).Assert();
+                        }
 
-                                return extensions.Select(ext => Marshal.PtrToStringAnsi((nint)ext.ExtensionName)!);
-                            }
-                        case VulkanExtensionLevel.Device:
-                            // todo: use physical device in context
-                            return Array.Empty<string>();
+                        return extensions.Select(ext => Marshal.PtrToStringAnsi((nint)ext.ExtensionName)!);
                     }
-                    break;
+                    else
+                    {
+                        uint extensionCount = 0;
+                        API.EnumerateDeviceExtensionProperties(device.Device, (byte*)null, &extensionCount, null).Assert();
+
+                        var extensions = new ExtensionProperties[extensionCount];
+                        fixed (ExtensionProperties* ptr = extensions)
+                        {
+                            API.EnumerateDeviceExtensionProperties(device.Device, (byte*)null, &extensionCount, ptr).Assert();
+                        }
+
+                        return extensions.Select(ext => Marshal.PtrToStringAnsi((nint)ext.ExtensionName)!);
+                    }
                 case VulkanExtensionType.Layer:
-                    switch (level)
+                    if (device is null)
                     {
-                        case VulkanExtensionLevel.Instance:
-                            {
-                                uint layerCount = 0;
-                                API.EnumerateInstanceLayerProperties(&layerCount, null).Assert();
+                        uint layerCount = 0;
+                        API.EnumerateInstanceLayerProperties(&layerCount, null).Assert();
 
-                                var layers = new LayerProperties[layerCount];
-                                fixed (LayerProperties* ptr = layers)
-                                {
-                                    API.EnumerateInstanceLayerProperties(&layerCount, ptr).Assert();
-                                }
+                        var layers = new LayerProperties[layerCount];
+                        fixed (LayerProperties* ptr = layers)
+                        {
+                            API.EnumerateInstanceLayerProperties(&layerCount, ptr).Assert();
+                        }
 
-                                return layers.Select(layer => Marshal.PtrToStringAnsi((nint)layer.LayerName)!);
-                            }
-                        case VulkanExtensionLevel.Device:
-                            // todo: use physical device in context
-                            return Array.Empty<string>();
+                        return layers.Select(layer => Marshal.PtrToStringAnsi((nint)layer.LayerName)!);
                     }
-                    break;
+                    else
+                    {
+                        uint layerCount = 0;
+                        API.EnumerateDeviceLayerProperties(device.Device, &layerCount, null).Assert();
+
+                        var layers = new LayerProperties[layerCount];
+                        fixed (LayerProperties* ptr = layers)
+                        {
+                            API.EnumerateDeviceLayerProperties(device.Device, &layerCount, ptr).Assert();
+                        }
+
+                        return layers.Select(layer => Marshal.PtrToStringAnsi((nint)layer.LayerName)!);
+                    }
             }
 
             // this point should not be hit
             throw new NotImplementedException();
         }
 
-        private IReadOnlyList<string> ChooseExtensions(VulkanExtensionLevel level, VulkanExtensionType type)
+        private IReadOnlyList<string> ChooseExtensions(VulkanPhysicalDevice? device, VulkanExtensionType type)
         {
+            VulkanExtensionLevel level;
+            if (device is null)
+            {
+                level = VulkanExtensionLevel.Instance;
+            }
+            else
+            {
+                level = VulkanExtensionLevel.Device;
+            }
+
             var requested = GetRequestedExtensions(level, type);
-            var available = GetAvailableExtensions(level, type);
+            var available = GetAvailableExtensions(device, type).ToHashSet();
 
             var result = new List<string>();
+            string extensionType = $"{level.ToString().ToLower()} {type.ToString().ToLower()}";
             foreach (var extension in requested.Keys)
             {
+                Console.WriteLine($"Using Vulkan {extensionType}: {extension}");
+
                 if (!available.Contains(extension))
                 {
                     if (requested[extension]) // if required
                     {
-                        throw new ArgumentException($"Vulkan {level.ToString().ToLower()} {type.ToString().ToLower()} {extension} is not available!");
+                        throw new ArgumentException($"Vulkan {extensionType} {extension} is not available!");
                     }
                     else
                     {
+                        Console.WriteLine($"Optional {extensionType} is not present!");
                         continue;
                     }
                 }
@@ -256,8 +354,8 @@ namespace CodePlayground.Graphics.Vulkan
         {
             using var marshal = new StringMarshal();
 
-            var extensions = ChooseExtensions(VulkanExtensionLevel.Instance, VulkanExtensionType.Extension);
-            var layers = ChooseExtensions(VulkanExtensionLevel.Instance, VulkanExtensionType.Layer);
+            var extensions = ChooseExtensions(null, VulkanExtensionType.Extension);
+            var layers = ChooseExtensions(null, VulkanExtensionType.Layer);
 
             extensions.CreateNativeStringArray(extensionPtr =>
             {
@@ -330,6 +428,54 @@ namespace CodePlayground.Graphics.Vulkan
             mDebugMessenger = debugMessenger;
         }
 
+        private unsafe VulkanPhysicalDevice ChoosePhysicalDevice()
+        {
+            var instance = mInstance!.Value;
+
+            uint deviceCount = 0;
+            API.EnumeratePhysicalDevices(instance, &deviceCount, null);
+
+            var devices = new PhysicalDevice[deviceCount];
+            fixed (PhysicalDevice* ptr = devices)
+            {
+                API.EnumeratePhysicalDevices(instance, &deviceCount, ptr);
+            }
+
+            var scoredDevices = new List<ScoredVulkanDevice>();
+            foreach (var device in devices)
+            {
+                var physicalDevice = new VulkanPhysicalDevice(device);
+                scoredDevices.Add(new ScoredVulkanDevice
+                {
+                    Device = physicalDevice,
+                    Score = mDeviceScorer.ScoreDevice(physicalDevice, this)
+                });
+            }
+
+            scoredDevices.Sort((lhs, rhs) => -lhs.Score.CompareTo(rhs.Score));
+            if (scoredDevices.Count > 0)
+            {
+                return scoredDevices[0].Device;
+            }
+
+            throw new ArgumentException("Failed to find a valid Vulkan device!");
+        }
+
+        private void CreateDevice()
+        {
+            var device = ChoosePhysicalDevice();
+
+            // todo: additional queue families
+
+            mDevice = new VulkanDevice(new VulkanDeviceCreateInfo
+            {
+                Device = device,
+                Extensions = ChooseExtensions(device, VulkanExtensionType.Extension),
+                Layers = ChooseExtensions(device, VulkanExtensionType.Layer),
+                AdditionalQueueFamilies = Array.Empty<int>()
+            });
+        }
+
         public void Dispose()
         {
             if (!mInitialized)
@@ -347,6 +493,8 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 mRequestedExtensions.Clear();
             }
+
+            mDevice?.Dispose();
 
             var instance = mInstance!.Value;
             if (mDebugMessenger is not null)
@@ -369,7 +517,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         private Instance? mInstance;
         private DebugUtilsMessengerEXT? mDebugMessenger;
+        private VulkanDevice? mDevice;
         private readonly Dictionary<VulkanExtensionLevel, Dictionary<VulkanExtensionType, Dictionary<string, bool>>> mRequestedExtensions;
+        private readonly IGraphicsDeviceScorer mDeviceScorer;
         private bool mInitialized;
     }
 }

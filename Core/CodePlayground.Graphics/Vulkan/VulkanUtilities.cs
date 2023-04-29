@@ -7,31 +7,44 @@ using System.Runtime.InteropServices;
 
 namespace CodePlayground.Graphics.Vulkan
 {
-    internal static class VulkanUtilities
+    public static class VulkanUtilities
     {
-        public static T Init<T>() where T : struct
+        private unsafe static T Zeroed<T>() where T : unmanaged
         {
-            object result = new T();
+            int size = sizeof(T);
+            var buffer = new byte[size];
+            Array.Fill(buffer, (byte)0);
+
+            fixed (byte* ptr = buffer)
+            {
+                return Marshal.PtrToStructure<T>((nint)ptr);
+            }
+        }
+
+        public static T Init<T>() where T : unmanaged
+        {
+            object obj = Zeroed<T>();
 
             var type = typeof(T);
             var field = type.GetField("SType", BindingFlags.Public | BindingFlags.Instance);
 
             if (field is not null)
             {
-                if (!Enum.TryParse<StructureType>(type.Name, true, out StructureType value))
+                if (!Enum.TryParse(type.Name, true, out StructureType value))
                 {
                     throw new ArgumentException("Could not find a matching structure type!");
                 }
 
-                field.SetValue(result, value);
+                field.SetValue(obj, value);
             }
 
-            return (T)result;
+
+            return (T)obj;
         }
 
-        public static T Init<T>(StructureType structureType) where T : struct
+        public static T Init<T>(StructureType structureType) where T : unmanaged
         {
-            object result = new T();
+            object result = Zeroed<T>();
 
             var type = typeof(T);
             var field = type.GetField("SType", BindingFlags.Public | BindingFlags.Instance);
@@ -69,8 +82,8 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        public unsafe delegate void StringArrayCallback(byte** result);
-        public unsafe static void CreateNativeStringArray(this IEnumerable<string> data, StringArrayCallback callback, StringMarshal? marshal = null)
+        internal unsafe delegate void StringArrayCallback(byte** result);
+        internal unsafe static void CreateNativeStringArray(this IEnumerable<string> data, StringArrayCallback callback, StringMarshal? marshal = null)
         {
             var usedMarshal = marshal ?? new StringMarshal();
 

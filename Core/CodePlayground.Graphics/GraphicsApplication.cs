@@ -68,6 +68,7 @@ namespace CodePlayground.Graphics
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
     [RequestedVulkanExtension("VK_EXT_debug_utils", VulkanExtensionLevel.Instance, VulkanExtensionType.Extension, Required = false)]
     [RequestedVulkanExtension("VK_LAYER_KHRONOS_validation", VulkanExtensionLevel.Instance, VulkanExtensionType.Layer, Required = false)]
+    [RequestedVulkanExtension("VK_LAYER_KHRONOS_validation", VulkanExtensionLevel.Device, VulkanExtensionType.Layer, Required = false)]
     [RequestedVulkanExtension("VK_KHR_swapchain", VulkanExtensionLevel.Device, VulkanExtensionType.Extension, Required = true)]
     public abstract class GraphicsApplication : Application
     {
@@ -184,7 +185,8 @@ namespace CodePlayground.Graphics
             mInputContext?.Dispose();
         }
 
-        public T CreateGraphicsContext<T>() where T : IGraphicsContext, new()
+        protected virtual void OnContextCreation(IGraphicsContext context) { }
+        public T CreateGraphicsContext<T>(params object[] args) where T : IGraphicsContext
         {
             if (mWindow is null || mOptions is null)
             {
@@ -196,13 +198,15 @@ namespace CodePlayground.Graphics
                 throw new InvalidOperationException("A graphics context has already been created!");
             }
 
-            var context = new T();
+            var context = Utilities.CreateDynamicInstance<T>(args);
             if (!context.IsApplicable(mOptions.Value))
             {
                 throw new InvalidOperationException("Context type is not applicable to this window!");
             }
 
+            OnContextCreation(context);
             context.Initialize(mWindow, this);
+
             mGraphicsContext = context;
             return context;
         }

@@ -7,6 +7,108 @@ namespace CodePlayground
 {
     public static class Utilities
     {
+        public static bool IsNullable(this Type type)
+        {
+            if (type.IsValueType)
+            {
+                return Nullable.GetUnderlyingType(type) != null;
+            }
+
+            return true;
+        }
+
+        public static T CreateDynamicInstance<T>(params object[] args)
+        {
+            return (T)CreateDynamicInstance(typeof(T), args);
+        }
+
+        public static object CreateDynamicInstance(Type type, params object?[] args)
+        {
+            var constructors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
+            foreach (var constructor in constructors)
+            {
+                var parameters = constructor.GetParameters();
+                if (parameters.Length < args.Length)
+                {
+                    continue;
+                }
+
+                var parameterData = new object?[parameters.Length];
+                Array.Copy(args, parameterData, args.Length);
+
+                bool constructorValid = true;
+                for (int i = 0; i < parameters.Length; i++)
+                {
+                    var parameterInfo = parameters[i];
+                    if (i >= args.Length)
+                    {
+                        var defaultValue = parameterInfo.DefaultValue;
+                        if (DBNull.Value.Equals(defaultValue))
+                        {
+                            constructorValid = false;
+                            break;
+                        }
+                        else
+                        {
+                            parameterData[i] = defaultValue;
+                            continue;
+                        }
+                    }
+
+                    var parameterType = parameterInfo.ParameterType;
+                    var dataType = args[i]?.GetType();
+
+                    if (!(dataType?.IsAssignableTo(parameterType) ?? parameterType.IsNullable()))
+                    {
+                        try
+                        {
+                            parameterData[i] = Convert.ChangeType(args[i], parameterType);
+                        }
+                        catch (Exception)
+                        {
+                            constructorValid = false;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        parameterData[i] = args[i];
+                    }
+                }
+
+                if (!constructorValid)
+                {
+                    continue;
+                }
+
+                return constructor.Invoke(parameterData);
+            }
+
+            throw new ArgumentException("Failed to find a suitable constructor!");
+        }
+
+        public static IReadOnlySet<T> SplitFlags<T>(this T flags) where T : struct, Enum
+        {
+            var type = typeof(T);
+            if (type.GetCustomAttribute<FlagsAttribute>() is null)
+            {
+                throw new ArgumentException("Enum type is not a flag!");
+            }
+
+            var enumValues = Enum.GetValues<T>();
+            var flagValues = new HashSet<T>();
+
+            foreach (var value in enumValues)
+            {
+                if (flags.HasFlag(value))
+                {
+                    flagValues.Add(value);
+                }
+            }
+
+            return flagValues;
+        }
+
         public static bool Extends(this Type derived, Type baseType)
         {
             if (derived.BaseType != baseType)
