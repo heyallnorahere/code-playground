@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace CodePlayground.Graphics
+﻿namespace CodePlayground.Graphics
 {
     public enum DeviceType
     {
@@ -25,6 +23,6 @@ namespace CodePlayground.Graphics
     public interface IGraphicsDevice
     {
         public IGraphicsDeviceInfo DeviceInfo { get; }
-        public IGraphicsQueue GetQueue(GraphicsQueueFlags usage);
+        public ICommandQueue GetQueue(CommandQueueFlags usage);
     }
 }

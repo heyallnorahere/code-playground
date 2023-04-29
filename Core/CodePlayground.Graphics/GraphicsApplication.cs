@@ -61,6 +61,8 @@ namespace CodePlayground.Graphics
 
     public interface IGraphicsContext : IDisposable
     {
+        public IGraphicsDevice Device { get; }
+
         public bool IsApplicable(WindowOptions options);
         public void Initialize(IWindow window, GraphicsApplication application);
     }

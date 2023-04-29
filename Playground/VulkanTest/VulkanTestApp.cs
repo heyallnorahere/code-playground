@@ -26,6 +26,15 @@ namespace VulkanTest
         private unsafe void OnLoad()
         {
             mContext = CreateGraphicsContext<VulkanContext>();
+
+            var device = mContext.Device;
+            var queue = device.GetQueue(CommandQueueFlags.Transfer);
+
+            var buffer = queue.Release();
+            buffer.Begin();
+
+            buffer.End();
+            queue.Submit(buffer);
         }
 
         protected override void OnContextCreation(IGraphicsContext context)

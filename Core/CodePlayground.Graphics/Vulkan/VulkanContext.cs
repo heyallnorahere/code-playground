@@ -150,6 +150,7 @@ namespace CodePlayground.Graphics.Vulkan
             if (mInitialized)
             {
                 Dispose(false);
+                mInitialized = false;
             }
         }
 
@@ -455,7 +456,10 @@ namespace CodePlayground.Graphics.Vulkan
             scoredDevices.Sort((lhs, rhs) => -lhs.Score.CompareTo(rhs.Score));
             if (scoredDevices.Count > 0)
             {
-                return scoredDevices[0].Device;
+                var device = scoredDevices[0].Device;
+                Console.WriteLine($"Chose device: {device.Name}");
+
+                return device;
             }
 
             throw new ArgumentException("Failed to find a valid Vulkan device!");
@@ -492,9 +496,8 @@ namespace CodePlayground.Graphics.Vulkan
             if (disposing)
             {
                 mRequestedExtensions.Clear();
+                mDevice?.Dispose();
             }
-
-            mDevice?.Dispose();
 
             var instance = mInstance!.Value;
             if (mDebugMessenger is not null)
@@ -514,6 +517,9 @@ namespace CodePlayground.Graphics.Vulkan
             API.DestroyInstance(instance, null);
             mInstance = null;
         }
+
+        public VulkanDevice Device => mDevice!;
+        IGraphicsDevice IGraphicsContext.Device => mDevice!;
 
         private Instance? mInstance;
         private DebugUtilsMessengerEXT? mDebugMessenger;

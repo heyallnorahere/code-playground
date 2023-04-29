@@ -9,6 +9,25 @@ namespace CodePlayground.Graphics.Vulkan
 {
     public static class VulkanUtilities
     {
+        public static CommandQueueFlags ConvertQueueFlags(QueueFlags flags)
+        {
+            var flagValues = flags.SplitFlags();
+            CommandQueueFlags result = 0;
+
+            foreach (var flagValue in flagValues)
+            {
+                result |= flagValue switch
+                {
+                    QueueFlags.GraphicsBit => CommandQueueFlags.Graphics,
+                    QueueFlags.ComputeBit => CommandQueueFlags.Compute,
+                    QueueFlags.TransferBit => CommandQueueFlags.Transfer,
+                    _ => 0
+                };
+            }
+
+            return result;
+        }
+
         private unsafe static T Zeroed<T>() where T : unmanaged
         {
             int size = sizeof(T);

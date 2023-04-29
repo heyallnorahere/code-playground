@@ -52,33 +52,25 @@ namespace CodePlayground.Graphics.Vulkan
             return properties;
         }
 
-        public IReadOnlyDictionary<GraphicsQueueFlags, int> FindQueueTypes()
+        public IReadOnlyDictionary<CommandQueueFlags, int> FindQueueTypes()
         {
-            int queueCount = Enum.GetValues<GraphicsQueueFlags>().Length;
+            int queueCount = Enum.GetValues<CommandQueueFlags>().Length;
             var queueFamilyProperties = GetQueueFamilyProperties();
 
-            var result = new Dictionary<GraphicsQueueFlags, int>();
+            var result = new Dictionary<CommandQueueFlags, int>();
             for (int i = 0; i < queueFamilyProperties.Count; i++)
             {
                 var properties = queueFamilyProperties[i];
-                var flagValues = properties.QueueFlags.SplitFlags();
+                var flagValues = VulkanUtilities.ConvertQueueFlags(properties.QueueFlags).SplitFlags();
 
                 foreach (var flagValue in flagValues)
                 {
-                    GraphicsQueueFlags value = flagValue switch
-                    {
-                        QueueFlags.GraphicsBit => GraphicsQueueFlags.Graphics,
-                        QueueFlags.ComputeBit => GraphicsQueueFlags.Compute,
-                        QueueFlags.TransferBit => GraphicsQueueFlags.Transfer,
-                        _ => 0
-                    };
-
-                    if (value == 0 || result.ContainsKey(value))
+                    if (result.ContainsKey(flagValue))
                     {
                         continue;
                     }
 
-                    result.Add(value, i);
+                    result.Add(flagValue, i);
                     if (result.Count == queueCount)
                     {
                         break;
@@ -156,7 +148,15 @@ namespace CodePlayground.Graphics.Vulkan
                 }, marshal);
             }, marshal);
 
-            // todo: create graphics queues
+            mQueues = new Dictionary<int, VulkanQueue>();
+            foreach (int queueFamily in queueFamilies)
+            {
+                var properties = queueProperties[queueFamily];
+                var usage = VulkanUtilities.ConvertQueueFlags(properties.QueueFlags);
+
+                var queue = new VulkanQueue(queueFamily, usage, this);
+                mQueues.Add(queueFamily, queue);
+            }
         }
 
         ~VulkanDevice()
@@ -164,6 +164,7 @@ namespace CodePlayground.Graphics.Vulkan
             if (!mDisposed)
             {
                 Dispose(false);
+                mDisposed = true;
             }
         }
 
@@ -182,23 +183,47 @@ namespace CodePlayground.Graphics.Vulkan
         {
             if (disposing)
             {
-                // todo: dispose queues
+                foreach (int queueFamily in mQueues.Keys)
+                {
+                    mQueues[queueFamily].Dispose();
+                }
             }
 
             var api = VulkanContext.API;
             api.DestroyDevice(mDevice, null);
         }
 
-        public IGraphicsQueue GetQueue(GraphicsQueueFlags flags)
+        ICommandQueue IGraphicsDevice.GetQueue(CommandQueueFlags usage) => GetQueue(usage);
+        public VulkanQueue GetQueue(CommandQueueFlags flags)
         {
-            // todo: implement
-            throw new NotImplementedException();
+            foreach (var queueFamily in mQueues.Keys)
+            {
+                var queue = mQueues[queueFamily];
+                if ((queue.Usage & flags) == flags)
+                {
+                    return queue;
+                }
+            }
+
+            throw new ArgumentException("No suitable queue found!");
+        }
+
+        public VulkanQueue GetQueue(int queueFamily)
+        {
+            if (!mQueues.ContainsKey(queueFamily))
+            {
+                throw new ArgumentException($"No queue was created for family {queueFamily}");
+            }
+
+            return mQueues[queueFamily];
         }
 
         public VulkanPhysicalDevice PhysicalDevice => mPhysicalDevice;
+        public Device Device => mDevice;
         IGraphicsDeviceInfo IGraphicsDevice.DeviceInfo => throw new NotImplementedException();
 
         private readonly VulkanPhysicalDevice mPhysicalDevice;
+        private readonly Dictionary<int, VulkanQueue> mQueues;
         private Device mDevice;
         private bool mDisposed;
     }
