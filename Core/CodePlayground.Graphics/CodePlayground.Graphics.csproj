@@ -3,7 +3,6 @@
   <PropertyGroup>
     <TargetFramework>net7.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <SilkVersion>2.17.0</SilkVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -11,12 +10,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Silk.NET.Input" Version="$(SilkVersion)" />
-    <PackageReference Include="Silk.NET.Vulkan" Version="$(SilkVersion)" />
-    <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="$(SilkVersion)" />
-    <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="$(SilkVersion)" />
-    <PackageReference Include="Silk.NET.Windowing" Version="$(SilkVersion)" />
-    <PackageReference Include="Ultz.Native.GLFW" Version="3.3.3.1" />
+    <PackageReference Include="Silk.NET.Input" Version="$(SilkNETVersion)" />
+    <PackageReference Include="Silk.NET.Vulkan" Version="$(SilkNETVersion)" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="$(SilkNETVersion)" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="$(SilkNETVersion)" />
+    <PackageReference Include="Silk.NET.Windowing" Version="$(SilkNETVersion)" />
+    <PackageReference Include="Ultz.Native.GLFW" Version="$(GLFWVersion)" />
   </ItemGroup>
 
 </Project>

@@ -39,7 +39,7 @@ namespace CodePlayground
                 throw new InvalidOperationException("The specified type does not have a constructor with no parameters!");
             }
 
-            /*using */var instance = (Application)constructor.Invoke(null);
+            using var instance = (Application)constructor.Invoke(null);
             instance.ApplyAttributes();
             sInstance = instance;
 

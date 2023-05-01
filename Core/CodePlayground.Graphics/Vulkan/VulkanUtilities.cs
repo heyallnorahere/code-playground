@@ -1,4 +1,6 @@
 using Silk.NET.Core;
+using Silk.NET.Core.Attributes;
+using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using System;
 using System.Collections.Generic;
@@ -123,6 +125,41 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 usedMarshal.Dispose();
             }
+        }
+
+        private static string GetExtensionName<T>()
+        {
+            var extensionType = typeof(T);
+            var extensionAttribute = extensionType.GetCustomAttribute<ExtensionAttribute>();
+
+            if (extensionAttribute is null)
+            {
+                throw new ArgumentException("The passed type is not an extension!");
+            }
+
+            return extensionAttribute.Name;
+        }
+
+        public static T GetInstanceExtension<T>(this Vk api, Instance instance) where T : NativeExtension<Vk>
+        {
+            string extensionName = GetExtensionName<T>();
+            if (!api.TryGetInstanceExtension(instance, out T extension))
+            {
+                throw new ArgumentException($"Instance extension {extensionName} not loaded!");
+            }
+
+            return extension;
+        }
+
+        public static T GetDeviceExtension<T>(this Vk api, Instance instance, Device device) where T : NativeExtension<Vk>
+        {
+            string extensionName = GetExtensionName<T>();
+            if (!api.TryGetDeviceExtension(instance, device, out T extension))
+            {
+                throw new ArgumentException($"Device extension {extensionName} not loaded!");
+            }
+
+            return extension;
         }
 
         private unsafe static T? GetProcAddress<T>(Func<string, PfnVoidFunction> api) where T : Delegate

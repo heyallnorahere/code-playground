@@ -2,6 +2,12 @@
 
     <PropertyGroup>
         <Nullable>enable</Nullable>
+
+        <!-- package versions -->
+        <GLFWVersion>3.3.3.1</GLFWVersion>
+        <MicrosoftNETCorePlatformsVersion>8.0.0-preview.2.23128.3</MicrosoftNETCorePlatformsVersion>
+        <NewtonsoftJsonVersion>13.0.3</NewtonsoftJsonVersion>
+        <SilkNETVersion>2.17.0</SilkNETVersion>
     </PropertyGroup>
 
 </Project>

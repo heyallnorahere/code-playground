@@ -143,7 +143,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
-            ClearCache(disposing);
+            ClearCache();
 
             var api = VulkanContext.API;
             while (mFences.Count > 0)
@@ -276,7 +276,7 @@ namespace CodePlayground.Graphics.Vulkan
             api.QueueWaitIdle(mQueue).Assert();
         }
 
-        private unsafe void ClearCache(bool dispose = true)
+        private unsafe void ClearCache()
         {
             Wait();
 
@@ -285,11 +285,7 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 var storedBuffer = mStoredBuffers.Dequeue();
                 api.DestroyFence(mDevice, storedBuffer.Fence, null);
-
-                if (dispose)
-                {
-                    storedBuffer.CommandBuffer.Dispose();
-                }
+                storedBuffer.CommandBuffer.Dispose();
             }
         }
 

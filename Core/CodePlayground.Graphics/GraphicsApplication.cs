@@ -2,6 +2,8 @@
 using Silk.NET.Core.Contexts;
 using Silk.NET.Input;
 using Silk.NET.Maths;
+using Silk.NET.Vulkan.Extensions.EXT;
+using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Windowing;
 using System;
 using System.Diagnostics.CodeAnalysis;
@@ -59,19 +61,11 @@ namespace CodePlayground.Graphics
         private readonly AppGraphicsAPI mAPI;
     }
 
-    public interface IGraphicsContext : IDisposable
-    {
-        public IGraphicsDevice Device { get; }
-
-        public bool IsApplicable(WindowOptions options);
-        public void Initialize(IWindow window, GraphicsApplication application);
-    }
-
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
-    [RequestedVulkanExtension("VK_EXT_debug_utils", VulkanExtensionLevel.Instance, VulkanExtensionType.Extension, Required = false)]
+    [RequestedVulkanExtension(ExtDebugUtils.ExtensionName, VulkanExtensionLevel.Instance, VulkanExtensionType.Extension, Required = false)]
+    [RequestedVulkanExtension(KhrSwapchain.ExtensionName, VulkanExtensionLevel.Device, VulkanExtensionType.Extension, Required = true)]
     [RequestedVulkanExtension("VK_LAYER_KHRONOS_validation", VulkanExtensionLevel.Instance, VulkanExtensionType.Layer, Required = false)]
     [RequestedVulkanExtension("VK_LAYER_KHRONOS_validation", VulkanExtensionLevel.Device, VulkanExtensionType.Layer, Required = false)]
-    [RequestedVulkanExtension("VK_KHR_swapchain", VulkanExtensionLevel.Device, VulkanExtensionType.Extension, Required = true)]
     public abstract class GraphicsApplication : Application
     {
         public GraphicsApplication()
@@ -154,7 +148,7 @@ namespace CodePlayground.Graphics
             mWindow.FocusChanged += focused => FocusChanged?.Invoke(focused);
             mWindow.Load += () => Load?.Invoke();
             mWindow.Update += delta => Update?.Invoke(delta);
-            mWindow.Render += delta => Render?.Invoke(delta);
+            mWindow.Render += OnRender;
         }
 
         public event Action<Vector2D<int>>? WindowResize;
@@ -163,7 +157,7 @@ namespace CodePlayground.Graphics
         public event Action<bool>? FocusChanged;
         public event Action? Load;
         public event Action<double>? Update;
-        public event Action<double>? Render;
+        public event Action<double, IRenderTarget?>? Render;
 
         public event Action? InputReady;
 
@@ -185,6 +179,31 @@ namespace CodePlayground.Graphics
         private void OnClose()
         {
             mInputContext?.Dispose();
+            mGraphicsContext?.Dispose();
+        }
+
+        // not an event handler - we need to be able to call render under certain circumstances
+        private void OnRender(double delta)
+        {
+            if (mGraphicsContext is null)
+            {
+                Render?.Invoke(delta, null);
+            }
+            else
+            {
+                var device = mGraphicsContext.Device;
+                var swapchain = mGraphicsContext.Swapchain;
+                swapchain.AcquireImage();
+
+                var queue = device.GetQueue(CommandQueueFlags.Graphics);
+                var commandList = queue.Release();
+
+                commandList.Begin();
+                Render?.Invoke(delta, swapchain.RenderTarget);
+                commandList.End();
+
+                swapchain.Present(queue, commandList);
+            }
         }
 
         protected virtual void OnContextCreation(IGraphicsContext context) { }

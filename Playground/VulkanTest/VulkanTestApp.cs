@@ -26,6 +26,7 @@ namespace VulkanTest
         private unsafe void OnLoad()
         {
             mContext = CreateGraphicsContext<VulkanContext>();
+            mContext.Swapchain.VSync = true; // enable vsync
 
             var device = mContext.Device;
             var queue = device.GetQueue(CommandQueueFlags.Transfer);

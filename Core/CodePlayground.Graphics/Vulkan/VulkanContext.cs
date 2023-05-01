@@ -1,5 +1,6 @@
-using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.EXT;
+using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Windowing;
 using System;
 using System.Collections.Generic;
@@ -28,12 +29,6 @@ namespace CodePlayground.Graphics.Vulkan
         public VulkanExtensionType Type { get; set; }
         public bool Required { get; set; }
     }
-
-    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
-    internal unsafe delegate Result PFN_vkCreateDebugUtilsMessengerEXT(Instance instance, DebugUtilsMessengerCreateInfoEXT* createInfo, AllocationCallbacks* allocator, DebugUtilsMessengerEXT* messenger);
-
-    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
-    internal unsafe delegate void PFN_vkDestroyDebugUtilsMessengerEXT(Instance instance, DebugUtilsMessengerEXT messenger, AllocationCallbacks* callbacks);
 
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
     public sealed class RequestedVulkanExtensionAttribute : Attribute
@@ -102,8 +97,12 @@ namespace CodePlayground.Graphics.Vulkan
                     return 0;
                 }
 
-                score += totalPresent * 1000;
+                score += totalPresent * 500;
             }
+
+            var queueTypes = Enum.GetValues<CommandQueueFlags>();
+            var availableQueues = physicalDevice.FindQueueTypes();
+            score += availableQueues.Count * 1000 / queueTypes.Length;
 
             physicalDevice.GetProperties(out PhysicalDeviceProperties properties);
             physicalDevice.GetFeatures(out PhysicalDeviceFeatures features);
@@ -128,7 +127,7 @@ namespace CodePlayground.Graphics.Vulkan
             API = Vk.GetApi();
         }
 
-        public VulkanContext(IGraphicsDeviceScorer? deviceScorer = null)
+        public VulkanContext()
         {
             mInstance = null;
             mDebugMessenger = null;
@@ -136,7 +135,7 @@ namespace CodePlayground.Graphics.Vulkan
 
             mInitialized = false;
             mRequestedExtensions = new Dictionary<VulkanExtensionLevel, Dictionary<VulkanExtensionType, Dictionary<string, bool>>>();
-            mDeviceScorer = deviceScorer ?? new DefaultVulkanDeviceScorer();
+            DeviceScorer = new DefaultVulkanDeviceScorer();
         }
 
         ~VulkanContext()
@@ -175,21 +174,7 @@ namespace CodePlayground.Graphics.Vulkan
                 AdditionalQueueFamilies = new int[] { presentQueue }
             });
 
-            {
-                // temporary
-                // todo: replace with swapchain creation
-                var instance = mInstance!.Value;
-                var vkDestroySurfaceKHR = API.GetProcAddress<PFN_vkDestroySurfaceKHR>(instance);
-                if (vkDestroySurfaceKHR is null)
-                {
-                    throw new InvalidOperationException("Failed to destroy surface - function not found!");
-                }
-                else
-                {
-                    vkDestroySurfaceKHR(instance, windowSurface, null);
-                }
-            }
-
+            mSwapchain = new VulkanSwapchain(windowSurface, mDevice, mInstance!.Value, window);
             mInitialized = true;
         }
 
@@ -279,7 +264,7 @@ namespace CodePlayground.Graphics.Vulkan
                         var extensions = new ExtensionProperties[extensionCount];
                         fixed (ExtensionProperties* ptr = extensions)
                         {
-                            API.EnumerateInstanceExtensionProperties((byte*)null, &extensionCount, ptr).Assert();
+                            API.EnumerateInstanceExtensionProperties((byte*)null, &extensionCount, ptr);
                         }
 
                         return extensions.Select(ext => Marshal.PtrToStringAnsi((nint)ext.ExtensionName)!);
@@ -292,7 +277,7 @@ namespace CodePlayground.Graphics.Vulkan
                         var extensions = new ExtensionProperties[extensionCount];
                         fixed (ExtensionProperties* ptr = extensions)
                         {
-                            API.EnumerateDeviceExtensionProperties(device.Device, (byte*)null, &extensionCount, ptr).Assert();
+                            API.EnumerateDeviceExtensionProperties(device.Device, (byte*)null, &extensionCount, ptr);
                         }
 
                         return extensions.Select(ext => Marshal.PtrToStringAnsi((nint)ext.ExtensionName)!);
@@ -306,7 +291,7 @@ namespace CodePlayground.Graphics.Vulkan
                         var layers = new LayerProperties[layerCount];
                         fixed (LayerProperties* ptr = layers)
                         {
-                            API.EnumerateInstanceLayerProperties(&layerCount, ptr).Assert();
+                            API.EnumerateInstanceLayerProperties(&layerCount, ptr);
                         }
 
                         return layers.Select(layer => Marshal.PtrToStringAnsi((nint)layer.LayerName)!);
@@ -319,7 +304,7 @@ namespace CodePlayground.Graphics.Vulkan
                         var layers = new LayerProperties[layerCount];
                         fixed (LayerProperties* ptr = layers)
                         {
-                            API.EnumerateDeviceLayerProperties(device.Device, &layerCount, ptr).Assert();
+                            API.EnumerateDeviceLayerProperties(device.Device, &layerCount, ptr);
                         }
 
                         return layers.Select(layer => Marshal.PtrToStringAnsi((nint)layer.LayerName)!);
@@ -424,9 +409,7 @@ namespace CodePlayground.Graphics.Vulkan
 #endif
 
             var instance = mInstance!.Value;
-            var apiFunction = API.GetProcAddress<PFN_vkCreateDebugUtilsMessengerEXT>(instance);
-
-            if (apiFunction is null)
+            if (!API.TryGetInstanceExtension(instance, out ExtDebugUtils debugUtils))
             {
                 return;
             }
@@ -440,10 +423,7 @@ namespace CodePlayground.Graphics.Vulkan
             };
 
             var debugMessenger = new DebugUtilsMessengerEXT();
-            apiFunction(instance, &createInfo, null, &debugMessenger).Assert(result =>
-            {
-                throw new ArgumentException($"Failed to create debug messenger: {result}");
-            });
+            debugUtils.CreateDebugUtilsMessenger(instance, &createInfo, null, &debugMessenger).Assert();
 
             mDebugMessenger = debugMessenger;
         }
@@ -453,7 +433,7 @@ namespace CodePlayground.Graphics.Vulkan
             var instance = mInstance!.Value;
 
             uint deviceCount = 0;
-            API.EnumeratePhysicalDevices(instance, &deviceCount, null);
+            API.EnumeratePhysicalDevices(instance, &deviceCount, null).Assert();
 
             var devices = new PhysicalDevice[deviceCount];
             fixed (PhysicalDevice* ptr = devices)
@@ -468,7 +448,7 @@ namespace CodePlayground.Graphics.Vulkan
                 scoredDevices.Add(new ScoredVulkanDevice
                 {
                     Device = physicalDevice,
-                    Score = mDeviceScorer.ScoreDevice(physicalDevice, this)
+                    Score = DeviceScorer.ScoreDevice(physicalDevice, this)
                 });
             }
 
@@ -489,7 +469,10 @@ namespace CodePlayground.Graphics.Vulkan
             var instance = mInstance!.Value;
             SurfaceKHR surface = window.VkSurface!.Create<AllocationCallbacks>(instance.ToHandle(), null).ToSurface();
 
-            presentQueue = VulkanSwapchain.FindPresentQueueFamily(physicalDevice, instance, surface);
+            var extension = API.GetInstanceExtension<KhrSurface>(instance);
+            presentQueue = VulkanSwapchain.FindPresentQueueFamily(extension, physicalDevice, surface);
+            presentQueue = VulkanSwapchain.FindPresentQueueFamily(extension, physicalDevice, surface);
+
             return surface;
         }
 
@@ -509,39 +492,40 @@ namespace CodePlayground.Graphics.Vulkan
             if (disposing)
             {
                 mRequestedExtensions.Clear();
-                
-                mDevice?.Dispose();
-                mDevice = null;
             }
+
+            mSwapchain?.Dispose();
+            mSwapchain = null;
+
+            mDevice?.Dispose();
+            mDevice = null;
 
             var instance = mInstance!.Value;
             if (mDebugMessenger is not null)
             {
-                var apiFunction = API.GetProcAddress<PFN_vkDestroyDebugUtilsMessengerEXT>(instance);
-                if (apiFunction is null)
-                {
-                    throw new InvalidOperationException("Failed to destroy debug messenger - function not found!");
-                }
-                else
-                {
-                    apiFunction(instance, mDebugMessenger.Value, null);
-                    mDebugMessenger = null;
-                }
+                var debugUtils = API.GetInstanceExtension<ExtDebugUtils>(instance);
+                debugUtils.DestroyDebugUtilsMessenger(instance, mDebugMessenger.Value, null);
+
+                mDebugMessenger = null;
             }
 
             API.DestroyInstance(instance, null);
             mInstance = null;
         }
 
+        public IGraphicsDeviceScorer DeviceScorer { get; set; }
         public VulkanDevice Device => mDevice!;
+        public VulkanSwapchain Swapchain => mSwapchain!;
+
         IGraphicsDevice IGraphicsContext.Device => mDevice!;
+        ISwapchain IGraphicsContext.Swapchain => mSwapchain!;
 
         private Instance? mInstance;
         private DebugUtilsMessengerEXT? mDebugMessenger;
         private VulkanDevice? mDevice;
+        private VulkanSwapchain? mSwapchain;
 
         private readonly Dictionary<VulkanExtensionLevel, Dictionary<VulkanExtensionType, Dictionary<string, bool>>> mRequestedExtensions;
-        private readonly IGraphicsDeviceScorer mDeviceScorer;
         private bool mInitialized;
     }
 }

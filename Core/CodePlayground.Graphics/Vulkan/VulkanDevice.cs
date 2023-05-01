@@ -181,12 +181,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
-            if (disposing)
+            foreach (int queueFamily in mQueues.Keys)
             {
-                foreach (int queueFamily in mQueues.Keys)
-                {
-                    mQueues[queueFamily].Dispose();
-                }
+                mQueues[queueFamily].Dispose();
             }
 
             var api = VulkanContext.API;
