@@ -104,8 +104,11 @@ namespace CodePlayground
 
         public Application()
         {
+            var assembly = GetType().Assembly;
+            var versionAttribute = assembly.GetCustomAttribute<AssemblyFileVersionAttribute>();
+
             Title = $"Untitled Application ({GetType().Name})";
-            Version = new Version(0, 0, 0, 1);
+            Version = Version.Parse(versionAttribute?.Version ?? "1.0.0.0");
             mDisposed = false;
         }
 

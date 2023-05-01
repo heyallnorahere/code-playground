@@ -20,6 +20,7 @@ namespace CodePlayground.Graphics.Vulkan
                 PhysicalDeviceType.IntegratedGpu => DeviceType.Integrated,
                 PhysicalDeviceType.DiscreteGpu => DeviceType.Discrete,
                 PhysicalDeviceType.VirtualGpu => DeviceType.Virtual,
+                PhysicalDeviceType.Cpu => DeviceType.CPU,
                 _ => throw new NotImplementedException()
             };
         }
