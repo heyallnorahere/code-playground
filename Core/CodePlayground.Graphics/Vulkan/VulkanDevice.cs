@@ -182,9 +182,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
-            foreach (int queueFamily in mQueues.Keys)
+            foreach (var queue in mQueues.Values)
             {
-                mQueues[queueFamily].Dispose();
+                queue.Dispose();
             }
 
             var api = VulkanContext.API;
@@ -194,9 +194,8 @@ namespace CodePlayground.Graphics.Vulkan
         ICommandQueue IGraphicsDevice.GetQueue(CommandQueueFlags usage) => GetQueue(usage);
         public VulkanQueue GetQueue(CommandQueueFlags flags)
         {
-            foreach (var queueFamily in mQueues.Keys)
+            foreach (var queue in mQueues.Values)
             {
-                var queue = mQueues[queueFamily];
                 if ((queue.Usage & flags) == flags)
                 {
                     return queue;

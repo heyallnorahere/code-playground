@@ -171,19 +171,21 @@ namespace CodePlayground.Graphics.Vulkan
                 var commandBuffer = buffer.CommandBuffer;
 
                 var api = VulkanContext.API;
-                if (buffer.OwnsFence)
+                var fenceStatus = api.GetFenceStatus(mDevice, buffer.Fence);
+                if (fenceStatus == Result.Success)
                 {
-                    api.ResetFences(mDevice, 1, fence);
-                    mFences.Enqueue(fence);
-                }
+                    if (buffer.OwnsFence)
+                    {
+                        api.ResetFences(mDevice, 1, fence);
+                        mFences.Enqueue(fence);
+                    }
 
-                api.ResetCommandBuffer(commandBuffer.Buffer, CommandBufferResetFlags.None);
-                return buffer.CommandBuffer;
+                    api.ResetCommandBuffer(commandBuffer.Buffer, CommandBufferResetFlags.None);
+                    return buffer.CommandBuffer;
+                }
             }
-            else
-            {
-                return new VulkanCommandBuffer(mPool, mDevice);
-            }
+
+            return new VulkanCommandBuffer(mPool, mDevice);
         }
 
         void ICommandQueue.Submit(ICommandList commandList)
@@ -284,8 +286,12 @@ namespace CodePlayground.Graphics.Vulkan
             while (mStoredBuffers.Count > 0)
             {
                 var storedBuffer = mStoredBuffers.Dequeue();
-                api.DestroyFence(mDevice, storedBuffer.Fence, null);
                 storedBuffer.CommandBuffer.Dispose();
+
+                if (storedBuffer.OwnsFence)
+                {
+                    api.DestroyFence(mDevice, storedBuffer.Fence, null);
+                }
             }
         }
 

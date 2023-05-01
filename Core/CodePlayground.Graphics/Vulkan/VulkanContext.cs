@@ -494,6 +494,11 @@ namespace CodePlayground.Graphics.Vulkan
                 mRequestedExtensions.Clear();
             }
 
+            if (mDevice is not null)
+            {
+                API.DeviceWaitIdle(mDevice.Device);
+            }
+
             mSwapchain?.Dispose();
             mSwapchain = null;
 

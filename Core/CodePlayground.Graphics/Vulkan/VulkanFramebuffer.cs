@@ -75,6 +75,7 @@ namespace CodePlayground.Graphics.Vulkan
         }
 
         public Vector2D<int> Size => mSize;
+        public Framebuffer Framebuffer => mFramebuffer;
 
         private readonly VulkanDevice mDevice;
         private readonly Framebuffer mFramebuffer;

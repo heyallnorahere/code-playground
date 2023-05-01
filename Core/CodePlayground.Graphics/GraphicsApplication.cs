@@ -61,6 +61,14 @@ namespace CodePlayground.Graphics
         private readonly AppGraphicsAPI mAPI;
     }
 
+    public struct FrameRenderInfo
+    {
+        public double Delta { get; set; }
+        public ICommandList? CommandList { get; set; }
+        public IRenderTarget? RenderTarget { get; set; }
+        public IFramebuffer? Framebuffer { get; set; }
+    }
+
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
     [RequestedVulkanExtension(ExtDebugUtils.ExtensionName, VulkanExtensionLevel.Instance, VulkanExtensionType.Extension, Required = false)]
     [RequestedVulkanExtension(KhrSwapchain.ExtensionName, VulkanExtensionLevel.Device, VulkanExtensionType.Extension, Required = true)]
@@ -157,7 +165,7 @@ namespace CodePlayground.Graphics
         public event Action<bool>? FocusChanged;
         public event Action? Load;
         public event Action<double>? Update;
-        public event Action<double, IRenderTarget?>? Render;
+        public event Action<FrameRenderInfo>? Render;
 
         public event Action? InputReady;
 
@@ -187,21 +195,31 @@ namespace CodePlayground.Graphics
         {
             if (mGraphicsContext is null)
             {
-                Render?.Invoke(delta, null);
+                Render?.Invoke(new FrameRenderInfo
+                {
+                    Delta = delta
+                });
             }
             else
             {
                 var device = mGraphicsContext.Device;
                 var swapchain = mGraphicsContext.Swapchain;
-                swapchain.AcquireImage();
 
                 var queue = device.GetQueue(CommandQueueFlags.Graphics);
                 var commandList = queue.Release();
 
+                swapchain.AcquireImage();
                 commandList.Begin();
-                Render?.Invoke(delta, swapchain.RenderTarget);
-                commandList.End();
 
+                Render?.Invoke(new FrameRenderInfo
+                {
+                    Delta = delta,
+                    CommandList = commandList,
+                    RenderTarget = swapchain.RenderTarget,
+                    Framebuffer = swapchain.CurrentFramebuffer
+                });
+
+                commandList.End();
                 swapchain.Present(queue, commandList);
             }
         }

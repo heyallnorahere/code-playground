@@ -16,6 +16,13 @@ namespace CodePlayground.Graphics.Vulkan
         public VulkanFramebuffer Framebuffer { get; set; }
     }
 
+    internal struct VulkanSwapchainFrameSyncObjects
+    {
+        public Fence Fence;
+        public Semaphore ImageAvailable;
+        public Semaphore RenderFinished;
+    }
+
     public sealed class VulkanSwapchain : ISwapchain, IDisposable
     {
         public static unsafe int FindPresentQueueFamily(KhrSurface extension, VulkanPhysicalDevice physicalDevice, SurfaceKHR surface)
@@ -83,6 +90,9 @@ namespace CodePlayground.Graphics.Vulkan
             mInstance = instance;
             mWindow = window;
 
+            mCurrentImage = 0;
+            mCurrentSyncFrame = 0;
+
             var framebufferSize = window.FramebufferSize;
             var extent = new Extent2D
             {
@@ -123,6 +133,14 @@ namespace CodePlayground.Graphics.Vulkan
                 mWindow.FramebufferResize -= Resize;
             }
 
+            var api = VulkanContext.API;
+            foreach (var syncFrame in mSyncObjects)
+            {
+                api.DestroyFence(mDevice.Device, syncFrame.Fence, null);
+                api.DestroySemaphore(mDevice.Device, syncFrame.ImageAvailable, null);
+                api.DestroySemaphore(mDevice.Device, syncFrame.RenderFinished, null);
+            }
+
             DestroyFramebuffers();
             mRenderPass.Dispose();
 
@@ -130,17 +148,7 @@ namespace CodePlayground.Graphics.Vulkan
             mSurfaceExtension.DestroySurface(mInstance, mSurface, null);
         }
 
-        private void Resize(Vector2D<int> windowSize)
-        {
-            mExtent = new Extent2D
-            {
-                Width = (uint)windowSize.X,
-                Height = (uint)windowSize.Y
-            };
-
-            Invalidate();
-        }
-
+        private void Resize(Vector2D<int> windowSize) => mNewSize = windowSize;
         public unsafe void Invalidate()
         {
             DestroyFramebuffers();
@@ -151,6 +159,7 @@ namespace CodePlayground.Graphics.Vulkan
                 mSwapchainExtension.DestroySwapchain(mDevice.Device, old, null);
             }
 
+            mCurrentImage = 0;
             SwapchainInvalidated?.Invoke(Size);
         }
 
@@ -202,7 +211,9 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        [MemberNotNull(nameof(mRenderPass), nameof(mFramebuffers))]
+        [MemberNotNull(nameof(mRenderPass))]
+        [MemberNotNull(nameof(mFramebuffers))]
+        [MemberNotNull(nameof(mSyncObjects))]
         private unsafe SwapchainKHR Create(Extent2D extent)
         {
             var queueFamilyIndices = mDevice.PhysicalDevice.FindQueueTypes();
@@ -281,8 +292,35 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             });
 
+            mSyncObjects ??= CreateSyncObjects();
             mFramebuffers = CreateFramebuffers();
+
             return old;
+        }
+
+        private unsafe VulkanSwapchainFrameSyncObjects[] CreateSyncObjects()
+        {
+            var result = new VulkanSwapchainFrameSyncObjects[2]; // 2 frames, hardcoded constant
+
+            var semaphoreInfo = VulkanUtilities.Init<SemaphoreCreateInfo>();
+            var fenceInfo = VulkanUtilities.Init<FenceCreateInfo>() with
+            {
+                Flags = FenceCreateFlags.SignaledBit
+            };
+
+            var api = VulkanContext.API;
+            for (int i = 0; i < result.Length; i++)
+            {
+                var frame = new VulkanSwapchainFrameSyncObjects();
+
+                api.CreateFence(mDevice.Device, &fenceInfo, null, &frame.Fence).Assert();
+                api.CreateSemaphore(mDevice.Device, &semaphoreInfo, null, &frame.ImageAvailable).Assert();
+                api.CreateSemaphore(mDevice.Device, &semaphoreInfo, null, &frame.RenderFinished).Assert();
+
+                result[i] = frame;
+            }
+
+            return result;
         }
 
         private unsafe VulkanSwapchainFramebuffer[] CreateFramebuffers()
@@ -353,18 +391,97 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        public void AcquireImage()
+        public unsafe void AcquireImage()
         {
-            throw new NotImplementedException();
+            while (true)
+            {
+                var api = VulkanContext.API;
+                var currentFrame = mSyncObjects[mCurrentSyncFrame];
+
+                api.WaitForFences(mDevice.Device, 1, currentFrame.Fence, true, ulong.MaxValue).Assert();
+                fixed (uint* currentImage = &mCurrentImage)
+                {
+                    var result = mSwapchainExtension.AcquireNextImage(mDevice.Device, mSwapchain,
+                                                                      ulong.MaxValue, currentFrame.ImageAvailable,
+                                                                      new Fence(null), currentImage);
+
+                    if (result == Result.ErrorOutOfDateKhr)
+                    {
+                        Invalidate();
+                        continue;
+                    }
+                    else
+                    {
+                        result.Assert();
+                    }
+                }
+
+                api.ResetFences(mDevice.Device, 1, currentFrame.Fence).Assert();
+                break;
+            }
         }
 
-        public void Present(ICommandQueue commandQueue, ICommandList commandList)
+        public unsafe void Present(ICommandQueue commandQueue, ICommandList commandList)
         {
-            throw new NotImplementedException();
+            if (commandQueue is not VulkanQueue || commandList is not VulkanCommandBuffer)
+            {
+                throw new ArgumentException("Must pass Vulkan objects!");
+            }
+
+            var queue = (VulkanQueue)commandQueue;
+            var commandBuffer = (VulkanCommandBuffer)commandList;
+
+            var syncFrame = mSyncObjects[mCurrentSyncFrame];
+            queue.Submit(commandBuffer, new VulkanQueueSubmitInfo
+            {
+                Fence = syncFrame.Fence,
+                WaitSemaphores = new VulkanQueueSemaphoreDependency[]
+                {
+                    new VulkanQueueSemaphoreDependency
+                    {
+                        Semaphore = syncFrame.ImageAvailable,
+                        DestinationStageMask = PipelineStageFlags.ColorAttachmentOutputBit
+                    }
+                },
+                SignalSemaphores = new Semaphore[] { syncFrame.RenderFinished }
+            });
+
+            fixed (SwapchainKHR* swapchain = &mSwapchain)
+            {
+                fixed (uint* currentImage = &mCurrentImage)
+                {
+                    var presentInfo = VulkanUtilities.Init<PresentInfoKHR>() with
+                    {
+                        WaitSemaphoreCount = 1,
+                        PWaitSemaphores = &syncFrame.RenderFinished,
+                        SwapchainCount = 1,
+                        PSwapchains = swapchain,
+                        PImageIndices = currentImage
+                    };
+
+                    var result = mSwapchainExtension.QueuePresent(mPresentQueue.Queue, &presentInfo);
+                    if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr || mNewSize is not null)
+                    {
+                        Create(new Extent2D
+                        {
+                            Width = (uint?)mNewSize?.X ?? mExtent.Width,
+                            Height = (uint?)mNewSize?.Y ?? mExtent.Height
+                        });
+
+                        mNewSize = null;
+                    }
+                    else
+                    {
+                        result.Assert();
+                    }
+                }
+            }
+
+            mCurrentSyncFrame = (mCurrentSyncFrame + 1) % mSyncObjects.Length;
         }
 
         public IRenderTarget RenderTarget => mRenderPass;
-        public IFramebuffer CurrentFramebuffer => throw new NotImplementedException();
+        public IFramebuffer CurrentFramebuffer => mFramebuffers[mCurrentImage].Framebuffer;
 
         public bool VSync
         {
@@ -394,9 +511,14 @@ namespace CodePlayground.Graphics.Vulkan
         private SwapchainKHR mSwapchain;
         private VulkanRenderPass mRenderPass;
 
+        private VulkanSwapchainFrameSyncObjects[] mSyncObjects;
+        private uint mCurrentImage;
+        private int mCurrentSyncFrame;
+
         private VulkanSwapchainFramebuffer[] mFramebuffers;
         private Format mImageFormat;
         private Extent2D mExtent;
+        private Vector2D<int>? mNewSize;
 
         private readonly KhrSwapchain mSwapchainExtension;
         private readonly KhrSurface mSurfaceExtension;

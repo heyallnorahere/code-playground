@@ -1,6 +1,7 @@
 ﻿using CodePlayground;
 using CodePlayground.Graphics;
 using CodePlayground.Graphics.Vulkan;
+using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 using System;
 using System.Collections.Generic;
@@ -27,15 +28,6 @@ namespace VulkanTest
         {
             mContext = CreateGraphicsContext<VulkanContext>();
             mContext.Swapchain.VSync = true; // enable vsync
-
-            var device = mContext.Device;
-            var queue = device.GetQueue(CommandQueueFlags.Transfer);
-
-            var buffer = queue.Release();
-            buffer.Begin();
-
-            buffer.End();
-            queue.Submit(buffer);
         }
 
         protected override void OnContextCreation(IGraphicsContext context)
@@ -79,6 +71,22 @@ namespace VulkanTest
         private void OnClose()
         {
             mContext?.Dispose();
+        }
+
+        [EventHandler(nameof(Render))]
+        private void OnRender(FrameRenderInfo renderInfo)
+        {
+            if (renderInfo.CommandList is null || renderInfo.RenderTarget is null || renderInfo.Framebuffer is null)
+            {
+                return;
+            }
+
+            var clearColor = new Vector4D<float>(1f, 0f, 0f, 1f);
+            renderInfo.RenderTarget.BeginRender(renderInfo.CommandList, renderInfo.Framebuffer, clearColor);
+
+            // todo: render
+
+            renderInfo.RenderTarget.EndRender(renderInfo.CommandList);
         }
 
         private VulkanContext? mContext;

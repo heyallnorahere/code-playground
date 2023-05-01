@@ -164,14 +164,78 @@ namespace CodePlayground.Graphics.Vulkan
             api.DestroyRenderPass(mDevice.Device, mRenderPass, null);
         }
 
-        public void BeginRender(ICommandList commandList, IFramebuffer framebuffer, Vector4D<float> clearColor)
+        public unsafe void BeginRender(ICommandList commandList, IFramebuffer framebuffer, Vector4D<float> clearColor)
         {
-            throw new NotImplementedException();
+            if (commandList is not VulkanCommandBuffer || framebuffer is not VulkanFramebuffer)
+            {
+                throw new ArgumentException("Must pass Vulkan objects!");
+            }
+
+            var commandBuffer = (VulkanCommandBuffer)commandList;
+            var vulkanFramebuffer = (VulkanFramebuffer)framebuffer;
+
+            var clearValues = new ClearValue[mAttachmentTypes.Count];
+            for (int i = 0; i < clearValues.Length; i++)
+            {
+                var clearValue = VulkanUtilities.Init<ClearValue>();
+                switch (mAttachmentTypes[i])
+                {
+                    case AttachmentType.Color:
+                        clearValue.Color.Float32_0 = clearColor[0];
+                        clearValue.Color.Float32_1 = clearColor[1];
+                        clearValue.Color.Float32_2 = clearColor[2];
+                        clearValue.Color.Float32_3 = clearColor[3];
+                        break;
+                    case AttachmentType.DepthStencil:
+                        clearValue.DepthStencil.Depth = 1f;
+                        clearValue.DepthStencil.Stencil = 0;
+                        break;
+                    default:
+                        throw new ArgumentException("Invalid attachment type!");
+                }
+
+                clearValues[i] = clearValue;
+            }
+
+            fixed (ClearValue* clearValuePtr = clearValues)
+            {
+                var beginInfo = VulkanUtilities.Init<RenderPassBeginInfo>() with
+                {
+                    RenderPass = mRenderPass,
+                    Framebuffer = vulkanFramebuffer.Framebuffer,
+                    RenderArea = new Rect2D
+                    {
+                        Offset = new Offset2D
+                        {
+                            X = 0,
+                            Y = 0
+                        },
+                        Extent = new Extent2D
+                        {
+                            Width = (uint)vulkanFramebuffer.Size.X,
+                            Height = (uint)vulkanFramebuffer.Size.Y
+                        }
+                    },
+                    ClearValueCount = (uint)clearValues.Length,
+                    PClearValues = clearValuePtr
+                };
+
+                var api = VulkanContext.API;
+                api.CmdBeginRenderPass(commandBuffer.Buffer, beginInfo, SubpassContents.Inline);
+            }
         }
 
         public void EndRender(ICommandList commandList)
         {
-            throw new NotImplementedException();
+            if (commandList is VulkanCommandBuffer commandBuffer)
+            {
+                var api = VulkanContext.API;
+                api.CmdEndRenderPass(commandBuffer.Buffer);
+            }
+            else
+            {
+                throw new ArgumentException("Must pass a Vulkan command buffer!");
+            }
         }
 
         public IReadOnlyList<AttachmentType> AttachmentTypes => mAttachmentTypes;
