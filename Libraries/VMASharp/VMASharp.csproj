@@ -1,22 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net7.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <TargetFramework>net7.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\CodePlayground\CodePlayground.csproj" />
-    <ProjectReference Include="..\..\Libraries\VMASharp\VMASharp.csproj" />
+    <Compile Include="$(ProjectDir)VMASharp\VMASharp\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Silk.NET.Input" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="$(SilkNETVersion)" />
-    <PackageReference Include="Silk.NET.Windowing" Version="$(SilkNETVersion)" />
-    <PackageReference Include="Ultz.Native.GLFW" Version="$(GLFWVersion)" />
   </ItemGroup>
 
 </Project>

@@ -187,7 +187,6 @@ namespace CodePlayground.Graphics
         private void OnClose()
         {
             mInputContext?.Dispose();
-            mGraphicsContext?.Dispose();
         }
 
         // not an event handler - we need to be able to call render under certain circumstances

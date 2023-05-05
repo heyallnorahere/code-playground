@@ -1,3 +1,4 @@
+using Silk.NET.Core;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
@@ -7,6 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using VMASharp;
 
 namespace CodePlayground.Graphics.Vulkan
 {
@@ -45,6 +47,17 @@ namespace CodePlayground.Graphics.Vulkan
         public VulkanExtensionLevel Level { get; }
         public VulkanExtensionType Type { get; }
         public bool Required { get; set; }
+    }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = true)]
+    public sealed class VulkanAPIVersionAttribute : Attribute
+    {
+        public VulkanAPIVersionAttribute(string version)
+        {
+            Version = Version.Parse(version);
+        }
+
+        public Version Version { get; }
     }
 
     internal sealed class DefaultVulkanDeviceScorer : IGraphicsDeviceScorer
@@ -159,8 +172,15 @@ namespace CodePlayground.Graphics.Vulkan
                 throw new InvalidOperationException("Context has already been initialized!");
             }
 
+            var title = application.Title;
+            var version = application.Version;
+
+            var apiVersionAttribute = application.GetType().GetCustomAttribute<VulkanAPIVersionAttribute>();
+            var apiVersion = apiVersionAttribute?.Version ?? new Version(1, 2, 0);
+            Console.WriteLine($"Initializing Vulkan for application {title} v{version} (API version {apiVersion})");
+
             RetrieveRequestedExtensionsAndLayers(application);
-            CreateInstance(application.Title, application.Version);
+            CreateInstance(title, version, apiVersion);
             CreateDebugMessenger();
 
             var physicalDevice = ChoosePhysicalDevice();
@@ -175,6 +195,18 @@ namespace CodePlayground.Graphics.Vulkan
             });
 
             mSwapchain = new VulkanSwapchain(windowSurface, mDevice, mInstance!.Value, window);
+            mAllocator = new VulkanMemoryAllocator(new VulkanMemoryAllocatorCreateInfo
+            {
+                VulkanAPIVersion = VulkanUtilities.MakeVersion(apiVersion),
+                VulkanAPIObject = API,
+                Instance = mInstance!.Value,
+                PhysicalDevice = physicalDevice.Device,
+                LogicalDevice = mDevice.Device,
+                PreferredLargeHeapBlockSize = 0,
+                HeapSizeLimits = null,
+                FrameInUseCount = mSwapchain.ImageCount
+            });
+
             mInitialized = true;
         }
 
@@ -355,7 +387,7 @@ namespace CodePlayground.Graphics.Vulkan
             return result;
         }
 
-        private unsafe void CreateInstance(string title, Version version)
+        private unsafe void CreateInstance(string title, Version appVersion, Version apiVersion)
         {
             using var marshal = new StringMarshal();
 
@@ -369,10 +401,10 @@ namespace CodePlayground.Graphics.Vulkan
                     var appInfo = VulkanUtilities.Init<ApplicationInfo>() with
                     {
                         PApplicationName = marshal.MarshalString(title),
-                        ApplicationVersion = VulkanUtilities.MakeVersion(version),
+                        ApplicationVersion = VulkanUtilities.MakeVersion(appVersion),
                         PEngineName = marshal.MarshalString("N/A"),
                         EngineVersion = Vk.MakeVersion(1, 0, 0),
-                        ApiVersion = Vk.Version12
+                        ApiVersion = VulkanUtilities.MakeVersion(apiVersion)
                     };
 
                     var createInfo = VulkanUtilities.Init<InstanceCreateInfo>() with
@@ -471,9 +503,13 @@ namespace CodePlayground.Graphics.Vulkan
 
             var extension = API.GetInstanceExtension<KhrSurface>(instance);
             presentQueue = VulkanSwapchain.FindPresentQueueFamily(extension, physicalDevice, surface);
-            presentQueue = VulkanSwapchain.FindPresentQueueFamily(extension, physicalDevice, surface);
 
             return surface;
+        }
+
+        IDeviceBuffer IGraphicsContext.CreateDeviceBuffer(DeviceBufferUsage usage, int size)
+        {
+            return new VulkanBuffer(mDevice!, mAllocator!, usage, size);
         }
 
         public void Dispose()
@@ -499,6 +535,9 @@ namespace CodePlayground.Graphics.Vulkan
                 API.DeviceWaitIdle(mDevice.Device);
             }
 
+            mAllocator?.Dispose();
+            mAllocator = null;
+
             mSwapchain?.Dispose();
             mSwapchain = null;
 
@@ -521,6 +560,7 @@ namespace CodePlayground.Graphics.Vulkan
         public IGraphicsDeviceScorer DeviceScorer { get; set; }
         public VulkanDevice Device => mDevice!;
         public VulkanSwapchain Swapchain => mSwapchain!;
+        public VulkanMemoryAllocator Allocator => mAllocator!;
 
         IGraphicsDevice IGraphicsContext.Device => mDevice!;
         ISwapchain IGraphicsContext.Swapchain => mSwapchain!;
@@ -529,6 +569,7 @@ namespace CodePlayground.Graphics.Vulkan
         private DebugUtilsMessengerEXT? mDebugMessenger;
         private VulkanDevice? mDevice;
         private VulkanSwapchain? mSwapchain;
+        private VulkanMemoryAllocator? mAllocator;
 
         private readonly Dictionary<VulkanExtensionLevel, Dictionary<VulkanExtensionType, Dictionary<string, bool>>> mRequestedExtensions;
         private bool mInitialized;

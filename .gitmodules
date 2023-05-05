@@ -1,0 +1,3 @@
+[submodule "Libraries/VMASharp/VMASharp"]
+	path = Libraries/VMASharp/VMASharp
+	url = https://github.com/sunkin351/VMASharp.git

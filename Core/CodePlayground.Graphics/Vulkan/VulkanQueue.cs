@@ -188,7 +188,7 @@ namespace CodePlayground.Graphics.Vulkan
             return new VulkanCommandBuffer(mPool, mDevice);
         }
 
-        void ICommandQueue.Submit(ICommandList commandList)
+        void ICommandQueue.Submit(ICommandList commandList, bool wait)
         {
             if (commandList is not VulkanCommandBuffer)
             {
@@ -196,7 +196,7 @@ namespace CodePlayground.Graphics.Vulkan
             }
 
             var commandBuffer = (VulkanCommandBuffer)commandList;
-            Submit(commandBuffer, default);
+            Submit(commandBuffer, wait: wait);
         }
 
         private unsafe Fence GetFence()
@@ -220,7 +220,7 @@ namespace CodePlayground.Graphics.Vulkan
             return fence;
         }
 
-        public unsafe void Submit(VulkanCommandBuffer commandBuffer, VulkanQueueSubmitInfo info = default)
+        public unsafe void Submit(VulkanCommandBuffer commandBuffer, VulkanQueueSubmitInfo info = default, bool wait = false)
         {
             if (commandBuffer.IsRecording)
             {
@@ -234,6 +234,7 @@ namespace CodePlayground.Graphics.Vulkan
             var buffer = commandBuffer.Buffer;
             var fence = info.Fence ?? GetFence();
 
+            var api = VulkanContext.API;
             fixed (Semaphore* waitSemaphorePtr = waitSemaphores)
             {
                 fixed (PipelineStageFlags* waitStagePtr = waitStages)
@@ -251,19 +252,22 @@ namespace CodePlayground.Graphics.Vulkan
                             PSignalSemaphores = signalSemaphorePtr,
                         };
 
-                        var api = VulkanContext.API;
                         api.QueueSubmit(mQueue, 1, submitInfo, fence).Assert();
-
-                        mStoredBuffers.Enqueue(new StoredCommandBuffer
-                        {
-                            CommandBuffer = commandBuffer,
-                            Fence = fence,
-                            OwnsFence = info.Fence is null
-                        });
                     }
                 }
             }
 
+            mStoredBuffers.Enqueue(new StoredCommandBuffer
+            {
+                CommandBuffer = commandBuffer,
+                Fence = fence,
+                OwnsFence = info.Fence is null
+            });
+
+            if (wait)
+            {
+                api.WaitForFences(mDevice, 1, fence, true, ulong.MaxValue).Assert();
+            }
         }
 
         private void WaitFence(Fence fence)

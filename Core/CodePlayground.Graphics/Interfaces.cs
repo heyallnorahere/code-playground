@@ -28,6 +28,20 @@ namespace CodePlayground.Graphics
         DepthStencil
     }
 
+    public enum DeviceBufferUsage
+    {
+        Vertex,
+        Index,
+        Uniform,
+        Staging
+    }
+
+    public enum DeviceBufferIndexType
+    {
+        UInt16,
+        UInt32
+    }
+
     public interface IGraphicsContext : IDisposable
     {
         public IGraphicsDeviceScorer DeviceScorer { set; }
@@ -36,6 +50,7 @@ namespace CodePlayground.Graphics
 
         public bool IsApplicable(WindowOptions options);
         public void Initialize(IWindow window, GraphicsApplication application);
+        public IDeviceBuffer CreateDeviceBuffer(DeviceBufferUsage usage, int size);
     }
 
     public interface IGraphicsDeviceInfo
@@ -68,7 +83,7 @@ namespace CodePlayground.Graphics
         public int CommandListCap { get; set; }
 
         public ICommandList Release();
-        public void Submit(ICommandList commandList);
+        public void Submit(ICommandList commandList, bool wait = false);
         public void Wait();
     }
 
@@ -97,5 +112,19 @@ namespace CodePlayground.Graphics
     public interface IFramebuffer : IDisposable
     {
         public Vector2D<int> Size { get; }
+    }
+
+    public interface IDeviceBuffer : IDisposable
+    {
+        public DeviceBufferUsage Usage { get; }
+        public int Size { get; }
+
+        public unsafe void CopyFromCPU(void* address, int size);
+        public unsafe void CopyToCPU(void* address, int size);
+
+        // command list commands
+        public void CopyBuffers(ICommandList commandList, IDeviceBuffer destination, int size, int srcOffset = 0, int dstOffset = 0);
+        public void BindVertices(ICommandList commandList, int index);
+        public void BindIndices(ICommandList commandList, DeviceBufferIndexType indexType);
     }
 }

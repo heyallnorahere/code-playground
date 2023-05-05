@@ -15,6 +15,7 @@ namespace VulkanTest
 {
     [ApplicationTitle("Vulkan Test")]
     [ApplicationGraphicsAPI(AppGraphicsAPI.Vulkan)]
+    [VulkanAPIVersion("1.3")]
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
     public class VulkanTestApp : GraphicsApplication
     {

@@ -79,11 +79,11 @@ namespace CodePlayground.Graphics.Vulkan
             return (T)result;
         }
 
-        public static uint MakeVersion(Version version)
+        public static Version32 MakeVersion(Version version)
         {
-            uint major = (uint)version.Major;
-            uint minor = (uint)version.Minor;
-            uint patch = (uint)version.Revision;
+            uint major = (uint)Math.Max(version.Major, 0);
+            uint minor = (uint)Math.Max(version.Minor, 0);
+            uint patch = (uint)Math.Max(version.Build, 0);
 
             return Vk.MakeVersion(major, minor, patch);
         }
