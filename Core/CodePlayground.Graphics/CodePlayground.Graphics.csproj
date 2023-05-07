@@ -16,6 +16,7 @@
     <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Windowing" Version="$(SilkNETVersion)" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="$(SixLaborsImageSharpVersion)" />
     <PackageReference Include="Ultz.Native.GLFW" Version="$(GLFWVersion)" />
   </ItemGroup>
 

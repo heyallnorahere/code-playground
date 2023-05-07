@@ -72,7 +72,7 @@ namespace CodePlayground.Graphics.Vulkan
                     DeviceBufferUsage.Vertex => MemoryUsage.GPU_Only,
                     DeviceBufferUsage.Index => MemoryUsage.GPU_Only,
                     DeviceBufferUsage.Uniform => MemoryUsage.CPU_To_GPU,
-                    DeviceBufferUsage.Staging => MemoryUsage.CPU_To_GPU,
+                    DeviceBufferUsage.Staging => MemoryUsage.CPU_Only,
                     _ => throw new ArgumentException("Invalid buffer usage!")
                 }
             });

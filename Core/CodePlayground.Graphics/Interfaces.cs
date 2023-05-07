@@ -1,5 +1,7 @@
 ﻿using Silk.NET.Maths;
 using Silk.NET.Windowing;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.Collections.Generic;
 
@@ -42,6 +44,43 @@ namespace CodePlayground.Graphics
         UInt32
     }
 
+    [Flags]
+    public enum DeviceImageUsageFlags
+    {
+        Render = 0x1,
+        ColorAttachment = 0x2,
+        DepthStencilAttachment = 0x4,
+        CopySource = 0x8,
+        CopyDestination = 0x10,
+    }
+
+    public enum DeviceImageFormat
+    {
+        RGBA8_SRGB,
+        RGBA8_UNORM,
+        RGB8_SRGB,
+        RGB8_UNORM,
+        DepthStencil
+    }
+
+    public enum DeviceImageLayoutName
+    {
+        Undefined,
+        ShaderReadOnly,
+        ColorAttachment,
+        DepthStencilAttachment,
+        CopySource,
+        CopyDestination
+    }
+
+    public struct DeviceImageInfo
+    {
+        public Size Size { get; set; }
+        public DeviceImageUsageFlags Usage { get; set; }
+        public DeviceImageFormat Format { get; set; }
+        public int MipLevels { get; set; }
+    }
+
     public interface IGraphicsContext : IDisposable
     {
         public IGraphicsDeviceScorer DeviceScorer { set; }
@@ -51,6 +90,7 @@ namespace CodePlayground.Graphics
         public bool IsApplicable(WindowOptions options);
         public void Initialize(IWindow window, GraphicsApplication application);
         public IDeviceBuffer CreateDeviceBuffer(DeviceBufferUsage usage, int size);
+        public IDeviceImage CreateDeviceImage(DeviceImageInfo info);
     }
 
     public interface IGraphicsDeviceInfo
@@ -126,5 +166,24 @@ namespace CodePlayground.Graphics
         public void CopyBuffers(ICommandList commandList, IDeviceBuffer destination, int size, int srcOffset = 0, int dstOffset = 0);
         public void BindVertices(ICommandList commandList, int index);
         public void BindIndices(ICommandList commandList, DeviceBufferIndexType indexType);
+    }
+
+    public interface IDeviceImage : IDisposable
+    {
+        public DeviceImageUsageFlags Usage { get; }
+        public Size Size { get; }
+        public int MipLevels { get; }
+        public DeviceImageFormat ImageFormat { get; }
+        public object Layout { get; set; }
+
+        public object GetLayout(DeviceImageLayoutName name);
+
+        public void Load<T>(Image<T> image) where T : unmanaged, IPixel<T>;
+        public void Load<T>(T[] data) where T : unmanaged;
+
+        // command list commands
+        public void CopyFromBuffer(ICommandList commandList, IDeviceBuffer source, object currentLayout);
+        public void CopyToBuffer(ICommandList commandList, IDeviceBuffer destination, object currentLayout);
+        public void TransitionLayout(ICommandList commandList, object srcLayout, object dstLayout);
     }
 }

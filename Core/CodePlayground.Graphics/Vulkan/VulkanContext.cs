@@ -512,6 +512,17 @@ namespace CodePlayground.Graphics.Vulkan
             return new VulkanBuffer(mDevice!, mAllocator!, usage, size);
         }
 
+        IDeviceImage IGraphicsContext.CreateDeviceImage(DeviceImageInfo info)
+        {
+            return new VulkanImage(mDevice!, mAllocator!, new VulkanImageCreateInfo
+            {
+                Size = info.Size,
+                Usage = info.Usage,
+                MipLevels = info.MipLevels,
+                Format = info.Format
+            });
+        }
+
         public void Dispose()
         {
             if (!mInitialized)

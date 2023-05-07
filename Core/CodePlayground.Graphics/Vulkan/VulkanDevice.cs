@@ -37,6 +37,12 @@ namespace CodePlayground.Graphics.Vulkan
             features = api.GetPhysicalDeviceFeatures(Device);
         }
 
+        public void GetFormatProperties(Format format, out FormatProperties properties)
+        {
+            var api = VulkanContext.API;
+            api.GetPhysicalDeviceFormatProperties(Device, format, out properties);
+        }
+
         public unsafe IReadOnlyList<QueueFamilyProperties> GetQueueFamilyProperties()
         {
             var api = VulkanContext.API;
