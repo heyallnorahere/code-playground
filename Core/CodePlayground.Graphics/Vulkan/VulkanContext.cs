@@ -1,8 +1,8 @@
-using Silk.NET.Core;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Windowing;
+using shaderc;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -132,6 +132,72 @@ namespace CodePlayground.Graphics.Vulkan
         public int Score { get; set; }
     }
 
+    internal sealed class VulkanShaderCompiler : IShaderCompiler
+    {
+        public VulkanShaderCompiler(Version vulkanVersion)
+        {
+            uint version = VulkanUtilities.MakeVersion(vulkanVersion);
+
+            mDisposed = false;
+            mCompiler = new Compiler(new Options(false));
+
+            mCompiler.Options.SetTargetEnvironment(TargetEnvironment.Vulkan, (EnvironmentVersion)version);
+            mCompiler.Options.TargetSpirVVersion = new SpirVVersion(1, 0);
+
+#if DEBUG
+            mCompiler.Options.EnableDebugInfo();
+            mCompiler.Options.Optimization = OptimizationLevel.Zero;
+#else
+            mCompiler.Options.Optimization = OptimizationLevel.Performance;
+#endif
+        }
+
+        public void Dispose()
+        {
+            if (mDisposed)
+            {
+                return;
+            }
+
+            mCompiler.Dispose();
+            mDisposed = true;
+        }
+
+        public byte[] Compile(string source, string path, ShaderLanguage language, ShaderType type, string entrypoint)
+        {
+            lock (mCompiler)
+            {
+                mCompiler.Options.SourceLanguage = language switch
+                {
+                    ShaderLanguage.GLSL => SourceLanguage.Glsl,
+                    ShaderLanguage.HLSL => SourceLanguage.Hlsl,
+                    _ => throw new ArgumentException("Invalid shader language!")
+                };
+
+                var kind = type switch
+                {
+                    ShaderType.Vertex => ShaderKind.VertexShader,
+                    ShaderType.Fragment => ShaderKind.FragmentShader,
+                    _ => throw new ArgumentException("Unsupported shader kind!")
+                };
+
+                using var result = mCompiler.Compile(source, path, kind, entrypoint);
+                if (result.Status != Status.Success)
+                {
+                    throw new InvalidOperationException($"Failed to compile shader ({result.Status}): {result.ErrorMessage}");
+                }
+
+                var spirv = new byte[result.CodeLength];
+                Marshal.Copy(result.CodePointer, spirv, 0, spirv.Length);
+
+                return spirv;
+            }
+        }
+
+        private readonly Compiler mCompiler;
+        private bool mDisposed;
+    }
+
     public sealed class VulkanContext : IGraphicsContext
     {
         public static Vk API { get; }
@@ -176,11 +242,11 @@ namespace CodePlayground.Graphics.Vulkan
             var version = application.Version;
 
             var apiVersionAttribute = application.GetType().GetCustomAttribute<VulkanAPIVersionAttribute>();
-            var apiVersion = apiVersionAttribute?.Version ?? new Version(1, 2, 0);
-            Console.WriteLine($"Initializing Vulkan for application {title} v{version} (API version {apiVersion})");
+            mVulkanVersion = apiVersionAttribute?.Version ?? new Version(1, 2, 0);
+            Console.WriteLine($"Initializing Vulkan for application {title} v{version} (API version {mVulkanVersion})");
 
             RetrieveRequestedExtensionsAndLayers(application);
-            CreateInstance(title, version, apiVersion);
+            CreateInstance(title, version, mVulkanVersion);
             CreateDebugMessenger();
 
             var physicalDevice = ChoosePhysicalDevice();
@@ -197,7 +263,7 @@ namespace CodePlayground.Graphics.Vulkan
             mSwapchain = new VulkanSwapchain(windowSurface, mDevice, mInstance!.Value, window);
             mAllocator = new VulkanMemoryAllocator(new VulkanMemoryAllocatorCreateInfo
             {
-                VulkanAPIVersion = VulkanUtilities.MakeVersion(apiVersion),
+                VulkanAPIVersion = VulkanUtilities.MakeVersion(mVulkanVersion),
                 VulkanAPIObject = API,
                 Instance = mInstance!.Value,
                 PhysicalDevice = physicalDevice.Device,
@@ -523,6 +589,16 @@ namespace CodePlayground.Graphics.Vulkan
             });
         }
 
+        public IShaderCompiler CreateCompiler()
+        {
+            return new VulkanShaderCompiler(mVulkanVersion!);
+        }
+
+        IShader IGraphicsContext.LoadShader(byte[] data, ShaderType type, string entrypoint)
+        {
+            return new VulkanShader(mDevice!, data, type, entrypoint);
+        }
+
         public void Dispose()
         {
             if (!mInitialized)
@@ -576,6 +652,7 @@ namespace CodePlayground.Graphics.Vulkan
         IGraphicsDevice IGraphicsContext.Device => mDevice!;
         ISwapchain IGraphicsContext.Swapchain => mSwapchain!;
 
+        private Version? mVulkanVersion;
         private Instance? mInstance;
         private DebugUtilsMessengerEXT? mDebugMessenger;
         private VulkanDevice? mDevice;

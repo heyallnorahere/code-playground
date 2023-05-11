@@ -1,0 +1,10 @@
+{
+    "Fragment.glsl": {
+        "Language": "GLSL",
+        "Type": "Fragment"
+    },
+    "Vertex.glsl": {
+        "Language": "GLSL",
+        "Type": "Vertex"
+    }
+}

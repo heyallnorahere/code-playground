@@ -73,6 +73,18 @@ namespace CodePlayground.Graphics
         CopyDestination
     }
 
+    public enum ShaderLanguage
+    {
+        HLSL,
+        GLSL
+    }
+
+    public enum ShaderType
+    {
+        Vertex,
+        Fragment
+    }
+
     public struct DeviceImageInfo
     {
         public Size Size { get; set; }
@@ -91,6 +103,8 @@ namespace CodePlayground.Graphics
         public void Initialize(IWindow window, GraphicsApplication application);
         public IDeviceBuffer CreateDeviceBuffer(DeviceBufferUsage usage, int size);
         public IDeviceImage CreateDeviceImage(DeviceImageInfo info);
+        public IShaderCompiler CreateCompiler();
+        public IShader LoadShader(byte[] data, ShaderType type, string entrypoint);
     }
 
     public interface IGraphicsDeviceInfo
@@ -185,5 +199,18 @@ namespace CodePlayground.Graphics
         public void CopyFromBuffer(ICommandList commandList, IDeviceBuffer source, object currentLayout);
         public void CopyToBuffer(ICommandList commandList, IDeviceBuffer destination, object currentLayout);
         public void TransitionLayout(ICommandList commandList, object srcLayout, object dstLayout);
+    }
+
+    public interface IShaderCompiler : IDisposable
+    {
+        public byte[] Compile(string source, string path, ShaderLanguage language, ShaderType type, string entrypoint);
+
+        // todo: reflect function
+    }
+
+    public interface IShader : IDisposable
+    {
+        public ShaderType Type { get; }
+        public string Entrypoint { get; }
     }
 }

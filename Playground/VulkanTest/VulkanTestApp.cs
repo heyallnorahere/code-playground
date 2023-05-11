@@ -3,8 +3,6 @@ using CodePlayground.Graphics;
 using CodePlayground.Graphics.Vulkan;
 using Silk.NET.Maths;
 using Silk.NET.Vulkan;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -32,36 +30,7 @@ namespace VulkanTest
             mContext = CreateGraphicsContext<VulkanContext>();
             mContext.Swapchain.VSync = true; // enable vsync
 
-            var imageSize = new Size(100, 100);
-            var data = new Rgba32[imageSize.Width * imageSize.Height];
-            Array.Fill(data, new Rgba32(0, 255, 0, 255));
-
-            IGraphicsContext context = mContext;
-            using var image = context.CreateDeviceImage(new DeviceImageInfo
-            {
-                Size = imageSize,
-                Usage = DeviceImageUsageFlags.Render | DeviceImageUsageFlags.CopySource | DeviceImageUsageFlags.CopyDestination,
-                Format = DeviceImageFormat.RGBA8_SRGB
-            });
-
-            using var stagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, data.Length * sizeof(Rgba32));
-            fixed (Rgba32* pointer = data)
-            {
-                stagingBuffer.CopyFromCPU(pointer, stagingBuffer.Size);
-            }
-
-            var queue = context.Device.GetQueue(CommandQueueFlags.Transfer);
-            var commandList = queue.Release();
-            commandList.Begin();
-
-            var newLayout = image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
-            image.TransitionLayout(commandList, image.Layout, newLayout);
-            image.CopyFromBuffer(commandList, stagingBuffer, newLayout);
-
-            commandList.End();
-            queue.Submit(commandList, wait: true);
-
-            image.Layout = newLayout;
+            mShaderLibrary = new ShaderLibrary(mContext, GetType().Assembly);
         }
 
         protected override void OnContextCreation(IGraphicsContext context)
@@ -104,6 +73,7 @@ namespace VulkanTest
         [EventHandler(nameof(Closing))]
         private void OnClose()
         {
+            mShaderLibrary?.Dispose();
             mContext?.Dispose();
         }
 
@@ -124,5 +94,6 @@ namespace VulkanTest
         }
 
         private VulkanContext? mContext;
+        private ShaderLibrary? mShaderLibrary;
     }
 }
