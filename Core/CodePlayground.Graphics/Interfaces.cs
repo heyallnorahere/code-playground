@@ -79,7 +79,7 @@ namespace CodePlayground.Graphics
         GLSL
     }
 
-    public enum ShaderType
+    public enum ShaderStage
     {
         Vertex,
         Fragment
@@ -104,7 +104,7 @@ namespace CodePlayground.Graphics
         public IDeviceBuffer CreateDeviceBuffer(DeviceBufferUsage usage, int size);
         public IDeviceImage CreateDeviceImage(DeviceImageInfo info);
         public IShaderCompiler CreateCompiler();
-        public IShader LoadShader(byte[] data, ShaderType type, string entrypoint);
+        public IShader LoadShader(byte[] data, ShaderStage stage, string entrypoint);
     }
 
     public interface IGraphicsDeviceInfo
@@ -203,14 +203,16 @@ namespace CodePlayground.Graphics
 
     public interface IShaderCompiler : IDisposable
     {
-        public byte[] Compile(string source, string path, ShaderLanguage language, ShaderType type, string entrypoint);
+        public ShaderLanguage PreferredLanguage { get; }
+
+        public byte[] Compile(string source, string path, ShaderLanguage language, ShaderStage stage, string entrypoint);
 
         // todo: reflect function
     }
 
     public interface IShader : IDisposable
     {
-        public ShaderType Type { get; }
+        public ShaderStage Stage { get; }
         public string Entrypoint { get; }
     }
 }

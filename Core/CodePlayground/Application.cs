@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Mono.Cecil;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -16,12 +17,12 @@ namespace CodePlayground
         private static Application? sInstance;
         public static Application Instance => sInstance ?? throw new InvalidOperationException();
 
-        internal static int RunApplication<T>(string[] args) where T : Application, new()
+        internal static int RunApplication<T>(AssemblyDefinition definition, string[] args) where T : Application, new()
         {
-            return RunApplication(typeof(T), args);
+            return RunApplication(typeof(T), definition, args);
         }
 
-        internal static int RunApplication(Type applicationType, string[] args)
+        internal static int RunApplication(Type applicationType, AssemblyDefinition definition, string[] args)
         {
             if (sInstance is not null)
             {
@@ -40,8 +41,10 @@ namespace CodePlayground
             }
 
             using var instance = (Application)constructor.Invoke(null);
-            instance.ApplyAttributes();
             sInstance = instance;
+            
+            instance.ApplyAttributes();
+            instance.mAssembly = definition;
 
             var copiedBinaries = instance.CopiedBinaries;
             if (copiedBinaries.Length > 0)
@@ -109,6 +112,8 @@ namespace CodePlayground
 
             Title = $"Untitled Application ({GetType().Name})";
             Version = Version.Parse(versionAttribute?.Version ?? "1.0.0.0");
+
+            mAssembly = null;
             mDisposed = false;
         }
 
@@ -137,6 +142,7 @@ namespace CodePlayground
             // nothing
         }
 
+        public AssemblyDefinition Assembly => mAssembly!;
         public string Title { get; internal set; }
         public Version Version { get; internal set; }
         public abstract bool IsRunning { get; }
@@ -163,5 +169,6 @@ namespace CodePlayground
         }
 
         private bool mDisposed;
+        private AssemblyDefinition? mAssembly;
     }
 }

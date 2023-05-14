@@ -1,6 +1,5 @@
 ﻿using CodePlayground.Graphics;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Converters;
+using CodePlayground.Graphics.Shaders;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -8,29 +7,29 @@ using System.Reflection;
 
 namespace VulkanTest
 {
-    [JsonObject(ItemRequired = Required.Always)]
-    internal struct ShaderMetadata
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    public sealed class CompiledShaderAttribute : Attribute
     {
-        public ShaderLanguage Language { get; set; }
-        public ShaderType Type { get; set; }
-        [JsonProperty(Required = Required.Default)]
-        public string? Entrypoint { get; set; }
+        public CompiledShaderAttribute()
+        {
+            ID = string.Empty;
+        }
+
+        public string ID { get; set; }
     }
 
     public sealed class ShaderLibrary : IDisposable
     {
-        public ShaderLibrary(IGraphicsContext context, Assembly assembly)
+        public ShaderLibrary(GraphicsApplication application)
         {
-            mAssembly = assembly;
-            mContext = context;
+            mAssembly = application.GetType().Assembly;
+            mContext = application.GraphicsContext!;
             mCompiler = mContext.CreateCompiler();
+            mTranspiler = ShaderTranspiler.Create(mCompiler.PreferredLanguage, application.Assembly);
             mShaders = new Dictionary<string, IShader>();
             mDisposed = false;
 
-            mSerializer = JsonSerializer.CreateDefault();
-            mSerializer.Converters.Add(new StringEnumConverter());
-
-            Reload();
+            Load();
         }
 
         public void Dispose()
@@ -40,20 +39,13 @@ namespace VulkanTest
                 return;
             }
 
-            CleanupShaders();
-            mCompiler.Dispose();
-
-            mDisposed = true;
-        }
-
-        private void CleanupShaders()
-        {
             foreach (var shader in mShaders.Values)
             {
                 shader.Dispose();
             }
 
-            mShaders.Clear();
+            mCompiler.Dispose();
+            mDisposed = true;
         }
 
         private TextReader? GetResourceStream(string name)
@@ -67,76 +59,44 @@ namespace VulkanTest
             return new StreamReader(stream, leaveOpen: false);
         }
 
-        public void Reload()
+        private void Load()
         {
-            CleanupShaders();
-
-            string dataRoot = $"{mAssembly.GetName().Name}.Shaders";
-            string metadataFile = $"{dataRoot}.Metadata.json";
-
-            using var metadataFileReader = GetResourceStream(metadataFile);
-            if (metadataFileReader is null)
+            var types = mAssembly.GetTypes();
+            foreach (var type in types)
             {
-                throw new FileNotFoundException("Failed to find metadata file!");
-            }
-
-            using var jsonReader = new JsonTextReader(metadataFileReader)
-            {
-                CloseInput = false
-            };
-
-            var metadataDirectory = mSerializer.Deserialize<Dictionary<string, ShaderMetadata>>(jsonReader);
-            if (metadataDirectory is null)
-            {
-                throw new InvalidOperationException("Failed to parse metadata JSON!");
-            }
-
-            foreach (string relativePath in metadataDirectory.Keys)
-            {
-                if (relativePath.Contains(".."))
+                var attribute = type.GetCustomAttribute<CompiledShaderAttribute>();
+                if (attribute is null)
                 {
-                    throw new ArgumentException("Cannot escape shader directory!");
+                    continue;
                 }
 
-                var relativeUnixPath = relativePath.Replace('\\', '/');
-                var relativeName = relativeUnixPath.Replace('/', '.');
-                var resourceName = $"{dataRoot}.{relativeName}";
-
-                var info = mAssembly.GetManifestResourceInfo(resourceName);
-                if (info is null)
+                var source = mTranspiler.Transpile(type);
+                string shaderName = string.IsNullOrEmpty(attribute.ID) ? type.Name : attribute.ID;
+                foreach (var stage in source.Keys)
                 {
-                    throw new InvalidOperationException($"Invalid resource: {resourceName}");
+                    string shaderId = $"{shaderName}/{stage}";
+                    if (mShaders.ContainsKey(shaderId))
+                    {
+                        throw new InvalidOperationException($"Duplicate shader stage: {shaderId}");
+                    }
+
+                    var stageSource = source[stage];
+                    string path = $"{type.FullName}::{stageSource.Entrypoint}";
+
+                    byte[] bytecode = mCompiler.Compile(stageSource.Source, path, mTranspiler.OutputLanguage, stage, stageSource.Entrypoint);
+                    var shader = mContext.LoadShader(bytecode, stage, stageSource.Entrypoint);
+
+                    mShaders.Add(shaderId, shader);
                 }
-
-                var segments = relativeUnixPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-                if (info.FileName is not null && info.FileName != segments[^1])
-                {
-                    throw new InvalidOperationException($"No such file: {relativeUnixPath}");
-                }
-
-                using var reader = GetResourceStream(resourceName);
-                if (reader is null)
-                {
-                    throw new InvalidOperationException("Failed to open stream to shader file!");
-                }
-
-                var source = reader.ReadToEnd();
-                var metadata = metadataDirectory[relativePath];
-                string entrypoint = metadata.Entrypoint ?? "main";
-
-                byte[] bytecode = mCompiler.Compile(source, $"<manifest>:{relativeUnixPath}", metadata.Language, metadata.Type, entrypoint);
-                var shader = mContext.LoadShader(bytecode, metadata.Type, entrypoint);
-
-                mShaders.Add(relativeUnixPath, shader);
             }
         }
 
         public IReadOnlyDictionary<string, IShader> Shaders => mShaders;
 
         private readonly Assembly mAssembly;
-        private readonly JsonSerializer mSerializer;
         private readonly IGraphicsContext mContext;
         private readonly IShaderCompiler mCompiler;
+        private readonly ShaderTranspiler mTranspiler;
         private readonly Dictionary<string, IShader> mShaders;
 
         private bool mDisposed;

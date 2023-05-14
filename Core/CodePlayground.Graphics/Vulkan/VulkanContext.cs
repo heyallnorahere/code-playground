@@ -163,7 +163,7 @@ namespace CodePlayground.Graphics.Vulkan
             mDisposed = true;
         }
 
-        public byte[] Compile(string source, string path, ShaderLanguage language, ShaderType type, string entrypoint)
+        public byte[] Compile(string source, string path, ShaderLanguage language, ShaderStage stage, string entrypoint)
         {
             lock (mCompiler)
             {
@@ -174,11 +174,11 @@ namespace CodePlayground.Graphics.Vulkan
                     _ => throw new ArgumentException("Invalid shader language!")
                 };
 
-                var kind = type switch
+                var kind = stage switch
                 {
-                    ShaderType.Vertex => ShaderKind.VertexShader,
-                    ShaderType.Fragment => ShaderKind.FragmentShader,
-                    _ => throw new ArgumentException("Unsupported shader kind!")
+                    ShaderStage.Vertex => ShaderKind.VertexShader,
+                    ShaderStage.Fragment => ShaderKind.FragmentShader,
+                    _ => throw new ArgumentException("Unsupported shader stage!")
                 };
 
                 using var result = mCompiler.Compile(source, path, kind, entrypoint);
@@ -193,6 +193,8 @@ namespace CodePlayground.Graphics.Vulkan
                 return spirv;
             }
         }
+
+        public ShaderLanguage PreferredLanguage => ShaderLanguage.GLSL;
 
         private readonly Compiler mCompiler;
         private bool mDisposed;
@@ -594,9 +596,9 @@ namespace CodePlayground.Graphics.Vulkan
             return new VulkanShaderCompiler(mVulkanVersion!);
         }
 
-        IShader IGraphicsContext.LoadShader(byte[] data, ShaderType type, string entrypoint)
+        IShader IGraphicsContext.LoadShader(byte[] data, ShaderStage stage, string entrypoint)
         {
-            return new VulkanShader(mDevice!, data, type, entrypoint);
+            return new VulkanShader(mDevice!, data, stage, entrypoint);
         }
 
         public void Dispose()

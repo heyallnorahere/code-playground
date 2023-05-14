@@ -9,15 +9,4 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
-  <!-- todo: replace when reflection translation is implemented -->
-  <ItemGroup>
-    <Shaders Include="Shaders\**\*" />
-    <Content Remove="@(Shaders)" />
-    <EmbeddedResource Include="@(Shaders)" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="$(NewtonsoftJsonVersion)" />
-  </ItemGroup>
-
 </Project>

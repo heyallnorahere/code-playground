@@ -11,6 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Mono.Cecil" Version="$(MonoCecilVersion)" />
     <PackageReference Include="shaderc.net" Version="$(shadercnetVersion)" />
     <PackageReference Include="Silk.NET.Input" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan" Version="$(SilkNETVersion)" />

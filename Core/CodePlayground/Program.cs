@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Mono.Cecil;
+using System;
 using System.Reflection;
 
 namespace CodePlayground
@@ -12,7 +13,10 @@ namespace CodePlayground
                 throw new ArgumentException("No assembly was provided!");
             }
 
-            var assembly = Assembly.LoadFrom(args[0]);
+            string path = args[0];
+            var definition = AssemblyDefinition.ReadAssembly(path);
+            var assembly = Assembly.LoadFrom(path);
+
             var loadedAppAttribute = assembly.GetCustomAttribute<LoadedApplicationAttribute>();
             if (loadedAppAttribute is null)
             {
@@ -20,7 +24,7 @@ namespace CodePlayground
             }
 
             var applicationType = loadedAppAttribute.ApplicationType;
-            return Application.RunApplication(applicationType, args[1..]);
+            return Application.RunApplication(applicationType, definition, args[1..]);
         }
     }
 }

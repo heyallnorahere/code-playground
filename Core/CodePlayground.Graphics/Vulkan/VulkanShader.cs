@@ -4,10 +4,10 @@ namespace CodePlayground.Graphics.Vulkan
 {
     public sealed class VulkanShader : IShader
     {
-        public VulkanShader(VulkanDevice device, byte[] data, ShaderType type, string entrypoint)
+        public VulkanShader(VulkanDevice device, byte[] data, ShaderStage stage, string entrypoint)
         {
             mDevice = device;
-            mType = type;
+            mStage = stage;
             mEntrypoint = entrypoint;
             mDisposed = false;
 
@@ -59,14 +59,14 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        public ShaderType Type => mType;
+        public ShaderStage Stage => mStage;
         public string Entrypoint => mEntrypoint;
         public ShaderModule Module => mModule;
 
         private readonly VulkanDevice mDevice;
         private ShaderModule mModule;
 
-        private readonly ShaderType mType;
+        private readonly ShaderStage mStage;
         private readonly string mEntrypoint;
         private bool mDisposed;
     }

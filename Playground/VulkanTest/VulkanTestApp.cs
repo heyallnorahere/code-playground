@@ -15,7 +15,6 @@ namespace VulkanTest
 {
     [ApplicationTitle("Vulkan Test")]
     [ApplicationGraphicsAPI(AppGraphicsAPI.Vulkan)]
-    [VulkanAPIVersion("1.3")]
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
     public class VulkanTestApp : GraphicsApplication
     {
@@ -30,7 +29,7 @@ namespace VulkanTest
             mContext = CreateGraphicsContext<VulkanContext>();
             mContext.Swapchain.VSync = true; // enable vsync
 
-            mShaderLibrary = new ShaderLibrary(mContext, GetType().Assembly);
+            mShaderLibrary = new ShaderLibrary(this);
         }
 
         protected override void OnContextCreation(IGraphicsContext context)
