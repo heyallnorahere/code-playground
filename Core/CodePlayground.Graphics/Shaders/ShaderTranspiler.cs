@@ -67,6 +67,28 @@ namespace CodePlayground.Graphics.Shaders
             throw new ArgumentException("Failed to find method!");
         }
 
+        protected static Type? ResolveType(TypeReference reference)
+        {
+            string assemblyName = reference.Module.Assembly.Name.Name;
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+
+            Assembly? typeAssembly = null;
+            foreach (var assembly in assemblies)
+            {
+                if (assembly.GetName().Name == assemblyName)
+                {
+                    typeAssembly = assembly;
+                }
+            }
+
+            if (typeAssembly is null)
+            {
+                throw new ArgumentException("Couldn't find the specified assembly!");
+            }
+
+            return typeAssembly.GetType(reference.FullName);
+        }
+
         protected abstract string TranspileStage(Type type, MethodInfo entrypoint, ShaderStage stage);
         public IReadOnlyDictionary<ShaderStage, StageOutput> Transpile(Type type)
         {
