@@ -229,6 +229,20 @@ namespace CodePlayground
             return unboundCount;
         }
 
+        public static List<ILInstruction>? GetILAsInstructionList(this MethodBody body, Module module)
+        {
+            var code = body.GetILAsByteArray();
+            if (code is null)
+            {
+                return null;
+            }
+
+            var parser = new ILParser();
+            parser.Parse(code, module);
+
+            return parser.Instructions;
+        }
+
         public static string? GetAssemblyDirectory(this Assembly assembly) => Path.GetDirectoryName(assembly.Location);
     }
 }

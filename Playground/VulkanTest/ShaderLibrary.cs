@@ -25,7 +25,7 @@ namespace VulkanTest
             mAssembly = application.GetType().Assembly;
             mContext = application.GraphicsContext!;
             mCompiler = mContext.CreateCompiler();
-            mTranspiler = ShaderTranspiler.Create(mCompiler.PreferredLanguage, application.Assembly);
+            mTranspiler = ShaderTranspiler.Create(mCompiler.PreferredLanguage);
             mShaders = new Dictionary<string, IShader>();
             mDisposed = false;
 
