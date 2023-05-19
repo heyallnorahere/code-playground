@@ -181,7 +181,7 @@ namespace CodePlayground.Graphics.Vulkan
                     _ => throw new ArgumentException("Unsupported shader stage!")
                 };
 
-                using var result = mCompiler.Compile(source, path, kind, entrypoint);
+                using var result = mCompiler.Compile(source, path, kind, entry_point: entrypoint);
                 if (result.Status != Status.Success)
                 {
                     throw new InvalidOperationException($"Failed to compile shader ({result.Status}): {result.ErrorMessage}");

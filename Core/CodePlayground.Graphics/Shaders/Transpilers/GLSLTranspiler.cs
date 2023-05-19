@@ -27,7 +27,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 // todo: parse method signature
             }
 
-            var evaluationStack = new Stack<string>();
+            var evaluationStack = new Stack<object?>();
             foreach (var instruction in instructions)
             {
                 // todo: interpret instruction
