@@ -19,11 +19,9 @@ namespace CodePlayground.Graphics.Shaders
         public PrimitiveShaderTypeAttribute(string name)
         {
             Name = name;
-            IsGeneric = false;
         }
 
         public string Name { get; }
-        public bool IsGeneric { get; set; }
     }
 
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]

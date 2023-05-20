@@ -39,7 +39,7 @@ namespace VulkanTest.Shaders
         {
             return new VertexOut
             {
-                Position = new Vector4<float>(input.Position, 1f),
+                Position = new Vector4<float>(input.Position, Add(0.3f, 0.7f)),
                 OutputData = new FragmentIn
                 {
                     Normal = Normalize(input.Normal),

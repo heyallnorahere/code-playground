@@ -11,25 +11,13 @@ namespace CodePlayground.Graphics.Shaders
         }
 
         [BuiltinShaderFunction("normalize")]
-        public Vector2<float> Normalize(Vector2<float> vector)
-        {
-            throw new NotImplementedException();
-        }
-
-        [BuiltinShaderFunction("normalize")]
-        public Vector3<float> Normalize(Vector3<float> vector)
-        {
-            throw new NotImplementedException();
-        }
-
-        [BuiltinShaderFunction("normalize")]
-        public Vector4<float> Normalize(Vector4<float> vector)
+        public T Normalize<T>(T vector) where T : Vector2<float>
         {
             throw new NotImplementedException();
         }
     }
 
-    [PrimitiveShaderType("vec2", IsGeneric = true)]
+    [PrimitiveShaderType("vec2")]
     public class Vector2<T> where T : unmanaged
     {
         public Vector2(T x, T y)
@@ -42,9 +30,11 @@ namespace CodePlayground.Graphics.Shaders
 
         public T R { get; set; }
         public T G { get; set; }
+
+        // todo: swizzles
     }
 
-    [PrimitiveShaderType("vec3", IsGeneric = true)]
+    [PrimitiveShaderType("vec3")]
     public class Vector3<T> : Vector2<T> where T : unmanaged
     {
         public Vector3(T x, T y, T z) : base(x, y)
@@ -64,9 +54,11 @@ namespace CodePlayground.Graphics.Shaders
 
         public T Z { get; set; }
         public T B { get; set; }
+
+        // todo: swizzles
     }
 
-    [PrimitiveShaderType("vec4", IsGeneric = true)]
+    [PrimitiveShaderType("vec4")]
     public class Vector4<T> : Vector3<T> where T : unmanaged
     {
         public Vector4(T x, T y, T z, T w) : base(x, y, z)
@@ -84,7 +76,14 @@ namespace CodePlayground.Graphics.Shaders
             throw new NotImplementedException();
         }
 
+        public Vector4(Vector2<T> xy, Vector2<T> zw) : base(xy.X, xy.Y, zw.X)
+        {
+            throw new NotImplementedException();
+        }
+
         public T W { get; set; }
         public T A { get; set; }
+
+        // todo: swizzles
     }
 }
