@@ -296,8 +296,6 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     continue;
                 }
 
-                Console.WriteLine($"Parsing instruction: {instruction.OpCode.Name} {instruction.Operand?.ToString() ?? "null"}");
-
                 var opCode = instruction.OpCode;
                 var name = opCode.Name?.ToLower();
 
@@ -364,7 +362,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 var layoutAttribute = field.GetCustomAttribute<LayoutAttribute>();
                                 if (layoutAttribute is not null && layoutAttribute.Location >= 0)
                                 {
-                                    expression = "__input_" + expression.Replace(".", "_");
+                                    expression = "_input_" + expression.Replace(".", "_");
                                     if (!mStageIO.ContainsKey(expression))
                                     {
                                         mStageIO.Add(expression, new StageIOField

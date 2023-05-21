@@ -9,8 +9,11 @@ namespace VulkanTest.Shaders
     {
         public struct VertexIn
         {
+            [Layout(Location = 0)]
             public Vector3<float> Position;
+            [Layout(Location = 1)]
             public Vector3<float> Normal;
+            [Layout(Location = 2)]
             public Vector2<float> UV;
         }
 
