@@ -5,7 +5,7 @@ using System.Runtime.CompilerServices;
 namespace VulkanTest.Shaders
 {
     [CompiledShader]
-    public sealed class TestShader : ShaderBase
+    public sealed class TestShader
     {
         public struct VertexIn
         {
@@ -22,9 +22,9 @@ namespace VulkanTest.Shaders
 
         public struct FragmentIn
         {
-            [ShaderLocation(0)]
+            [Layout(Location = 0)]
             public Vector3<float> Normal;
-            [ShaderLocation(1)]
+            [Layout(Location = 1)]
             public Vector2<float> UV;
         }
 
@@ -42,14 +42,14 @@ namespace VulkanTest.Shaders
                 Position = new Vector4<float>(input.Position, Add(0.3f, 0.7f)),
                 OutputData = new FragmentIn
                 {
-                    Normal = Normalize(input.Normal),
+                    Normal = BuiltinFunctions.Normalize(input.Normal),
                     UV = input.UV
                 }
             };
         }
 
         [ShaderEntrypoint(ShaderStage.Fragment)]
-        [return: ShaderLocation(0)]
+        [return: Layout(Location = 0)]
         public Vector4<float> FragmentMain(FragmentIn input)
         {
             return new Vector4<float>(0f, 1f, 0f, 1f);

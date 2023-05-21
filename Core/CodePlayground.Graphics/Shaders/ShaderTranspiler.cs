@@ -29,9 +29,9 @@ namespace CodePlayground.Graphics.Shaders
         protected abstract string TranspileStage(Type type, MethodInfo entrypoint, ShaderStage stage);
         public IReadOnlyDictionary<ShaderStage, StageOutput> Transpile(Type type)
         {
-            if (!type.Extends(typeof(ShaderBase)))
+            if (!type.IsClass)
             {
-                throw new ArgumentException("Shader must extend ShaderBase!");
+                throw new ArgumentException("Shader type must be a class!");
             }
 
             var stages = new Dictionary<ShaderStage, StageOutput>();
@@ -61,7 +61,7 @@ namespace CodePlayground.Graphics.Shaders
             return stages;
         }
 
-        public IReadOnlyDictionary<ShaderStage, StageOutput> Transpile<T>() where T : ShaderBase
+        public IReadOnlyDictionary<ShaderStage, StageOutput> Transpile<T>() where T : class
         {
             return Transpile(typeof(T));
         }

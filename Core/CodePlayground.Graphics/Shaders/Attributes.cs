@@ -36,13 +36,24 @@ namespace CodePlayground.Graphics.Shaders
     }
 
     [AttributeUsage(AttributeTargets.ReturnValue | AttributeTargets.Parameter | AttributeTargets.Field, AllowMultiple = false, Inherited = false)]
-    public sealed class ShaderLocationAttribute : Attribute
+    public sealed class LayoutAttribute : Attribute
     {
-        public ShaderLocationAttribute(uint location)
+        public LayoutAttribute()
         {
-            Location = location;
+            Location = -1;
         }
 
-        public uint Location { get; }
+        public int Location { get; set; }
+    }
+
+    [AttributeUsage(AttributeTargets.Field, AllowMultiple = false, Inherited = true)]
+    public sealed class ShaderFieldNameAttribute : Attribute
+    {
+        public ShaderFieldNameAttribute(string name)
+        {
+            Name = name;
+        }
+
+        public string Name { get; set; }
     }
 }

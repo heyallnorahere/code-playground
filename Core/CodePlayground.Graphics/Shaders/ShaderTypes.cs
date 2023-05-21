@@ -2,16 +2,16 @@ using System;
 
 namespace CodePlayground.Graphics.Shaders
 {
-    public abstract class ShaderBase
+    public static class BuiltinFunctions
     {
         [BuiltinShaderFunction("length")]
-        public float Length(Vector2<float> vector)
+        public static float Length(Vector2<float> vector)
         {
             throw new NotImplementedException();
         }
 
         [BuiltinShaderFunction("normalize")]
-        public T Normalize<T>(T vector) where T : Vector2<float>
+        public static T Normalize<T>(T vector) where T : Vector2<float>
         {
             throw new NotImplementedException();
         }

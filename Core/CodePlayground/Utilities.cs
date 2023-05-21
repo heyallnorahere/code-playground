@@ -111,6 +111,11 @@ namespace CodePlayground
 
         public static bool Extends(this Type derived, Type baseType)
         {
+            if (derived == baseType)
+            {
+                return true;
+            }
+
             if (derived.BaseType != baseType)
             {
                 return derived.BaseType?.Extends(baseType) ?? false;
