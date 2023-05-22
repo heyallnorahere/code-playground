@@ -34,6 +34,21 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         public string TypeName { get; set; }
     }
 
+    internal enum ConditionalType
+    {
+        Unconditional,
+        True,
+        False
+    }
+
+    internal struct JumpInstruction
+    {
+        public ConditionalType Type { get; set; }
+        public string? Expression { get; set; }
+        public int Offset { get; set; }
+        public int Destination { get; set; }
+    }
+
     internal sealed class GLSLTranspiler : ShaderTranspiler
     {
         // shaderc.net does not pass your entrypoint name through at all, so...
@@ -289,7 +304,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private void ProcessType(Type type, Type shaderType)
         {
-            if (mStructDependencies.ContainsKey(type) || !type.IsValueType)
+            if (mStructDependencies.ContainsKey(type) || !type.IsValueType || type.IsPrimitive)
             {
                 return;
             }
@@ -312,7 +327,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 var fieldTypeName = GetTypeName(fieldType, shaderType, true);
 
                 dependencyInfo.DefinedFields.Add(fieldName, fieldTypeName);
-                if (fieldType != type && fieldType.IsValueType)
+                if (fieldType != type && fieldType.IsValueType && !fieldType.IsPrimitive)
                 {
                     dependencyInfo.Dependencies.Add(fieldType);
 
@@ -411,20 +426,18 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             }
 
             var evaluationStack = new Stack<string>();
+            var sourceOffsets = new Dictionary<int, int>();
             var dependencies = new List<MethodInfo>();
+            var jumps = new List<JumpInstruction>();
 
-            int skipTo = -1;
             foreach (var instruction in instructions)
             {
-                if (skipTo > instruction.Offset)
-                {
-                    continue;
-                }
+                sourceOffsets.Add(instruction.Offset, builder.Length);
 
                 var opCode = instruction.OpCode;
                 var name = opCode.Name?.ToLower();
 
-                if (string.IsNullOrEmpty(name) || name == "nop")
+                if (string.IsNullOrEmpty(name) || name == "nop" || name == "break")
                 {
                     continue;
                 }
@@ -638,7 +651,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         var index = evaluationStack.Pop();
                         var array = evaluationStack.Pop();
 
-                        builder.AppendLine($"({array})[{index}] = {expression};");
+                        builder.AppendLine($"{array}[{index}] = {expression};");
                     }
                     else
                     {
@@ -647,7 +660,28 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 }
                 else if (name.StartsWith("br"))
                 {
-                    skipTo = Convert.ToInt32(instruction.Operand!);
+                    var jump = new JumpInstruction
+                    {
+                        Offset = instruction.Offset,
+                        Destination = Convert.ToInt32(instruction.Operand!)
+                    };
+
+                    var conditionalOp = name[2..];
+                    if (conditionalOp.StartsWith("false"))
+                    {
+                        jump.Type = ConditionalType.False;
+                    }
+                    else if (conditionalOp.StartsWith("true"))
+                    {
+                        jump.Type = ConditionalType.True;
+                    }
+                    else
+                    {
+                        jump.Type = ConditionalType.Unconditional;
+                    }
+
+                    jump.Expression = jump.Type != ConditionalType.Unconditional ? evaluationStack.Pop() : null;
+                    jumps.Add(jump);
                 }
                 else if (name.StartsWith("add"))
                 {
@@ -676,6 +710,27 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     var lhs = evaluationStack.Pop();
 
                     evaluationStack.Push($"({lhs} / {rhs})");
+                }
+                else if (name.StartsWith("ceq"))
+                {
+                    var rhs = evaluationStack.Pop();
+                    var lhs = evaluationStack.Pop();
+
+                    evaluationStack.Push($"{lhs} == {rhs}");
+                }
+                else if (name.StartsWith("cgt"))
+                {
+                    var rhs = evaluationStack.Pop();
+                    var lhs = evaluationStack.Pop();
+
+                    evaluationStack.Push($"{lhs} > {rhs}");
+                }
+                else if (name.StartsWith("clt"))
+                {
+                    var rhs = evaluationStack.Pop();
+                    var lhs = evaluationStack.Pop();
+
+                    evaluationStack.Push($"{lhs} < {rhs}");
                 }
                 else
                 {
@@ -722,6 +777,32 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         default:
                             throw new InvalidOperationException($"Instruction {name} has not been implemented yet!");
                     }
+                }
+            }
+
+            var offsetInstructionMap = new Dictionary<int, int>();
+            for (int i = 0; i < instructions.Count; i++)
+            {
+                offsetInstructionMap.Add(instructions[i].Offset, i);
+            }
+
+            foreach (var jump in jumps)
+            {
+                var insertedCode = "// jump to function offset 0x" + jump.Destination.ToString("X");
+                if (jump.Type != ConditionalType.Unconditional)
+                {
+                    insertedCode += $" if \"{jump.Expression}\" is {jump.Type.ToString().ToLower()}";
+                }
+
+                int insertOffset = sourceOffsets[jump.Offset];
+                insertedCode += '\n';
+                builder.Insert(insertOffset, insertedCode);
+
+                int instructionIndex = offsetInstructionMap[jump.Offset];
+                for (int i = instructionIndex; i < instructions.Count; i++)
+                {
+                    int offset = instructions[i].Offset;
+                    sourceOffsets[offset] += insertedCode.Length;
                 }
             }
 

@@ -61,6 +61,10 @@ namespace VulkanTest
 
         private void Load()
         {
+            var assemblyDirectory = Path.GetDirectoryName(mAssembly.Location);
+            var shaderDirectory = Path.Join(assemblyDirectory, "shaders");
+            var sourceDirectory = Path.Join(shaderDirectory, "source");
+
             var types = mAssembly.GetTypes();
             foreach (var type in types)
             {
@@ -74,16 +78,27 @@ namespace VulkanTest
                 string shaderName = string.IsNullOrEmpty(attribute.ID) ? type.Name : attribute.ID;
                 foreach (var stage in source.Keys)
                 {
-                    string shaderId = $"{shaderName}/{stage}";
+                    string shaderId = Path.Join(shaderName, stage.ToString());
                     if (mShaders.ContainsKey(shaderId))
                     {
                         throw new InvalidOperationException($"Duplicate shader stage: {shaderId}");
                     }
 
-                    var stageSource = source[stage];
-                    string path = $"{type.FullName}::{stageSource.Entrypoint}";
+                    var language = mTranspiler.OutputLanguage;
+                    string sourcePath = Path.Join(sourceDirectory, shaderId) + '.' + language.ToString().ToLower();
 
-                    byte[] bytecode = mCompiler.Compile(stageSource.Source, path, mTranspiler.OutputLanguage, stage, stageSource.Entrypoint);
+                    var shaderSourceDirectory = Path.GetDirectoryName(sourcePath);
+                    Directory.CreateDirectory(shaderSourceDirectory!);
+
+                    var stageSource = source[stage];
+                    using (var sourceStream = new FileStream(sourcePath, FileMode.Create))
+                    {
+                        using var writer = new StreamWriter(sourceStream);
+                        writer.Write(stageSource.Source);
+                        writer.Flush();
+                    }
+
+                    byte[] bytecode = mCompiler.Compile(stageSource.Source, sourcePath, language, stage, stageSource.Entrypoint);
                     var shader = mContext.LoadShader(bytecode, stage, stageSource.Entrypoint);
 
                     mShaders.Add(shaderId, shader);

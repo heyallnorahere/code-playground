@@ -41,9 +41,19 @@ namespace VulkanTest.Shaders
         [ShaderEntrypoint(ShaderStage.Vertex)]
         public VertexOut VertexMain(VertexIn input)
         {
+            float w;
+            if (input.Position.X > 0.5f)
+            {
+                w = Add(0.3f, 0.7f);
+            }
+            else
+            {
+                w = Add(0.6f, 0.4f);
+            }
+
             return new VertexOut
             {
-                Position = new Vector4<float>(input.Position, Add(0.3f, 0.7f)),
+                Position = new Vector4<float>(input.Position, w),
                 OutputData = new FragmentIn
                 {
                     Normal = BuiltinFunctions.Normalize(input.Normal),

@@ -25,11 +25,15 @@ namespace CodePlayground.Graphics.Shaders
             throw new NotImplementedException();
         }
 
-        public T X { get; set; }
-        public T Y { get; set; }
+        [ShaderFieldName("x")]
+        public T X;
+        [ShaderFieldName("y")]
+        public T Y;
 
-        public T R { get; set; }
-        public T G { get; set; }
+        [ShaderFieldName("r")]
+        public T R;
+        [ShaderFieldName("g")]
+        public T G;
 
         // todo: swizzles
     }
@@ -52,8 +56,10 @@ namespace CodePlayground.Graphics.Shaders
             throw new NotImplementedException();
         }
 
-        public T Z { get; set; }
-        public T B { get; set; }
+        [ShaderFieldName("z")]
+        public T Z;
+        [ShaderFieldName("b")]
+        public T B;
 
         // todo: swizzles
     }
@@ -81,8 +87,10 @@ namespace CodePlayground.Graphics.Shaders
             throw new NotImplementedException();
         }
 
-        public T W { get; set; }
-        public T A { get; set; }
+        [ShaderFieldName("w")]
+        public T W;
+        [ShaderFieldName("a")]
+        public T A;
 
         // todo: swizzles
     }
