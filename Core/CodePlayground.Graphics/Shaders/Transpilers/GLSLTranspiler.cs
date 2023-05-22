@@ -495,7 +495,33 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             argumentIndex--;
                         }
 
-                        expression = argumentIndex < 0 ? "this" : parameterNames[argumentIndex];
+                        if (argumentIndex < 0)
+                        {
+                            expression = "this";
+                        }
+                        else
+                        {
+                            expression = parameterNames[argumentIndex];
+                            if (entrypoint)
+                            {
+                                var parameter = parameters[argumentIndex];
+                                var attribute = parameter.GetCustomAttribute<LayoutAttribute>();
+
+                                if (attribute is not null && attribute.Location >= 0)
+                                {
+                                    expression = "_input_" + expression;
+                                    if (!mStageIO.ContainsKey(expression))
+                                    {
+                                        mStageIO.Add(expression, new StageIOField
+                                        {
+                                            Direction = "in",
+                                            Location = attribute.Location,
+                                            TypeName = GetTypeName(parameter.ParameterType, type, true)
+                                        });
+                                    }
+                                }
+                            }
+                        }
                     }
                     else if (loadType.StartsWith("elem"))
                     {
