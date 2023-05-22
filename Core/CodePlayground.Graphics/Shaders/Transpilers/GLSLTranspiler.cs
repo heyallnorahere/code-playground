@@ -248,6 +248,15 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 throw new ArgumentException("Cannot transpile a method without a body!");
             }
 
+            var parameterNames = new List<string>();
+            var parameters = method.GetParameters();
+
+            for (int i = 0; i < parameters.Length; i++)
+            {
+                var name = parameters[i].Name ?? $"param_{i}";
+                parameterNames.Add(name);
+            }
+
             string returnTypeString, parameterString;
             if (entrypoint)
             {
@@ -259,7 +268,6 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 returnTypeString = GetTypeName(method.ReturnType, type, true);
                 parameterString = string.Empty;
 
-                var parameters = method.GetParameters();
                 for (int i = 0; i < parameters.Length; i++)
                 {
                     if (i > 0)
@@ -268,9 +276,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     }
 
                     var parameter = parameters[i];
-                    var parameterName = parameter.Name ?? $"param_{i}";
-
-                    parameterString += $"{GetTypeName(parameter.ParameterType, type, true)} {parameterName}";
+                    parameterString += $"{GetTypeName(parameter.ParameterType, type, true)} {parameterNames[i]}";
                 }
             }
 
@@ -318,8 +324,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         throw new InvalidOperationException("Cannot dynamically call shader functions!");
                     }
 
-                    var parameters = invokedMethod.GetParameters();
-                    var expressionString = CreateParameterExpressionString(evaluationStack, parameters.Length);
+                    var invocationParameters = invokedMethod.GetParameters();
+                    var expressionString = CreateParameterExpressionString(evaluationStack, invocationParameters.Length);
 
                     if (!invokedMethod.IsStatic)
                     {
@@ -362,15 +368,29 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 var layoutAttribute = field.GetCustomAttribute<LayoutAttribute>();
                                 if (layoutAttribute is not null && layoutAttribute.Location >= 0)
                                 {
-                                    expression = "_input_" + expression.Replace(".", "_");
-                                    if (!mStageIO.ContainsKey(expression))
+                                    bool isInput = false;
+                                    for (int i = 0; i < parameters.Length; i++)
                                     {
-                                        mStageIO.Add(expression, new StageIOField
+                                        string parameterName = parameterNames[i];
+                                        if (expression.Length > parameterName.Length ? expression.StartsWith(parameterName) : expression == parameterName)
                                         {
-                                            Direction = "in",
-                                            Location = layoutAttribute.Location,
-                                            TypeName = GetTypeName(field.FieldType, type, true)
-                                        });
+                                            isInput = true;
+                                            break;
+                                        }
+                                    }
+
+                                    if (isInput)
+                                    {
+                                        expression = "_input_" + expression.Replace(".", "_");
+                                        if (!mStageIO.ContainsKey(expression))
+                                        {
+                                            mStageIO.Add(expression, new StageIOField
+                                            {
+                                                Direction = "in",
+                                                Location = layoutAttribute.Location,
+                                                TypeName = GetTypeName(field.FieldType, type, true)
+                                            });
+                                        }
                                     }
                                 }
                             }
@@ -411,8 +431,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             argumentIndex--;
                         }
 
-                        var parameters = method.GetParameters();
-                        expression = argumentIndex < 0 ? "this" : parameters[argumentIndex].Name ?? $"param_{argumentIndex}";
+                        expression = argumentIndex < 0 ? "this" : parameterNames[argumentIndex];
                     }
                     else if (loadType.StartsWith("elem"))
                     {
@@ -527,13 +546,14 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 var constructor = (ConstructorInfo)instruction.Operand!;
                                 string typeName = GetTypeName(constructor.DeclaringType!, type, true);
 
-                                var parameters = constructor.GetParameters();
-                                var expressionString = CreateParameterExpressionString(evaluationStack, parameters.Length);
+                                var constructorParameters = constructor.GetParameters();
+                                var expressionString = CreateParameterExpressionString(evaluationStack, constructorParameters.Length);
 
                                 evaluationStack.Push($"{typeName}({expressionString})");
                             }
                             break;
                         case "ret":
+                            // todo: if this is the stage entrypoint, assign outputs instead of returning
                             builder.AppendLine($"return {evaluationStack.Pop()};");
                             break;
                         default:
