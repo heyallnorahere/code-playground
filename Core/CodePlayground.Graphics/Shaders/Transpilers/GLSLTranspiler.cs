@@ -449,7 +449,10 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     if (instruction.Operand is MethodInfo operand)
                     {
                         invokedMethod = operand;
-                        dependencies.Add(operand);
+                        if (operand != method)
+                        {
+                            dependencies.Add(operand);
+                        }
                     }
                     else
                     {
@@ -788,6 +791,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
             foreach (var jump in jumps)
             {
+                // todo: properly create conditionals and loops at specified offsets
                 var insertedCode = "// jump to function offset 0x" + jump.Destination.ToString("X");
                 if (jump.Type != ConditionalType.Unconditional)
                 {
