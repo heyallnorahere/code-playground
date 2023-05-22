@@ -20,6 +20,13 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         public List<MethodInfo> Dependents { get; set; }
     }
 
+    internal struct StructDependencyInfo
+    {
+        public HashSet<Type> Dependencies { get; set; }
+        public HashSet<Type> Dependents { get; set; }
+        public Dictionary<string, string> DefinedFields { get; set; }
+    }
+
     internal struct StageIOField
     {
         public string Direction { get; set; }
@@ -29,6 +36,9 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
     internal sealed class GLSLTranspiler : ShaderTranspiler
     {
+        // shaderc.net does not pass your entrypoint name through at all, so...
+        private const string EntrypointName = "main";
+
         private static readonly Dictionary<Type, string> sPrimitiveTypeNames;
         static GLSLTranspiler()
         {
@@ -50,6 +60,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             mFieldNames = new Dictionary<FieldInfo, string>();
             mStageIO = new Dictionary<string, StageIOField>();
             mDependencyGraph = new Dictionary<MethodInfo, GLSLMethodInfo>();
+            mStructDependencies = new Dictionary<Type, StructDependencyInfo>();
         }
 
         private string GetFieldName(FieldInfo field, Type shaderType)
@@ -130,9 +141,9 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             }
 
             var attribute = type.GetCustomAttribute<PrimitiveShaderTypeAttribute>();
-            if (asType && type.IsClass && attribute is null)
+            if (asType && !type.IsValueType && attribute is null)
             {
-                throw new InvalidOperationException("Cannot use a class as a shader type!");
+                throw new InvalidOperationException("Cannot use a non-value type as a shader type!");
             }
 
             if (mDefinedTypeNames.ContainsKey(type))
@@ -276,6 +287,41 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             }
         }
 
+        private void ProcessType(Type type, Type shaderType)
+        {
+            if (mStructDependencies.ContainsKey(type) || !type.IsValueType)
+            {
+                return;
+            }
+
+            var dependencyInfo = new StructDependencyInfo
+            {
+                Dependencies = new HashSet<Type>(),
+                Dependents = new HashSet<Type>(),
+                DefinedFields = new Dictionary<string, string>()
+            };
+
+            // make sure that we don't get a stack overflow
+            mStructDependencies.Add(type, dependencyInfo);
+
+            var fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance);
+            foreach (var field in fields)
+            {
+                var fieldName = GetFieldName(field, shaderType);
+                var fieldType = field.FieldType;
+                var fieldTypeName = GetTypeName(fieldType, shaderType, true);
+
+                dependencyInfo.DefinedFields.Add(fieldName, fieldTypeName);
+                if (fieldType != type && fieldType.IsValueType)
+                {
+                    dependencyInfo.Dependencies.Add(fieldType);
+
+                    ProcessType(fieldType, shaderType);
+                    mStructDependencies[fieldType].Dependents.Add(type);
+                }
+            }
+        }
+
         private GLSLMethodInfo TranspileMethod(Type type, MethodInfo method, bool entrypoint)
         {
             var body = method.GetMethodBody();
@@ -295,13 +341,14 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 parameterNames.Add(name);
             }
 
-            string returnTypeString, parameterString;
+            string returnTypeString, parameterString, functionName;
             var outputFields = new Dictionary<string, string>();
 
             if (entrypoint)
             {
                 returnTypeString = "void";
                 parameterString = string.Empty;
+                functionName = EntrypointName;
 
                 var returnType = method.ReturnType;
                 var attributes = method.ReturnTypeCustomAttributes;
@@ -325,12 +372,14 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     }
 
                     outputFields.Add(expression, outputName);
+                    ProcessType(fieldType, type);
                 });
             }
             else
             {
                 returnTypeString = GetTypeName(method.ReturnType, type, true);
                 parameterString = string.Empty;
+                functionName = GetFunctionName(method, type);
 
                 for (int i = 0; i < parameters.Length; i++)
                 {
@@ -340,18 +389,24 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     }
 
                     var parameter = parameters[i];
-                    parameterString += $"{GetTypeName(parameter.ParameterType, type, true)} {parameterNames[i]}";
+                    var parameterType = parameter.ParameterType;
+                    var parameterTypeName = GetTypeName(parameterType, type, true);
+
+                    parameterString += $"{parameterTypeName} {parameterNames[i]}";
+                    ProcessType(parameterType, type);
                 }
             }
 
-            var functionName = GetFunctionName(method, type);
             var builder = new StringBuilder();
             builder.AppendLine($"{returnTypeString} {functionName}({parameterString}) {{");
 
             var localVariables = body.LocalVariables;
             for (int i = 0; i < localVariables.Count; i++)
             {
-                string variableTypeName = GetTypeName(localVariables[i].LocalType, type, true);
+                var variableType = localVariables[i].LocalType;
+                ProcessType(variableType, type);
+
+                string variableTypeName = GetTypeName(variableType, type, true);
                 builder.AppendLine($"{variableTypeName} var_{i};");
             }
 
@@ -454,6 +509,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                                 Location = layoutAttribute.Location,
                                                 TypeName = GetTypeName(field.FieldType, type, true)
                                             });
+
+                                            ProcessType(field.FieldType, type);
                                         }
                                     }
                                 }
@@ -505,8 +562,9 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             if (entrypoint)
                             {
                                 var parameter = parameters[argumentIndex];
-                                var attribute = parameter.GetCustomAttribute<LayoutAttribute>();
+                                var parameterType = parameter.ParameterType;
 
+                                var attribute = parameter.GetCustomAttribute<LayoutAttribute>();
                                 if (attribute is not null && attribute.Location >= 0)
                                 {
                                     expression = "_input_" + expression;
@@ -516,8 +574,10 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                         {
                                             Direction = "in",
                                             Location = attribute.Location,
-                                            TypeName = GetTypeName(parameter.ParameterType, type, true)
+                                            TypeName = GetTypeName(parameterType, type, true)
                                         });
+
+                                        ProcessType(parameterType, type);
                                     }
                                 }
                             }
@@ -681,6 +741,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             mFieldNames.Clear();
             mStageIO.Clear();
             mDependencyGraph.Clear();
+            mStructDependencies.Clear();
         }
 
         private void ProcessMethod(Type type, MethodInfo method, bool entrypoint)
@@ -712,19 +773,63 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             }
         }
 
-        protected override string TranspileStage(Type type, MethodInfo entrypoint, ShaderStage stage)
+        private IReadOnlyList<Type> ResolveStructOrder()
         {
-            var builder = new StringBuilder();
-            builder.AppendLine("#version 450");
-
-            ProcessMethod(type, entrypoint, true);
-
-            foreach (string fieldName in mStageIO.Keys)
+            var definedStructs = mStructDependencies.Keys.ToList();
+            definedStructs.Sort((lhs, rhs) =>
             {
-                var fieldData = mStageIO[fieldName];
-                builder.AppendLine($"layout(location = {fieldData.Location}) {fieldData.Direction} {fieldData.TypeName} {fieldName};");
+                var lhsDependencyCount = mStructDependencies[lhs].Dependencies.Count;
+                var rhsDependencyCount = mStructDependencies[rhs].Dependencies.Count;
+
+                return lhsDependencyCount.CompareTo(rhsDependencyCount);
+            });
+
+            var structOrder = new List<Type>();
+            if (definedStructs.Count != 0)
+            {
+                IEnumerable<Type> evaluationList = new Type[]
+                {
+                    definedStructs[0]
+                };
+
+                while (evaluationList.Count() > 0)
+                {
+                    var newEvaluationList = new HashSet<Type>();
+                    foreach (var type in evaluationList)
+                    {
+                        var info = mStructDependencies[type];
+
+                        bool hasDependencies = true;
+                        foreach (var dependency in info.Dependencies)
+                        {
+                            if (!structOrder.Contains(dependency))
+                            {
+                                hasDependencies = false;
+                                newEvaluationList.Add(dependency);
+                            }
+                        }
+
+                        if (!hasDependencies)
+                        {
+                            break;
+                        }
+
+                        structOrder.Add(type);
+                        foreach (var dependent in info.Dependents)
+                        {
+                            newEvaluationList.Add(dependent);
+                        }
+                    }
+
+                    evaluationList = newEvaluationList;
+                }
             }
 
+            return structOrder;
+        }
+
+        private IReadOnlyList<MethodInfo> ResolveFunctionOrder()
+        {
             var dependencyInfo = new List<EvaluationMethodInfo>();
             var dependencyInfoIndices = new Dictionary<MethodInfo, int>();
 
@@ -785,7 +890,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 dependencyInfo[0].Method
             };
 
-            var insertedFunctions = new HashSet<MethodInfo>();
+            var functionOrder = new List<MethodInfo>();
             while (evaluationList.Count() > 0)
             {
                 var newEvaluationList = new HashSet<MethodInfo>();
@@ -796,7 +901,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     bool hasDependencies = true;
                     foreach (var dependency in info.Dependencies)
                     {
-                        if (!insertedFunctions.Contains(dependency))
+                        if (!functionOrder.Contains(dependency))
                         {
                             hasDependencies = false;
                             newEvaluationList.Add(dependency);
@@ -808,9 +913,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         break;
                     }
 
-                    builder.AppendLine(mDependencyGraph[method].Source);
-                    insertedFunctions.Add(method);
-
+                    functionOrder.Add(method);
                     foreach (var dependent in info.Dependents)
                     {
                         newEvaluationList.Add(dependent);
@@ -820,8 +923,51 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 evaluationList = newEvaluationList;
             }
 
+            return functionOrder;
+        }
+
+        protected override StageOutput TranspileStage(Type type, MethodInfo entrypoint, ShaderStage stage)
+        {
+            ProcessMethod(type, entrypoint, true);
+
+            var builder = new StringBuilder();
+            builder.AppendLine("#version 450\n");
+
+            var structOrder = ResolveStructOrder();
+            foreach (var definedStruct in structOrder)
+            {
+                var info = mStructDependencies[definedStruct];
+                var name = GetTypeName(definedStruct, type, true);
+
+                builder.AppendLine($"struct {name} {{");
+                foreach (var fieldName in info.DefinedFields.Keys)
+                {
+                    var fieldType = info.DefinedFields[fieldName];
+                    builder.AppendLine($"{fieldType} {fieldName};");
+                }
+
+                builder.AppendLine("};\n");
+            }
+
+            foreach (string fieldName in mStageIO.Keys)
+            {
+                var fieldData = mStageIO[fieldName];
+                builder.AppendLine($"layout(location = {fieldData.Location}) {fieldData.Direction} {fieldData.TypeName} {fieldName};");
+            }
+
+            var functionOrder = ResolveFunctionOrder();
+            foreach (var method in functionOrder)
+            {
+                var source = mDependencyGraph[method].Source;
+                builder.AppendLine(source);
+            }
+
             ClearData();
-            return builder.ToString();
+            return new StageOutput
+            {
+                Source = builder.ToString(),
+                Entrypoint = EntrypointName
+            };
         }
 
         private readonly Dictionary<Type, string> mDefinedTypeNames;
@@ -829,5 +975,6 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         private readonly Dictionary<FieldInfo, string> mFieldNames;
         private readonly Dictionary<string, StageIOField> mStageIO;
         private readonly Dictionary<MethodInfo, GLSLMethodInfo> mDependencyGraph;
+        private readonly Dictionary<Type, StructDependencyInfo> mStructDependencies;
     }
 }

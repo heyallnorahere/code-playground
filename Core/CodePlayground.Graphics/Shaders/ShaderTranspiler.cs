@@ -26,7 +26,7 @@ namespace CodePlayground.Graphics.Shaders
             return transpiler;
         }
 
-        protected abstract string TranspileStage(Type type, MethodInfo entrypoint, ShaderStage stage);
+        protected abstract StageOutput TranspileStage(Type type, MethodInfo entrypoint, ShaderStage stage);
         public IReadOnlyDictionary<ShaderStage, StageOutput> Transpile(Type type)
         {
             if (!type.IsClass)
@@ -51,11 +51,7 @@ namespace CodePlayground.Graphics.Shaders
                     throw new InvalidOperationException("Duplicate shader stage!");
                 }
 
-                stages.Add(stage, new StageOutput
-                {
-                    Source = TranspileStage(type, method, stage),
-                    Entrypoint = method.Name
-                });
+                stages.Add(stage, TranspileStage(type, method, stage));
             }
 
             return stages;
