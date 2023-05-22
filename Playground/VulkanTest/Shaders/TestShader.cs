@@ -19,6 +19,7 @@ namespace VulkanTest.Shaders
 
         public struct VertexOut
         {
+            [OutputPosition]
             public Vector4<float> Position;
             public FragmentIn OutputData;
         }

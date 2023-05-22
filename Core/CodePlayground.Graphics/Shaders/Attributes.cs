@@ -56,4 +56,10 @@ namespace CodePlayground.Graphics.Shaders
 
         public string Name { get; set; }
     }
+
+    [AttributeUsage(AttributeTargets.ReturnValue | AttributeTargets.Field, AllowMultiple = false, Inherited = true)]
+    public sealed class OutputPositionAttribute : Attribute
+    {
+        // nothing - literally just a flag
+    }
 }

@@ -238,6 +238,44 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             return expressionString;
         }
 
+        private void ParseReturnStructure(Type type, ICustomAttributeProvider provider, string identifierExpression, Action<Type, string, string, int> callback)
+        {
+            if (provider.GetCustomAttributes(typeof(OutputPositionAttribute), true).Length != 0)
+            {
+                callback.Invoke(type, identifierExpression, "gl_Position", -1);
+                return;
+            }
+
+            var layoutAttributes = provider.GetCustomAttributes(typeof(LayoutAttribute), true);
+            if (layoutAttributes.Length != 0)
+            {
+                var attribute = (LayoutAttribute)layoutAttributes[0];
+                if (attribute.Location >= 0)
+                {
+                    string destination = identifierExpression.Replace('.', '_');
+                    callback.Invoke(type, identifierExpression, destination, attribute.Location);
+                    return;
+                }
+            }
+
+            if (type.IsPrimitive)
+            {
+                return;
+            }
+
+            if (type.IsClass)
+            {
+                throw new InvalidOperationException("Cannot use a class as a return type!");
+            }
+
+            var fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance);
+            foreach (var field in fields)
+            {
+                var fieldName = GetFieldName(field, typeof(void)); // type doesnt really matter
+                ParseReturnStructure(field.FieldType, field, $"{identifierExpression}.{fieldName}", callback);
+            }
+        }
+
         private GLSLMethodInfo TranspileMethod(Type type, MethodInfo method, bool entrypoint)
         {
             var body = method.GetMethodBody();
@@ -258,10 +296,36 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             }
 
             string returnTypeString, parameterString;
+            var outputFields = new Dictionary<string, string>();
+
             if (entrypoint)
             {
                 returnTypeString = "void";
                 parameterString = string.Empty;
+
+                var returnType = method.ReturnType;
+                var attributes = method.ReturnTypeCustomAttributes;
+
+                ParseReturnStructure(returnType, attributes, string.Empty, (fieldType, expression, destination, location) =>
+                {
+                    string outputName;
+                    if (location >= 0)
+                    {
+                        outputName = "_output" + destination;
+                        mStageIO.Add(outputName, new StageIOField
+                        {
+                            Direction = "out",
+                            Location = location,
+                            TypeName = GetTypeName(fieldType, type, true)
+                        });
+                    }
+                    else
+                    {
+                        outputName = destination;
+                    }
+
+                    outputFields.Add(expression, outputName);
+                });
             }
             else
             {
@@ -381,7 +445,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
                                     if (isInput)
                                     {
-                                        expression = "_input_" + expression.Replace(".", "_");
+                                        expression = "_input_" + expression.Replace('.', '_');
                                         if (!mStageIO.ContainsKey(expression))
                                         {
                                             mStageIO.Add(expression, new StageIOField
@@ -553,8 +617,21 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             }
                             break;
                         case "ret":
-                            // todo: if this is the stage entrypoint, assign outputs instead of returning
-                            builder.AppendLine($"return {evaluationStack.Pop()};");
+                            {
+                                var returnedExpression = evaluationStack.Pop();
+                                if (entrypoint)
+                                {
+                                    foreach (var expression in outputFields.Keys)
+                                    {
+                                        var outputName = outputFields[expression];
+                                        builder.AppendLine($"{outputName} = {returnedExpression}{expression};");
+                                    }
+                                }
+                                else
+                                {
+                                    builder.AppendLine($"return {returnedExpression};");
+                                }
+                            }
                             break;
                         default:
                             throw new InvalidOperationException($"Instruction {name} has not been implemented yet!");
