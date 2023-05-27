@@ -8,7 +8,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 {
     internal sealed class GLSLTranspiler : ShaderTranspiler
     {
-        // shaderc.net does not pass your entrypoint name through at all, so...
+        // shaderc doesn't actually take your entrypoint name into account...
         private const string EntrypointName = "main";
 
         private static readonly IReadOnlyDictionary<Type, string> sPrimitiveTypeNames;
@@ -349,7 +349,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         outputName = "_output" + destination;
                         mStageIO.Add(outputName, new StageIOField
                         {
-                            Direction = "out",
+                            Direction = StageIODirection.Out,
                             Location = location,
                             TypeName = GetTypeName(fieldType, type, true)
                         });
@@ -535,7 +535,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                         {
                                             mStageIO.Add(expression, new StageIOField
                                             {
-                                                Direction = "in",
+                                                Direction = StageIODirection.In,
                                                 Location = layoutAttribute.Location,
                                                 TypeName = GetTypeName(field.FieldType, type, true)
                                             });
@@ -602,7 +602,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                     {
                                         mStageIO.Add(expression, new StageIOField
                                         {
-                                            Direction = "in",
+                                            Direction = StageIODirection.In,
                                             Location = attribute.Location,
                                             TypeName = GetTypeName(parameterType, type, true)
                                         });
@@ -1226,7 +1226,9 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             foreach (string fieldName in mStageIO.Keys)
             {
                 var fieldData = mStageIO[fieldName];
-                builder.AppendLine($"layout(location = {fieldData.Location}) {fieldData.Direction} {fieldData.TypeName} {fieldName};");
+                var direction = fieldData.Direction.ToString().ToLower();
+
+                builder.AppendLine($"layout(location = {fieldData.Location}) {direction} {fieldData.TypeName} {fieldName};");
             }
 
             foreach (string fieldName in mStageResources.Keys)

@@ -2,6 +2,7 @@ using Silk.NET.Core;
 using Silk.NET.Core.Attributes;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
+using Spirzza.Interop.SpirvCross;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
@@ -98,7 +99,22 @@ namespace CodePlayground.Graphics.Vulkan
                 }
                 else
                 {
-                    onFail(result);
+                    onFail.Invoke(result);
+                }
+            }
+        }
+
+        public static void Assert(this spvc_result result, Action<spvc_result>? onFail = null)
+        {
+            if (result != spvc_result.SPVC_SUCCESS)
+            {
+                if (onFail is null)
+                {
+                    throw new Exception($"SPIRV Cross error caught: {result}");
+                }
+                else
+                {
+                    onFail.Invoke(result);
                 }
             }
         }

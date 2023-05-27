@@ -527,7 +527,7 @@ namespace CodePlayground.Graphics.Vulkan
             return new VulkanShaderCompiler(mVulkanVersion!);
         }
 
-        IShader IGraphicsContext.LoadShader(byte[] data, ShaderStage stage, string entrypoint)
+        IShader IGraphicsContext.LoadShader(IReadOnlyList<byte> data, ShaderStage stage, string entrypoint)
         {
             return new VulkanShader(mDevice!, data, stage, entrypoint);
         }

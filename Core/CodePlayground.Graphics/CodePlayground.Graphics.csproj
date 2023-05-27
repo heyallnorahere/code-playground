@@ -11,15 +11,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="shaderc.net" Version="$(shadercnetVersion)" />
     <PackageReference Include="Silk.NET.Input" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Windowing" Version="$(SilkNETVersion)" />
     <PackageReference Include="SixLabors.ImageSharp" Version="$(SixLaborsImageSharpVersion)" />
+    <PackageReference Include="Spirzza.Interop.SpirvCross" Version="$(SpirzzaInteropSpirvCrossVersion)" />
     <PackageReference Include="Ultz.Native.GLFW" Version="$(GLFWVersion)" />
-    <PackageReference Include="Vortice.ShaderCompiler" Version="$(VorticeShaderCompilerVersion)" />
-    <PackageReference Include="Vortice.SpirvCross" Version="$(VorticeSpirvCrossVersion)" />
   </ItemGroup>
 
 </Project>

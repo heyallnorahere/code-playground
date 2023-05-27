@@ -28,7 +28,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
     internal struct StageIOField
     {
-        public string Direction { get; set; }
+        public StageIODirection Direction { get; set; }
         public int Location { get; set; }
         public string TypeName { get; set; }
     }

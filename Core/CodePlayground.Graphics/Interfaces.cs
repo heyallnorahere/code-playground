@@ -1,4 +1,5 @@
 ﻿using Silk.NET.Maths;
+using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -85,12 +86,80 @@ namespace CodePlayground.Graphics
         Fragment
     }
 
+    [Flags]
+    public enum ShaderResourceTypeFlags
+    {
+        Image = 0x1,
+        Sampler = 0x2,
+        UniformBuffer = 0x4,
+        StorageBuffer = 0x8
+    }
+
+    public enum StageIODirection
+    {
+        In,
+        Out
+    }
+
+    public enum ShaderTypeClass
+    {
+        Float,
+        Bool,
+        SInt,
+        UInt,
+        Image,
+        Sampler,
+        CombinedImageSampler,
+        Struct
+    }
+
     public struct DeviceImageInfo
     {
         public Size Size { get; set; }
         public DeviceImageUsageFlags Usage { get; set; }
         public DeviceImageFormat Format { get; set; }
         public int MipLevels { get; set; }
+    }
+
+    public struct ReflectedShaderResource
+    {
+        public string Name { get; set; }
+        public int Type { get; set; }
+        public ShaderResourceTypeFlags ResourceType { get; set; }
+    }
+
+    public struct ReflectedStageIOField
+    {
+        public string Name { get; set; }
+        public int Type { get; set; }
+        public StageIODirection Direction { get; set; }
+        public int Location { get; set; }
+    }
+
+    public struct ReflectedShaderField
+    {
+        public int Type { get; set; }
+        public int Offset { get; set; }
+    }
+
+    public struct ReflectedShaderType
+    {
+        public string Name { get; set; }
+        public IReadOnlyList<int>? ArrayDimensions { get; set; }
+        public ShaderTypeClass Class { get; set; }
+        public IReadOnlyDictionary<string, ReflectedShaderField>? Fields { get; set; }
+
+        public int Size { get; set; }
+        public int Rows { get; set; }
+        public int Columns { get; set; }
+        public int TotalSize => Size * Rows * Columns;
+    }
+
+    public struct ShaderReflectionResult
+    {
+        public List<ReflectedStageIOField> StageIO { get; set; }
+        public Dictionary<int, Dictionary<int, ReflectedShaderResource>> Resources { get; set; }
+        public Dictionary<int, ReflectedShaderType> Types { get; set; }
     }
 
     public interface IGraphicsContext : IDisposable
@@ -104,7 +173,7 @@ namespace CodePlayground.Graphics
         public IDeviceBuffer CreateDeviceBuffer(DeviceBufferUsage usage, int size);
         public IDeviceImage CreateDeviceImage(DeviceImageInfo info);
         public IShaderCompiler CreateCompiler();
-        public IShader LoadShader(byte[] data, ShaderStage stage, string entrypoint);
+        public IShader LoadShader(IReadOnlyList<byte> data, ShaderStage stage, string entrypoint);
     }
 
     public interface IGraphicsDeviceInfo
@@ -206,13 +275,13 @@ namespace CodePlayground.Graphics
         public ShaderLanguage PreferredLanguage { get; }
 
         public byte[] Compile(string source, string path, ShaderLanguage language, ShaderStage stage, string entrypoint);
-
-        // todo: reflect function
+        public ShaderReflectionResult Reflect(IReadOnlyList<byte> bytecode);
     }
 
     public interface IShader : IDisposable
     {
         public ShaderStage Stage { get; }
         public string Entrypoint { get; }
+        public IReadOnlyList<byte> Bytecode { get; }
     }
 }
