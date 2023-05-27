@@ -114,11 +114,12 @@ namespace CodePlayground
                     code = sMultiByteInstructions[codeValue];
                 }
 
+                var operand = mResolveCallbacks[code.OperandType].Invoke(il, module);
                 Instructions.Add(new ILInstruction
                 {
                     OpCode = code,
                     Offset = offset,
-                    Operand = mResolveCallbacks[code.OperandType].Invoke(il, module),
+                    Operand = operand,
                     InstructionData = il[offset..mPosition]
                 });
             }
@@ -171,8 +172,8 @@ namespace CodePlayground
         [ResolveOperandCallback(OperandType.InlineBrTarget)]
         private object? ResolveBranchTarget(byte[] il, Module module)
         {
-            int token = ResolveUnmanaged<int>(il);
-            return token + mPosition; // ??????
+            int offset = ResolveUnmanaged<int>(il);
+            return mPosition + offset;
         }
 
         [ResolveOperandCallback(OperandType.InlineField)]
@@ -239,8 +240,8 @@ namespace CodePlayground
         [ResolveOperandCallback(OperandType.ShortInlineBrTarget)]
         private object? ResolveShortBranchTarget(byte[] il, Module module)
         {
-            byte token = ResolveUnmanaged<byte>(il);
-            return (byte)(token + mPosition);
+            var offset = ResolveUnmanaged<sbyte>(il);
+            return mPosition + offset;
         }
 
         [ResolveOperandCallback(OperandType.ShortInlineI)]

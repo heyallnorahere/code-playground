@@ -35,6 +35,26 @@ namespace CodePlayground.Graphics.Shaders
         public string Name { get; }
     }
 
+    public enum ShaderOperatorType
+    {
+        Add,
+        Subtract,
+        Multiply,
+        Divide,
+        Invert
+    }
+
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
+    public sealed class ShaderOperatorAttribute : Attribute
+    {
+        public ShaderOperatorAttribute(ShaderOperatorType type)
+        {
+            Type = type;
+        }
+
+        public ShaderOperatorType Type { get; }
+    }
+
     [AttributeUsage(AttributeTargets.ReturnValue | AttributeTargets.Parameter | AttributeTargets.Field, AllowMultiple = false, Inherited = false)]
     public sealed class LayoutAttribute : Attribute
     {

@@ -41,24 +41,31 @@ namespace VulkanTest.Shaders
         [ShaderEntrypoint(ShaderStage.Vertex)]
         public VertexOut VertexMain(VertexIn input)
         {
-            float w;
+            float a;
             if (input.Position.X > 0.5f)
             {
-                w = Add(0.3f, 0.7f);
+                a = Add(0.3f, 0.7f);
+            }
+            else if (input.Position.X < 0f)
+            {
+                a = Add(Add(0.5f, 0.1f), Add(0.2f, 0.2f));
             }
             else
             {
-                w = Add(0.6f, 0.4f);
+                a = -Add(-0.6f, -0.4f);
             }
 
-            for (int i = 0; i < 7; i++)
+            const int loopCount = 7;
+            float w = 0f;
+            for (int i = 0; i < loopCount; i++)
             {
-                w += Add(0f, 0f);
+                w += a / loopCount;
             }
 
+            var position = new Vector4<float>(input.Position, 0f) + new Vector4<float>(0f, 0f, 0f, w);
             return new VertexOut
             {
-                Position = new Vector4<float>(input.Position, w),
+                Position = position,
                 OutputData = new FragmentIn
                 {
                     Normal = BuiltinFunctions.Normalize(input.Normal),

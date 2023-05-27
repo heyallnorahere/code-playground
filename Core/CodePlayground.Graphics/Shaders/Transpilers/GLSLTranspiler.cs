@@ -385,6 +385,20 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             }
         }
 
+        private static void PushOperatorExpression(ShaderOperatorType type, Stack<string> evaluationStack)
+        {
+            var rhs = evaluationStack.Pop();
+            evaluationStack.Push(type switch
+            {
+                ShaderOperatorType.Add => $"({evaluationStack.Pop()} + {rhs})",
+                ShaderOperatorType.Subtract => $"({evaluationStack.Pop()} - {rhs})",
+                ShaderOperatorType.Multiply => $"({evaluationStack.Pop()} * {rhs})",
+                ShaderOperatorType.Divide => $"({evaluationStack.Pop()} / {rhs})",
+                ShaderOperatorType.Invert => $"(-{rhs})",
+                _ => throw new ArgumentException("Invalid shader operator!")
+            });
+        }
+
         private TranslatedMethodInfo TranspileMethod(Type type, MethodInfo method, bool entrypoint)
         {
             var body = method.GetMethodBody();
@@ -478,9 +492,12 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             var jumps = new List<JumpInstruction>();
 
             var mapCollection = new SourceMapCollection(instructions);
-            foreach (var instruction in instructions)
+            for (int i = 0; i < instructions.Count; i++)
             {
+                var instruction = instructions[i];
+
                 mapCollection.SourceOffsets.Add(instruction.Offset, builder.Length);
+                mapCollection.OffsetInstructionMap.Add(instruction.Offset, i);
 
                 var opCode = instruction.OpCode;
                 var name = opCode.Name?.ToLower();
@@ -496,6 +513,13 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     MethodInfo invokedMethod;
                     if (instruction.Operand is MethodInfo operand)
                     {
+                        var operatorAttribute = operand.GetCustomAttribute<ShaderOperatorAttribute>();
+                        if (operatorAttribute is not null)
+                        {
+                            PushOperatorExpression(operatorAttribute.Type, evaluationStack);
+                            continue;
+                        }
+
                         invokedMethod = operand;
                         if (operand != method)
                         {
@@ -552,9 +576,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 if (layoutAttribute is not null && layoutAttribute.Location >= 0)
                                 {
                                     bool isInput = false;
-                                    for (int i = 0; i < parameters.Length; i++)
+                                    foreach (var parameterName in parameterNames)
                                     {
-                                        string parameterName = parameterNames[i];
                                         if (expression.Length > parameterName.Length ? expression.StartsWith(parameterName) : expression == parameterName)
                                         {
                                             isInput = true;
@@ -751,31 +774,23 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 }
                 else if (name.StartsWith("add"))
                 {
-                    var rhs = evaluationStack.Pop();
-                    var lhs = evaluationStack.Pop();
-
-                    evaluationStack.Push($"({lhs} + {rhs})");
+                    PushOperatorExpression(ShaderOperatorType.Add, evaluationStack);
                 }
                 else if (name.StartsWith("sub"))
                 {
-                    var rhs = evaluationStack.Pop();
-                    var lhs = evaluationStack.Pop();
-
-                    evaluationStack.Push($"({lhs} - {rhs})");
+                    PushOperatorExpression(ShaderOperatorType.Subtract, evaluationStack);
                 }
                 else if (name.StartsWith("mul"))
                 {
-                    var rhs = evaluationStack.Pop();
-                    var lhs = evaluationStack.Pop();
-
-                    evaluationStack.Push($"({lhs} * {rhs})");
+                    PushOperatorExpression(ShaderOperatorType.Multiply, evaluationStack);
                 }
                 else if (name.StartsWith("div"))
                 {
-                    var rhs = evaluationStack.Pop();
-                    var lhs = evaluationStack.Pop();
-
-                    evaluationStack.Push($"({lhs} / {rhs})");
+                    PushOperatorExpression(ShaderOperatorType.Divide, evaluationStack);
+                }
+                else if (name.StartsWith("neg"))
+                {
+                    PushOperatorExpression(ShaderOperatorType.Invert, evaluationStack);
                 }
                 else if (name.StartsWith("ceq"))
                 {
@@ -846,11 +861,6 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 }
             }
 
-            for (int i = 0; i < instructions.Count; i++)
-            {
-                mapCollection.OffsetInstructionMap.Add(instructions[i].Offset, i);
-            }
-
             var nonLoopJumps = new List<JumpInstruction>();
             foreach (var jump in jumps)
             {
@@ -891,21 +901,85 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
             foreach (var jump in nonLoopJumps)
             {
-                // todo: properly create conditionals and loops at specified offsets
-                var insertedCode = "// jump to function offset 0x" + jump.Destination.ToString("X");
-
                 var condition = jump.Condition;
-                if (condition.Type != ConditionalType.Unconditional)
+                var containingScope = FindContainingScope(jump.Offset);
+                if (containingScope is not null && jump.Destination > containingScope.EndOffset)
                 {
-                    insertedCode += $" if \"{condition.Expression}\" is {condition.Type.ToString().ToLower()}";
+                    var currentScope = containingScope;
+                    while (currentScope.Parent is not null && currentScope.Type != ScopeType.Loop)
+                    {
+                        currentScope = currentScope.Parent;
+                    }
+
+                    if (currentScope.Type == ScopeType.Loop && jump.Destination > currentScope.EndOffset)
+                    {
+                        var currentParent = currentScope.Parent;
+                        if (currentParent is not null && jump.Destination > currentParent.EndOffset)
+                        {
+                            throw new InvalidOperationException("Invalid break statement!");
+                        }
+
+                        string code = "break;\n";
+                        if (condition.Type != ConditionalType.Unconditional)
+                        {
+                            var expression = condition.Type != ConditionalType.False ? condition.Expression : $"!({condition.Expression})";
+                            code = $"if ({expression}) {{\n{code}}}\n";
+                        }
+
+                        InsertCode(jump.Offset, code, builder, mapCollection);
+                        continue;
+                    }
+
+                    if (condition.Type != ConditionalType.Unconditional)
+                    {
+                        throw new InvalidOperationException("\"Else\" jumps may not have conditions!");
+                    }
+
+                    var containingParent = containingScope.Parent;
+                    if (containingParent is not null && jump.Destination > containingParent.EndOffset)
+                    {
+                        throw new InvalidOperationException("Invalid else clause!");
+                    }
+
+                    var elseScope = new Scope(containingScope.EndOffset, jump.Destination - containingScope.EndOffset, ScopeType.Conditional);
+                    if (!AddScope(elseScope))
+                    {
+                        throw new InvalidOperationException("Invalid scope generated for else clause!");
+                    }
+
+                    InsertCode(elseScope.StartOffset, " else {", builder, mapCollection, -1);
+                    InsertCode(elseScope.EndOffset, "}\n", builder, mapCollection);
+
+                    continue;
                 }
 
-                insertedCode += '\n';
-                InsertCode(jump.Offset, insertedCode + '\n', builder, mapCollection);
+                int instructionIndex = mapCollection.OffsetInstructionMap[jump.Offset];
+                var nextInstruction = mapCollection.InstructionOffsets[instructionIndex + 1];
+
+                if (condition.Type == ConditionalType.Unconditional)
+                {
+                    var comment = $"// skip to offset 0x{jump.Destination:X}... not sure how thats possible here\n";
+                    InsertCode(nextInstruction, comment, builder, mapCollection);
+
+                    continue;
+                }
+
+                var ifScope = new Scope(jump.Offset, jump.Destination - jump.Offset, ScopeType.Conditional);
+                if (!AddScope(ifScope))
+                {
+                    throw new InvalidOperationException("Invalid scope generated for if statement!");
+                }
+
+                var ifExpression = condition.Type != ConditionalType.True ? condition.Expression : $"!({condition.Expression})";
+                var startCode = $"if ({ifExpression}) {{\n";
+
+                InsertCode(nextInstruction, startCode, builder, mapCollection);
+                InsertCode(jump.Destination, "}\n", builder, mapCollection);
             }
 
             builder.AppendLine("}");
             mMethodScopes.Clear();
+
             return new TranslatedMethodInfo
             {
                 Source = builder.ToString(),
@@ -916,8 +990,13 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private bool AddScope(Scope scope)
         {
+            if (scope.Parent is not null)
+            {
+                throw new InvalidOperationException("Scope already has a parent!");
+            }
+
             var containingScope = FindContainingScope(scope.StartOffset);
-            if (containingScope is not null && scope.EndOffset >= containingScope.EndOffset)
+            if (containingScope is not null && scope.EndOffset > containingScope.EndOffset)
             {
                 return false;
             }
@@ -944,7 +1023,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         continue;
                     }
 
-                    if (offset <= loop.EndOffset)
+                    if (offset < loop.EndOffset)
                     {
                         foundScope = loop;
                         break;
@@ -965,10 +1044,10 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             return currentScope;
         }
 
-        private static void InsertCode(int instructionOffset, string code, StringBuilder source, SourceMapCollection mapCollection)
+        private static void InsertCode(int instructionOffset, string code, StringBuilder source, SourceMapCollection mapCollection, int sourceOffset = 0)
         {
             int insertOffset = mapCollection.SourceOffsets[instructionOffset];
-            source.Insert(insertOffset, code);
+            source.Insert(insertOffset + sourceOffset, code);
 
             int index = mapCollection.OffsetInstructionMap[instructionOffset];
             for (int i = index; i < mapCollection.InstructionOffsets.Count; i++)

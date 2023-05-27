@@ -1,7 +1,9 @@
 using System;
+using System.Runtime.CompilerServices;
 
 namespace CodePlayground.Graphics.Shaders
 {
+    // todo: generate from the v450 glsl standard
     public static class BuiltinFunctions
     {
         [BuiltinShaderFunction("length")]
@@ -35,6 +37,92 @@ namespace CodePlayground.Graphics.Shaders
         [ShaderFieldName("g")]
         public T G;
 
+        #region Operators
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Add)]
+        public static Vector2<T> operator+(Vector2<T> lhs, Vector2<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Add)]
+        public static Vector2<T> operator+(Vector2<T> lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Add)]
+        public static Vector2<T> operator+(T lhs, Vector2<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Invert)]
+        public static Vector2<T> operator-(Vector2<T> vector)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Subtract)]
+        public static Vector2<T> operator-(Vector2<T> lhs, Vector2<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Subtract)]
+        public static Vector2<T> operator-(Vector2<T> lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Multiply)]
+        public static Vector2<T> operator*(Vector2<T> lhs, Vector2<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Multiply)]
+        public static Vector2<T> operator*(Vector2<T> lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Multiply)]
+        public static Vector2<T> operator*(T lhs, Vector2<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Divide)]
+        public static Vector2<T> operator/(Vector2<T> lhs, Vector2<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Divide)]
+        public static Vector2<T> operator/(Vector2<T> lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Divide)]
+        public static Vector2<T> operator/(T lhs, Vector2<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+        #endregion
+
         // todo: swizzles
     }
 
@@ -60,6 +148,92 @@ namespace CodePlayground.Graphics.Shaders
         public T Z;
         [ShaderFieldName("b")]
         public T B;
+
+        #region Operators
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Add)]
+        public static Vector3<T> operator +(Vector3<T> lhs, Vector3<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Add)]
+        public static Vector3<T> operator +(Vector3<T> lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Add)]
+        public static Vector3<T> operator +(T lhs, Vector3<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Invert)]
+        public static Vector3<T> operator -(Vector3<T> vector)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Subtract)]
+        public static Vector3<T> operator -(Vector3<T> lhs, Vector3<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Subtract)]
+        public static Vector3<T> operator -(Vector3<T> lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Multiply)]
+        public static Vector3<T> operator *(Vector3<T> lhs, Vector3<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Multiply)]
+        public static Vector3<T> operator *(Vector3<T> lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Multiply)]
+        public static Vector3<T> operator *(T lhs, Vector3<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Divide)]
+        public static Vector3<T> operator /(Vector3<T> lhs, Vector3<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Divide)]
+        public static Vector3<T> operator /(Vector3<T> lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Divide)]
+        public static Vector3<T> operator /(T lhs, Vector3<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+        #endregion
 
         // todo: swizzles
     }
@@ -91,6 +265,92 @@ namespace CodePlayground.Graphics.Shaders
         public T W;
         [ShaderFieldName("a")]
         public T A;
+
+        #region Operators
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Add)]
+        public static Vector4<T> operator +(Vector4<T> lhs, Vector4<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Add)]
+        public static Vector4<T> operator +(Vector4<T> lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Add)]
+        public static Vector4<T> operator +(T lhs, Vector4<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Invert)]
+        public static Vector4<T> operator -(Vector4<T> vector)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Subtract)]
+        public static Vector4<T> operator -(Vector4<T> lhs, Vector4<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Subtract)]
+        public static Vector4<T> operator -(Vector4<T> lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Multiply)]
+        public static Vector4<T> operator *(Vector4<T> lhs, Vector4<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Multiply)]
+        public static Vector4<T> operator *(Vector4<T> lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Multiply)]
+        public static Vector4<T> operator *(T lhs, Vector4<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Divide)]
+        public static Vector4<T> operator /(Vector4<T> lhs, Vector4<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Divide)]
+        public static Vector4<T> operator /(Vector4<T> lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Divide)]
+        public static Vector4<T> operator /(T lhs, Vector4<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+        #endregion
 
         // todo: swizzles
     }
