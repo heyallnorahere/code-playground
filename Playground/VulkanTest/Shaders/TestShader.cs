@@ -48,7 +48,7 @@ namespace VulkanTest.Shaders
             }
             else if (input.Position.X < 0f)
             {
-                a = Add(Add(0.5f, 0.1f), Add(0.2f, 0.2f));
+                a = BuiltinFunctions.Lerp(0.8f, 1.7f, 2f / 9f);
             }
             else
             {
@@ -68,7 +68,7 @@ namespace VulkanTest.Shaders
                 Position = position,
                 OutputData = new FragmentIn
                 {
-                    Normal = BuiltinFunctions.Normalize(input.Normal),
+                    Normal = input.Normal.Normalize(),
                     UV = input.UV
                 }
             };

@@ -19,9 +19,11 @@ namespace CodePlayground.Graphics.Shaders
         public PrimitiveShaderTypeAttribute(string name)
         {
             Name = name;
+            Instantiable = true;
         }
 
         public string Name { get; }
+        public bool Instantiable { get; set; }
     }
 
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]

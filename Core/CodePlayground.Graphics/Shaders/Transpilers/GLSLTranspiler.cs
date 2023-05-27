@@ -536,12 +536,18 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
                     if (!invokedMethod.IsStatic)
                     {
-                        evaluationStack.Pop();
-
-                        var declaringType = invokedMethod.DeclaringType;
-                        if (declaringType is null || !type.Extends(declaringType))
+                        string invokedObject = evaluationStack.Pop();
+                        if (invokedMethod.GetCustomAttribute<PrimitiveShaderTypeAttribute>() is null)
                         {
-                            throw new InvalidOperationException("Cannot call an instance method outside of the shader class!");
+                            var declaringType = invokedMethod.DeclaringType;
+                            if (declaringType is null || !type.Extends(declaringType))
+                            {
+                                throw new InvalidOperationException("Cannot call an instance method outside of the shader class!");
+                            }
+                        }
+                        else
+                        {
+                            expressionString = $"{invokedObject}, {expressionString}";
                         }
                     }
 
@@ -830,7 +836,14 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         case "newobj":
                             {
                                 var constructor = (ConstructorInfo)instruction.Operand!;
-                                string typeName = GetTypeName(constructor.DeclaringType!, type, true);
+                                var declaringType = constructor.DeclaringType!;
+                                string typeName = GetTypeName(declaringType, type, true);
+
+                                var attribute = declaringType.GetCustomAttribute<PrimitiveShaderTypeAttribute>();
+                                if (!attribute!.Instantiable)
+                                {
+                                    throw new InvalidOperationException($"Shader type \"{typeName}\" is not instantiable!");
+                                }
 
                                 var constructorParameters = constructor.GetParameters();
                                 var expressionString = CreateParameterExpressionString(evaluationStack, constructorParameters.Length);
