@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 
 namespace CodePlayground.Graphics.Shaders.Transpilers
 {
-    internal struct GLSLMethodInfo
+    internal struct TranslatedMethodInfo
     {
         public string Source { get; set; }
         public IReadOnlyList<MethodInfo> Dependencies { get; set; }
@@ -41,12 +42,58 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         False
     }
 
-    internal struct JumpInstruction
+    internal struct JumpCondition
     {
         public ConditionalType Type { get; set; }
         public string? Expression { get; set; }
+    }
+
+    internal struct JumpInstruction
+    {
+        public JumpCondition Condition { get; set; }
         public int Offset { get; set; }
         public int Destination { get; set; }
+    }
+
+    internal enum ScopeType
+    {
+        Loop,
+        Conditional
+    }
+
+    internal sealed class Scope
+    {
+        public Scope(int startOffset, int byteLength, ScopeType type)
+        {
+            StartOffset = startOffset;
+            ByteLength = byteLength;
+
+            Type = type;
+            Children = new List<Scope>();
+            Parent = null;
+        }
+
+        public int StartOffset { get; }
+        public int ByteLength { get; }
+        public int EndOffset => StartOffset + ByteLength;
+
+        public ScopeType Type { get; set; }
+        public List<Scope> Children { get; }
+        public Scope? Parent { get; set; }
+    }
+
+    internal sealed class SourceMapCollection
+    {
+        public SourceMapCollection(IReadOnlyList<ILInstruction> instructions)
+        {
+            SourceOffsets = new Dictionary<int, int>();
+            OffsetInstructionMap = new Dictionary<int, int>();
+            InstructionOffsets = instructions.Select(instruction => instruction.Offset).ToArray();
+        }
+
+        public Dictionary<int, int> SourceOffsets { get; }
+        public Dictionary<int, int> OffsetInstructionMap { get; }
+        public IReadOnlyList<int> InstructionOffsets { get; }
     }
 
     internal sealed class GLSLTranspiler : ShaderTranspiler
@@ -74,8 +121,9 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             mFunctionNames = new Dictionary<MethodInfo, string>();
             mFieldNames = new Dictionary<FieldInfo, string>();
             mStageIO = new Dictionary<string, StageIOField>();
-            mDependencyGraph = new Dictionary<MethodInfo, GLSLMethodInfo>();
+            mDependencyGraph = new Dictionary<MethodInfo, TranslatedMethodInfo>();
             mStructDependencies = new Dictionary<Type, StructDependencyInfo>();
+            mMethodScopes = new List<Scope>();
         }
 
         private string GetFieldName(FieldInfo field, Type shaderType)
@@ -337,7 +385,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             }
         }
 
-        private GLSLMethodInfo TranspileMethod(Type type, MethodInfo method, bool entrypoint)
+        private TranslatedMethodInfo TranspileMethod(Type type, MethodInfo method, bool entrypoint)
         {
             var body = method.GetMethodBody();
             var instructions = body?.GetILAsInstructionList(method.Module);
@@ -426,13 +474,13 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             }
 
             var evaluationStack = new Stack<string>();
-            var sourceOffsets = new Dictionary<int, int>();
             var dependencies = new List<MethodInfo>();
             var jumps = new List<JumpInstruction>();
 
+            var mapCollection = new SourceMapCollection(instructions);
             foreach (var instruction in instructions)
             {
-                sourceOffsets.Add(instruction.Offset, builder.Length);
+                mapCollection.SourceOffsets.Add(instruction.Offset, builder.Length);
 
                 var opCode = instruction.OpCode;
                 var name = opCode.Name?.ToLower();
@@ -611,7 +659,21 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     }
                     else
                     {
-                        expression = instruction.Operand?.ToString() ?? throw new InvalidOperationException("Null values are not permitted in shaders!");
+                        string? parsedExpression = instruction.Operand?.ToString();
+                        if (parsedExpression is null)
+                        {
+                            int lastSeparator = name.LastIndexOf('.');
+                            if (lastSeparator >= 0)
+                            {
+                                var valueSegment = name[(lastSeparator + 1)..];
+                                if (int.TryParse(valueSegment, out int parsedInteger))
+                                {
+                                    parsedExpression = valueSegment;
+                                }
+                            }
+                        }
+
+                        expression = parsedExpression ?? throw new InvalidOperationException("Null values are not permitted in shaders!");
                     }
 
                     evaluationStack.Push(expression);
@@ -663,28 +725,29 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 }
                 else if (name.StartsWith("br"))
                 {
-                    var jump = new JumpInstruction
-                    {
-                        Offset = instruction.Offset,
-                        Destination = Convert.ToInt32(instruction.Operand!)
-                    };
-
                     var conditionalOp = name[2..];
+                    var condition = new JumpCondition();
+
                     if (conditionalOp.StartsWith("false"))
                     {
-                        jump.Type = ConditionalType.False;
+                        condition.Type = ConditionalType.False;
                     }
                     else if (conditionalOp.StartsWith("true"))
                     {
-                        jump.Type = ConditionalType.True;
+                        condition.Type = ConditionalType.True;
                     }
                     else
                     {
-                        jump.Type = ConditionalType.Unconditional;
+                        condition.Type = ConditionalType.Unconditional;
                     }
 
-                    jump.Expression = jump.Type != ConditionalType.Unconditional ? evaluationStack.Pop() : null;
-                    jumps.Add(jump);
+                    condition.Expression = condition.Type != ConditionalType.Unconditional ? evaluationStack.Pop() : null;
+                    jumps.Add(new JumpInstruction
+                    {
+                        Offset = instruction.Offset,
+                        Destination = Convert.ToInt32(instruction.Operand!),
+                        Condition = condition
+                    });
                 }
                 else if (name.StartsWith("add"))
                 {
@@ -783,40 +846,136 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 }
             }
 
-            var offsetInstructionMap = new Dictionary<int, int>();
             for (int i = 0; i < instructions.Count; i++)
             {
-                offsetInstructionMap.Add(instructions[i].Offset, i);
+                mapCollection.OffsetInstructionMap.Add(instructions[i].Offset, i);
             }
 
+            var nonLoopJumps = new List<JumpInstruction>();
             foreach (var jump in jumps)
+            {
+                if (jump.Destination > jump.Offset)
+                {
+                    nonLoopJumps.Add(jump);
+                    continue;
+                }
+
+                var scope = new Scope(jump.Destination, jump.Offset - jump.Destination, ScopeType.Loop);
+                if (!AddScope(scope))
+                {
+                    throw new InvalidOperationException($"Jump at offset 0x{jump.Offset:X} is not a valid loop!");
+                }
+
+                string startCode, endCode;
+                var condition = jump.Condition;
+
+                if (condition.Type != ConditionalType.Unconditional)
+                {
+                    var expression = condition.Type != ConditionalType.True ? $"!({condition.Expression})" : condition.Expression;
+
+                    startCode = "do {\n";
+                    endCode = $"}} while ({expression});\n";
+                }
+                else
+                {
+                    startCode = "while (true) {\n";
+                    endCode = "}\n";
+                }
+
+                int instructionIndex = mapCollection.OffsetInstructionMap[jump.Offset];
+                var nextInstruction = mapCollection.InstructionOffsets[instructionIndex + 1];
+
+                InsertCode(jump.Destination, startCode, builder, mapCollection);
+                InsertCode(nextInstruction, endCode, builder, mapCollection);
+            }
+
+            foreach (var jump in nonLoopJumps)
             {
                 // todo: properly create conditionals and loops at specified offsets
                 var insertedCode = "// jump to function offset 0x" + jump.Destination.ToString("X");
-                if (jump.Type != ConditionalType.Unconditional)
+
+                var condition = jump.Condition;
+                if (condition.Type != ConditionalType.Unconditional)
                 {
-                    insertedCode += $" if \"{jump.Expression}\" is {jump.Type.ToString().ToLower()}";
+                    insertedCode += $" if \"{condition.Expression}\" is {condition.Type.ToString().ToLower()}";
                 }
 
-                int insertOffset = sourceOffsets[jump.Offset];
                 insertedCode += '\n';
-                builder.Insert(insertOffset, insertedCode);
-
-                int instructionIndex = offsetInstructionMap[jump.Offset];
-                for (int i = instructionIndex; i < instructions.Count; i++)
-                {
-                    int offset = instructions[i].Offset;
-                    sourceOffsets[offset] += insertedCode.Length;
-                }
+                InsertCode(jump.Offset, insertedCode + '\n', builder, mapCollection);
             }
 
             builder.AppendLine("}");
-            return new GLSLMethodInfo
+            mMethodScopes.Clear();
+            return new TranslatedMethodInfo
             {
                 Source = builder.ToString(),
                 Dependencies = dependencies,
                 IsBuiltin = false
             };
+        }
+
+        private bool AddScope(Scope scope)
+        {
+            var containingScope = FindContainingScope(scope.StartOffset);
+            if (containingScope is not null && scope.EndOffset >= containingScope.EndOffset)
+            {
+                return false;
+            }
+
+            var childList = containingScope?.Children ?? mMethodScopes;
+            childList.Add(scope);
+
+            scope.Parent = containingScope;
+            return true;
+        }
+
+        private Scope? FindContainingScope(int offset)
+        {
+            Scope? currentScope = null;
+            var childList = mMethodScopes;
+
+            while (childList.Count > 0)
+            {
+                Scope? foundScope = null;
+                foreach (var loop in childList)
+                {
+                    if (loop.StartOffset > offset)
+                    {
+                        continue;
+                    }
+
+                    if (offset <= loop.EndOffset)
+                    {
+                        foundScope = loop;
+                        break;
+                    }
+                }
+
+                if (foundScope is not null)
+                {
+                    currentScope = foundScope;
+                    childList = foundScope.Children;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            return currentScope;
+        }
+
+        private static void InsertCode(int instructionOffset, string code, StringBuilder source, SourceMapCollection mapCollection)
+        {
+            int insertOffset = mapCollection.SourceOffsets[instructionOffset];
+            source.Insert(insertOffset, code);
+
+            int index = mapCollection.OffsetInstructionMap[instructionOffset];
+            for (int i = index; i < mapCollection.InstructionOffsets.Count; i++)
+            {
+                int offset = mapCollection.InstructionOffsets[i];
+                mapCollection.SourceOffsets[offset] += code.Length;
+            }
         }
 
         private void ClearData()
@@ -839,7 +998,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             var attribute = method.GetCustomAttribute<BuiltinShaderFunctionAttribute>();
             if (attribute is not null)
             {
-                mDependencyGraph.Add(method, new GLSLMethodInfo
+                mDependencyGraph.Add(method, new TranslatedMethodInfo
                 {
                     Source = string.Empty,
                     Dependencies = Array.Empty<MethodInfo>(),
@@ -1059,7 +1218,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         private readonly Dictionary<MethodInfo, string> mFunctionNames;
         private readonly Dictionary<FieldInfo, string> mFieldNames;
         private readonly Dictionary<string, StageIOField> mStageIO;
-        private readonly Dictionary<MethodInfo, GLSLMethodInfo> mDependencyGraph;
+        private readonly Dictionary<MethodInfo, TranslatedMethodInfo> mDependencyGraph;
         private readonly Dictionary<Type, StructDependencyInfo> mStructDependencies;
+        private readonly List<Scope> mMethodScopes;
     }
 }

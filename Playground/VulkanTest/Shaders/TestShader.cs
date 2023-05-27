@@ -51,6 +51,11 @@ namespace VulkanTest.Shaders
                 w = Add(0.6f, 0.4f);
             }
 
+            for (int i = 0; i < 7; i++)
+            {
+                w += Add(0f, 0f);
+            }
+
             return new VertexOut
             {
                 Position = new Vector4<float>(input.Position, w),
