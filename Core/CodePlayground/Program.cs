@@ -1,5 +1,4 @@
-﻿using Mono.Cecil;
-using System;
+﻿using System;
 using System.Reflection;
 
 namespace CodePlayground
@@ -14,7 +13,6 @@ namespace CodePlayground
             }
 
             string path = args[0];
-            var definition = AssemblyDefinition.ReadAssembly(path);
             var assembly = Assembly.LoadFrom(path);
 
             var loadedAppAttribute = assembly.GetCustomAttribute<LoadedApplicationAttribute>();
@@ -24,7 +22,7 @@ namespace CodePlayground
             }
 
             var applicationType = loadedAppAttribute.ApplicationType;
-            return Application.RunApplication(applicationType, definition, args[1..]);
+            return Application.RunApplication(applicationType, args[1..]);
         }
     }
 }
