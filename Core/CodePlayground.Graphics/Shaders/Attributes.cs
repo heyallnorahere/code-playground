@@ -57,15 +57,27 @@ namespace CodePlayground.Graphics.Shaders
         public ShaderOperatorType Type { get; }
     }
 
+    public enum ShaderResourceType
+    {
+        Uniform,
+        [ShaderFieldName("buffer")]
+        StorageBuffer
+    }
+
     [AttributeUsage(AttributeTargets.ReturnValue | AttributeTargets.Parameter | AttributeTargets.Field, AllowMultiple = false, Inherited = false)]
     public sealed class LayoutAttribute : Attribute
     {
         public LayoutAttribute()
         {
             Location = -1;
+            Set = Binding = 0;
+            ResourceType = ShaderResourceType.Uniform;
         }
 
         public int Location { get; set; }
+        public int Set { get; set; }
+        public int Binding { get; set; }
+        public ShaderResourceType ResourceType { get; set; }
     }
 
     [AttributeUsage(AttributeTargets.Field, AllowMultiple = false, Inherited = true)]

@@ -32,40 +32,15 @@ namespace VulkanTest.Shaders
             public Vector2<float> UV;
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private float Add(float lhs, float rhs)
-        {
-            return lhs + rhs;
-        }
+        [Layout(Set = 0, Binding = 0)]
+        public static Sampler2D<float>? uTexture;
 
         [ShaderEntrypoint(ShaderStage.Vertex)]
-        public VertexOut VertexMain(VertexIn input)
+        public static VertexOut VertexMain(VertexIn input)
         {
-            float a;
-            if (input.Position.X > 0.5f)
-            {
-                a = Add(0.3f, 0.7f);
-            }
-            else if (input.Position.X < 0f)
-            {
-                a = BuiltinFunctions.Lerp(0.8f, 1.7f, 2f / 9f);
-            }
-            else
-            {
-                a = -Add(-0.6f, -0.4f);
-            }
-
-            const int loopCount = 7;
-            float w = 0f;
-            for (int i = 0; i < loopCount; i++)
-            {
-                w += a / loopCount;
-            }
-
-            var position = new Vector4<float>(input.Position, 0f) + new Vector4<float>(0f, 0f, 0f, w);
             return new VertexOut
             {
-                Position = position,
+                Position = new Vector4<float>(input.Position, 1f),
                 OutputData = new FragmentIn
                 {
                     Normal = input.Normal.Normalize(),
@@ -76,9 +51,9 @@ namespace VulkanTest.Shaders
 
         [ShaderEntrypoint(ShaderStage.Fragment)]
         [return: Layout(Location = 0)]
-        public Vector4<float> FragmentMain(FragmentIn input)
+        public static Vector4<float> FragmentMain(FragmentIn input)
         {
-            return new Vector4<float>(0f, 1f, 0f, 1f);
+            return uTexture!.Sample(input.UV);
         }
     }
 }

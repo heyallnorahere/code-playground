@@ -109,6 +109,11 @@ namespace CodePlayground
             return flagValues;
         }
 
+        public static bool Extends<T>(this Type derived) where T : class
+        {
+            return derived.Extends(typeof(T));
+        }
+
         public static bool Extends(this Type derived, Type baseType)
         {
             if (derived == baseType)

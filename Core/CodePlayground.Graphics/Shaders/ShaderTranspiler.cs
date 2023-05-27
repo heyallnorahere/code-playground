@@ -35,7 +35,7 @@ namespace CodePlayground.Graphics.Shaders
             }
 
             var stages = new Dictionary<ShaderStage, StageOutput>();
-            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance);
+            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
             
             foreach (var method in methods)
             {

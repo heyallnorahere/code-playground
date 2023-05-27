@@ -1,107 +1,17 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 
 namespace CodePlayground.Graphics.Shaders.Transpilers
 {
-    internal struct TranslatedMethodInfo
-    {
-        public string Source { get; set; }
-        public IReadOnlyList<MethodInfo> Dependencies { get; set; }
-        public bool IsBuiltin { get; set; }
-    }
-
-    internal struct EvaluationMethodInfo
-    {
-        public List<MethodInfo> Dependencies { get; set; }
-        public MethodInfo Method { get; set; }
-        public List<MethodInfo> Dependents { get; set; }
-    }
-
-    internal struct StructDependencyInfo
-    {
-        public HashSet<Type> Dependencies { get; set; }
-        public HashSet<Type> Dependents { get; set; }
-        public Dictionary<string, string> DefinedFields { get; set; }
-    }
-
-    internal struct StageIOField
-    {
-        public string Direction { get; set; }
-        public int Location { get; set; }
-        public string TypeName { get; set; }
-    }
-
-    internal enum ConditionalType
-    {
-        Unconditional,
-        True,
-        False
-    }
-
-    internal struct JumpCondition
-    {
-        public ConditionalType Type { get; set; }
-        public string? Expression { get; set; }
-    }
-
-    internal struct JumpInstruction
-    {
-        public JumpCondition Condition { get; set; }
-        public int Offset { get; set; }
-        public int Destination { get; set; }
-    }
-
-    internal enum ScopeType
-    {
-        Loop,
-        Conditional
-    }
-
-    internal sealed class Scope
-    {
-        public Scope(int startOffset, int byteLength, ScopeType type)
-        {
-            StartOffset = startOffset;
-            ByteLength = byteLength;
-
-            Type = type;
-            Children = new List<Scope>();
-            Parent = null;
-        }
-
-        public int StartOffset { get; }
-        public int ByteLength { get; }
-        public int EndOffset => StartOffset + ByteLength;
-
-        public ScopeType Type { get; set; }
-        public List<Scope> Children { get; }
-        public Scope? Parent { get; set; }
-    }
-
-    internal sealed class SourceMapCollection
-    {
-        public SourceMapCollection(IReadOnlyList<ILInstruction> instructions)
-        {
-            SourceOffsets = new Dictionary<int, int>();
-            OffsetInstructionMap = new Dictionary<int, int>();
-            InstructionOffsets = instructions.Select(instruction => instruction.Offset).ToArray();
-        }
-
-        public Dictionary<int, int> SourceOffsets { get; }
-        public Dictionary<int, int> OffsetInstructionMap { get; }
-        public IReadOnlyList<int> InstructionOffsets { get; }
-    }
-
     internal sealed class GLSLTranspiler : ShaderTranspiler
     {
         // shaderc.net does not pass your entrypoint name through at all, so...
         private const string EntrypointName = "main";
 
-        private static readonly Dictionary<Type, string> sPrimitiveTypeNames;
+        private static readonly IReadOnlyDictionary<Type, string> sPrimitiveTypeNames;
         static GLSLTranspiler()
         {
             sPrimitiveTypeNames = new Dictionary<Type, string>
@@ -121,6 +31,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             mFunctionNames = new Dictionary<MethodInfo, string>();
             mFieldNames = new Dictionary<FieldInfo, string>();
             mStageIO = new Dictionary<string, StageIOField>();
+            mStageResources = new Dictionary<string, ShaderResource>();
             mDependencyGraph = new Dictionary<MethodInfo, TranslatedMethodInfo>();
             mStructDependencies = new Dictionary<Type, StructDependencyInfo>();
             mMethodScopes = new List<Scope>();
@@ -537,7 +448,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     if (!invokedMethod.IsStatic)
                     {
                         string invokedObject = evaluationStack.Pop();
-                        if (invokedMethod.GetCustomAttribute<PrimitiveShaderTypeAttribute>() is null)
+                        if (invokedMethod.GetCustomAttribute<BuiltinShaderFunctionAttribute>() is null)
                         {
                             var declaringType = invokedMethod.DeclaringType;
                             if (declaringType is null || !type.Extends(declaringType))
@@ -571,14 +482,40 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     if (instruction.Operand is FieldInfo field)
                     {
                         var fieldName = GetFieldName(field, type);
-                        if (loadType.StartsWith("fld"))
+                        var layoutAttribute = field.GetCustomAttribute<LayoutAttribute>();
+
+                        if (field.DeclaringType == type || field.IsStatic)
+                        {
+                            if (layoutAttribute is null)
+                            {
+                                throw new InvalidOperationException("Static and/or shader fields must have the Layout attribute applied!");
+                            }
+                            else if (!mStageResources.ContainsKey(fieldName))
+                            {
+                                var fieldType = field.FieldType;
+
+                                string layoutString = $"set = {layoutAttribute.Set}, binding = {layoutAttribute.Binding}";
+                                if (!fieldType.Extends<__SamplerBase>())
+                                {
+                                    layoutString = "std140, " + layoutString;
+                                }
+
+                                mStageResources.Add(fieldName, new ShaderResource
+                                {
+                                    Layout = layoutString,
+                                    TypeName = GetTypeName(fieldType, type, true),
+                                    Type = layoutAttribute.ResourceType
+                                });
+                            }
+                        }
+
+                        if (!field.IsStatic)
                         {
                             var parentExpression = evaluationStack.Pop();
                             expression = parentExpression != "this" ? $"{parentExpression}.{fieldName}" : fieldName;
 
                             if (entrypoint)
                             {
-                                var layoutAttribute = field.GetCustomAttribute<LayoutAttribute>();
                                 if (layoutAttribute is not null && layoutAttribute.Location >= 0)
                                 {
                                     bool isInput = false;
@@ -1076,6 +1013,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             mFunctionNames.Clear();
             mFieldNames.Clear();
             mStageIO.Clear();
+            mStageResources.Clear();
             mDependencyGraph.Clear();
             mStructDependencies.Clear();
         }
@@ -1291,6 +1229,18 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 builder.AppendLine($"layout(location = {fieldData.Location}) {fieldData.Direction} {fieldData.TypeName} {fieldName};");
             }
 
+            foreach (string fieldName in mStageResources.Keys)
+            {
+                var resourceData = mStageResources[fieldName];
+                var resourceType = resourceData.Type;
+
+                var resourceTypeField = typeof(ShaderResourceType).GetField(resourceType.ToString());
+                var nameAttribute = resourceTypeField!.GetCustomAttribute<ShaderFieldNameAttribute>();
+
+                var resourceTypeName = (nameAttribute?.Name ?? resourceType.ToString()).ToLower();
+                builder.AppendLine($"layout({resourceData.Layout}) {resourceTypeName} {resourceData.TypeName} {fieldName};");
+            }
+
             var functionOrder = ResolveFunctionOrder();
             foreach (var method in functionOrder)
             {
@@ -1310,6 +1260,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         private readonly Dictionary<MethodInfo, string> mFunctionNames;
         private readonly Dictionary<FieldInfo, string> mFieldNames;
         private readonly Dictionary<string, StageIOField> mStageIO;
+        private readonly Dictionary<string, ShaderResource> mStageResources;
         private readonly Dictionary<MethodInfo, TranslatedMethodInfo> mDependencyGraph;
         private readonly Dictionary<Type, StructDependencyInfo> mStructDependencies;
         private readonly List<Scope> mMethodScopes;
