@@ -1,4 +1,7 @@
 ﻿using Silk.NET.Vulkan;
+using System;
+using System.Runtime.InteropServices;
+using Vortice.ShaderCompiler;
 
 namespace CodePlayground.Graphics.Vulkan
 {
@@ -68,6 +71,75 @@ namespace CodePlayground.Graphics.Vulkan
 
         private readonly ShaderStage mStage;
         private readonly string mEntrypoint;
+        private bool mDisposed;
+    }
+
+    internal sealed class VulkanShaderCompiler : IShaderCompiler
+    {
+        public VulkanShaderCompiler(Version vulkanVersion)
+        {
+            uint version = VulkanUtilities.MakeVersion(vulkanVersion);
+
+            mDisposed = false;
+            mCompiler = new Compiler();
+
+            mCompiler.Options.SetTargetEnv(TargetEnvironment.Vulkan, version);
+            mCompiler.Options.SetargetSpirv(SpirVVersion.Version_1_0);
+
+#if DEBUG
+            mCompiler.Options.SetGenerateDebugInfo();
+            mCompiler.Options.SetOptimizationLevel(OptimizationLevel.Zero);
+#else
+            mCompiler.Options.SetOptimizationLevel(OptimizationLevel.Performance);
+#endif
+        }
+
+        public void Dispose()
+        {
+            if (mDisposed)
+            {
+                return;
+            }
+
+            mCompiler.Dispose();
+            mDisposed = true;
+        }
+
+        public byte[] Compile(string source, string path, ShaderLanguage language, ShaderStage stage, string entrypoint)
+        {
+            lock (mCompiler)
+            {
+                mCompiler.Options.SetSourceLanguage(language switch
+                {
+                    ShaderLanguage.GLSL => SourceLanguage.GLSL,
+                    ShaderLanguage.HLSL => SourceLanguage.HLSL,
+                    _ => throw new ArgumentException("Invalid shader language!")
+                });
+
+                var kind = stage switch
+                {
+                    ShaderStage.Vertex => ShaderKind.VertexShader,
+                    ShaderStage.Fragment => ShaderKind.FragmentShader,
+                    _ => throw new ArgumentException("Unsupported shader stage!")
+                };
+
+                using var result = mCompiler.Compile(source, path, kind, entryPoint: entrypoint);
+                if (result.Status != CompilationStatus.Success)
+                {
+                    throw new InvalidOperationException($"Failed to compile shader ({result.Status}): {result.ErrorMessage}");
+                }
+
+                var bytecode = result.GetBytecode();
+                var spirv = new byte[bytecode.Length];
+
+                bytecode.CopyTo(spirv);
+                return spirv;
+            }
+        }
+
+        public ShaderLanguage PreferredLanguage => ShaderLanguage.GLSL;
+
+        private readonly Compiler mCompiler;
         private bool mDisposed;
     }
 }
