@@ -113,6 +113,12 @@ namespace CodePlayground.Graphics
         Struct
     }
 
+    public enum PipelineType
+    {
+        Graphics,
+        Compute
+    }
+
     public struct DeviceImageInfo
     {
         public Size Size { get; set; }
@@ -162,6 +168,13 @@ namespace CodePlayground.Graphics
         public Dictionary<int, ReflectedShaderType> Types { get; set; }
     }
 
+    public struct PipelineDescription
+    {
+        public IRenderTarget? RenderTarget { get; set; }
+        public PipelineType Type { get; set; }
+        public int FrameCount { get; set; }
+    }
+
     public interface IGraphicsContext : IDisposable
     {
         public IGraphicsDeviceScorer DeviceScorer { set; }
@@ -170,10 +183,12 @@ namespace CodePlayground.Graphics
 
         public bool IsApplicable(WindowOptions options);
         public void Initialize(IWindow window, GraphicsApplication application);
+
         public IDeviceBuffer CreateDeviceBuffer(DeviceBufferUsage usage, int size);
         public IDeviceImage CreateDeviceImage(DeviceImageInfo info);
         public IShaderCompiler CreateCompiler();
         public IShader LoadShader(IReadOnlyList<byte> data, ShaderStage stage, string entrypoint);
+        public IPipeline CreatePipeline(PipelineDescription description);
     }
 
     public interface IGraphicsDeviceInfo
@@ -196,6 +211,7 @@ namespace CodePlayground.Graphics
     public interface ICommandList
     {
         public bool IsRecording { get; }
+
         public void Begin();
         public void End();
     }
@@ -222,6 +238,9 @@ namespace CodePlayground.Graphics
     {
         public IRenderTarget RenderTarget { get; }
         public IFramebuffer CurrentFramebuffer { get; }
+        public int CurrentFrame { get; }
+        public int FrameCount { get; }
+
         public bool VSync { get; set; }
         public Vector2D<int> Size { get; }
 
@@ -283,5 +302,16 @@ namespace CodePlayground.Graphics
         public ShaderStage Stage { get; }
         public string Entrypoint { get; }
         public IReadOnlyList<byte> Bytecode { get; }
+    }
+
+    public interface IPipeline : IDisposable
+    {
+        public PipelineDescription Description { get; }
+
+        public void Bind(ICommandList commandList, int frame);
+        public bool Bind(IDeviceBuffer buffer, string name, int index = 0);
+        // todo: texture binding
+
+        public void Load(IReadOnlyDictionary<ShaderStage, IShader> shaders);
     }
 }

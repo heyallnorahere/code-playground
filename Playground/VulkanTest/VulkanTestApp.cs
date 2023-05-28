@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
+using VulkanTest.Shaders;
 
 [assembly: LoadedApplication(typeof(VulkanTest.VulkanTestApp))]
 
@@ -26,10 +27,18 @@ namespace VulkanTest
         [EventHandler(nameof(Load))]
         private unsafe void OnLoad()
         {
-            mContext = CreateGraphicsContext<VulkanContext>();
-            mContext.Swapchain.VSync = true; // enable vsync
+            CreateGraphicsContext<VulkanContext>();
+
+            var swapchain = GraphicsContext!.Swapchain;
+            swapchain.VSync = true; // enable vsync
 
             mShaderLibrary = new ShaderLibrary(this);
+            mPipeline = mShaderLibrary.LoadPipeline<TestShader>(new PipelineDescription
+            {
+                RenderTarget = swapchain.RenderTarget,
+                Type = PipelineType.Graphics,
+                FrameCount = swapchain.FrameCount
+            });
         }
 
         protected override void OnContextCreation(IGraphicsContext context)
@@ -72,8 +81,9 @@ namespace VulkanTest
         [EventHandler(nameof(Closing))]
         private void OnClose()
         {
+            mPipeline?.Dispose();
             mShaderLibrary?.Dispose();
-            mContext?.Dispose();
+            GraphicsContext?.Dispose();
         }
 
         [EventHandler(nameof(Render))]
@@ -87,12 +97,13 @@ namespace VulkanTest
             var clearColor = new Vector4D<float>(1f, 0f, 0f, 1f);
             renderInfo.RenderTarget.BeginRender(renderInfo.CommandList, renderInfo.Framebuffer, clearColor);
 
+            mPipeline!.Bind(renderInfo.CommandList, renderInfo.CurrentFrame);
             // todo: render
 
             renderInfo.RenderTarget.EndRender(renderInfo.CommandList);
         }
 
-        private VulkanContext? mContext;
         private ShaderLibrary? mShaderLibrary;
+        private IPipeline? mPipeline;
     }
 }

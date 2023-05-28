@@ -482,7 +482,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public IRenderTarget RenderTarget => mRenderPass;
         public IFramebuffer CurrentFramebuffer => mFramebuffers[mCurrentImage].Framebuffer;
-        public int ImageCount => mFramebuffers.Length;
+        public int CurrentFrame => (int)mCurrentImage;
+        public int FrameCount => mFramebuffers.Length;
 
         public bool VSync
         {

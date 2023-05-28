@@ -48,26 +48,28 @@ namespace VulkanTest
             mDisposed = true;
         }
 
-        private TextReader? GetResourceStream(string name)
-        {
-            var stream = mAssembly.GetManifestResourceStream(name);
-            if (stream is null)
-            {
-                return null;
-            }
-
-            return new StreamReader(stream, leaveOpen: false);
-        }
-
         private void Load()
         {
             var assemblyDirectory = Path.GetDirectoryName(mAssembly.Location);
             var shaderDirectory = Path.Join(assemblyDirectory, "shaders");
-            var sourceDirectory = Path.Join(shaderDirectory, "source");
+            var sourceDirectory = Path.Join(shaderDirectory, "src");
+            var binaryDirectory = Path.Join(shaderDirectory, "bin");
+
+            string binaryExtension = mCompiler.PreferredLanguage switch
+            {
+                ShaderLanguage.GLSL => "spv",
+                ShaderLanguage.HLSL => "bin",
+                _ => throw new InvalidOperationException($"Unsupported language: {mCompiler.PreferredLanguage}")
+            };
 
             var types = mAssembly.GetTypes();
             foreach (var type in types)
             {
+                if (!type.IsClass)
+                {
+                    continue;
+                }
+
                 var attribute = type.GetCustomAttribute<CompiledShaderAttribute>();
                 if (attribute is null)
                 {
@@ -85,28 +87,76 @@ namespace VulkanTest
                     }
 
                     var language = mTranspiler.OutputLanguage;
-                    string sourcePath = Path.Join(sourceDirectory, shaderId) + '.' + language.ToString().ToLower();
+                    var sourcePath = Path.Join(sourceDirectory, shaderId) + '.' + language.ToString().ToLower();
 
                     var shaderSourceDirectory = Path.GetDirectoryName(sourcePath);
                     Directory.CreateDirectory(shaderSourceDirectory!);
 
+                    using var sourceStream = new FileStream(sourcePath, FileMode.Create, FileAccess.Write);
+                    using var writer = new StreamWriter(sourceStream);
+
                     var stageSource = source[stage];
-                    using (var sourceStream = new FileStream(sourcePath, FileMode.Create))
-                    {
-                        using var writer = new StreamWriter(sourceStream);
-                        writer.Write(stageSource.Source);
-                        writer.Flush();
-                    }
+                    writer.Write(stageSource.Source);
+                    writer.Flush();
 
                     byte[] bytecode = mCompiler.Compile(stageSource.Source, sourcePath, language, stage, stageSource.Entrypoint);
                     var shader = mContext.LoadShader(bytecode, stage, stageSource.Entrypoint);
-
                     mShaders.Add(shaderId, shader);
+
+                    var binaryPath = Path.Join(binaryDirectory, shaderId) + "." + binaryExtension;
+                    var shaderBinaryDirectory = Path.GetDirectoryName(binaryPath);
+                    Directory.CreateDirectory(shaderBinaryDirectory!);
+
+                    using var binaryStream = new FileStream(binaryPath, FileMode.Create, FileAccess.Write);
+                    binaryStream.Write(bytecode);
+                    binaryStream.Flush();
                 }
             }
         }
 
-        public IReadOnlyDictionary<string, IShader> Shaders => mShaders;
+        public IReadOnlyDictionary<ShaderStage, IShader> GetStages(string prefix)
+        {
+            var stages = new Dictionary<ShaderStage, IShader>();
+            foreach (var id in mShaders.Keys)
+            {
+                if (id.StartsWith(prefix))
+                {
+                    var stageName = Path.GetFileName(id);
+                    var stage = Enum.Parse<ShaderStage>(stageName);
+
+                    var shader = mShaders[id];
+                    stages.Add(stage, shader);
+                }
+            }
+
+            return stages;
+        }
+
+        public IPipeline LoadPipeline<T>(PipelineDescription description) where T : class => LoadPipeline(typeof(T), description);
+        public IPipeline LoadPipeline(Type type, PipelineDescription description)
+        {
+            var attribute = type.GetCustomAttribute<CompiledShaderAttribute>();
+            if (attribute is null)
+            {
+                throw new ArgumentException("Type is not a compiled shader!");
+            }
+
+            string id = string.IsNullOrEmpty(attribute.ID) ? type.Name : attribute.ID;
+            return LoadPipeline(id, description);
+        }
+
+        public IPipeline LoadPipeline(string prefix, PipelineDescription description)
+        {
+            var stages = GetStages(prefix);
+            if (stages.Count == 0)
+            {
+                throw new ArgumentException($"Failed to find stages matching prefix \"{prefix}\"");
+            }
+
+            var pipeline = mContext.CreatePipeline(description);
+            pipeline.Load(stages);
+            return pipeline;
+        }
 
         private readonly Assembly mAssembly;
         private readonly IGraphicsContext mContext;

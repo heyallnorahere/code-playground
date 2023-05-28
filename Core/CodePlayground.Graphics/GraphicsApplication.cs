@@ -67,6 +67,7 @@ namespace CodePlayground.Graphics
         public ICommandList? CommandList { get; set; }
         public IRenderTarget? RenderTarget { get; set; }
         public IFramebuffer? Framebuffer { get; set; }
+        public int CurrentFrame { get; set; }
     }
 
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
@@ -196,7 +197,11 @@ namespace CodePlayground.Graphics
             {
                 Render?.Invoke(new FrameRenderInfo
                 {
-                    Delta = delta
+                    Delta = delta,
+                    CommandList = null,
+                    RenderTarget = null,
+                    Framebuffer = null,
+                    CurrentFrame = -1
                 });
             }
             else
@@ -215,7 +220,8 @@ namespace CodePlayground.Graphics
                     Delta = delta,
                     CommandList = commandList,
                     RenderTarget = swapchain.RenderTarget,
-                    Framebuffer = swapchain.CurrentFramebuffer
+                    Framebuffer = swapchain.CurrentFramebuffer,
+                    CurrentFrame = swapchain.CurrentFrame
                 });
 
                 commandList.End();

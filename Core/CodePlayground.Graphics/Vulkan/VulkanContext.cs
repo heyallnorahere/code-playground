@@ -203,7 +203,7 @@ namespace CodePlayground.Graphics.Vulkan
                 LogicalDevice = mDevice.Device,
                 PreferredLargeHeapBlockSize = 0,
                 HeapSizeLimits = null,
-                FrameInUseCount = mSwapchain.ImageCount
+                FrameInUseCount = mSwapchain.FrameCount
             });
 
             mInitialized = true;
@@ -530,6 +530,11 @@ namespace CodePlayground.Graphics.Vulkan
         IShader IGraphicsContext.LoadShader(IReadOnlyList<byte> data, ShaderStage stage, string entrypoint)
         {
             return new VulkanShader(mDevice!, data, stage, entrypoint);
+        }
+
+        IPipeline IGraphicsContext.CreatePipeline(PipelineDescription description)
+        {
+            return new VulkanPipeline(mDevice!, description);
         }
 
         public void Dispose()
