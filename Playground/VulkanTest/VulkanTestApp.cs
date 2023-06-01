@@ -21,6 +21,12 @@ namespace VulkanTest
         public Vector3D<float> Color;
     }
 
+    internal struct PipelineSpecification : IPipelineSpecification
+    {
+        public PipelineBlendMode BlendMode { get; set; }
+        public PipelineFrontFace FrontFace { get; set; }
+    }
+
     [ApplicationTitle("Vulkan Test")]
     [ApplicationGraphicsAPI(AppGraphicsAPI.Vulkan)]
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
@@ -52,7 +58,7 @@ namespace VulkanTest
 
             sIndices = new uint[]
             {
-                0, 2, 1
+                0, 1, 2
             };
         }
 
@@ -77,7 +83,12 @@ namespace VulkanTest
             {
                 RenderTarget = swapchain.RenderTarget,
                 Type = PipelineType.Graphics,
-                FrameCount = swapchain.FrameCount
+                FrameCount = swapchain.FrameCount,
+                Specification = new PipelineSpecification
+                {
+                    FrontFace = PipelineFrontFace.CounterClockwise,
+                    BlendMode = PipelineBlendMode.SourceAlphaOneMinusSourceAlpha
+                }
             });
 
             int vertexBufferSize = sVertices.Length * Marshal.SizeOf<Vertex>();

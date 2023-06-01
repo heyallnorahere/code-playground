@@ -37,7 +37,7 @@ namespace VulkanTest.Shaders
         [return: Layout(Location = 0)]
         public static Vector4<float> FragmentMain([Layout(Location = 0)] Vector3<float> color)
         {
-            return new Vector4<float>(color, 1f);
+            return new Vector4<float>(color, color.X);
         }
     }
 }
