@@ -282,7 +282,7 @@ namespace CodePlayground.Graphics.Vulkan
             api.QueueWaitIdle(mQueue).Assert();
         }
 
-        private unsafe void ClearCache()
+        public unsafe void ClearCache()
         {
             Wait();
 

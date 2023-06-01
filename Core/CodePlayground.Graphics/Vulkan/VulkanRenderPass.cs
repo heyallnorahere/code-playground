@@ -164,16 +164,18 @@ namespace CodePlayground.Graphics.Vulkan
             api.DestroyRenderPass(mDevice.Device, mRenderPass, null);
         }
 
-        public unsafe void BeginRender(ICommandList commandList, IFramebuffer framebuffer, Vector4D<float> clearColor)
+        void IRenderTarget.BeginRender(ICommandList commandList, IFramebuffer framebuffer, Vector4D<float> clearColor, bool flipViewport)
         {
             if (commandList is not VulkanCommandBuffer || framebuffer is not VulkanFramebuffer)
             {
                 throw new ArgumentException("Must pass Vulkan objects!");
             }
 
-            var commandBuffer = (VulkanCommandBuffer)commandList;
-            var vulkanFramebuffer = (VulkanFramebuffer)framebuffer;
+            BeginRender((VulkanCommandBuffer)commandList, (VulkanFramebuffer)framebuffer, clearColor, flipViewport);
+        }
 
+        public unsafe void BeginRender(VulkanCommandBuffer commandBuffer, VulkanFramebuffer framebuffer, Vector4D<float> clearColor, bool flipViewport = false)
+        {
             var clearValues = new ClearValue[mAttachmentTypes.Count];
             for (int i = 0; i < clearValues.Length; i++)
             {
@@ -197,32 +199,48 @@ namespace CodePlayground.Graphics.Vulkan
                 clearValues[i] = clearValue;
             }
 
+            var api = VulkanContext.API;
+            var buffer = commandBuffer.Buffer;
+
+            var width = framebuffer.Size.X;
+            var height = framebuffer.Size.Y;
+
+            var scissor = new Rect2D
+            {
+                Offset = new Offset2D
+                {
+                    X = 0,
+                    Y = 0
+                },
+                Extent = new Extent2D
+                {
+                    Width = (uint)width,
+                    Height = (uint)height
+                }
+            };
+
             fixed (ClearValue* clearValuePtr = clearValues)
             {
                 var beginInfo = VulkanUtilities.Init<RenderPassBeginInfo>() with
                 {
                     RenderPass = mRenderPass,
-                    Framebuffer = vulkanFramebuffer.Framebuffer,
-                    RenderArea = new Rect2D
-                    {
-                        Offset = new Offset2D
-                        {
-                            X = 0,
-                            Y = 0
-                        },
-                        Extent = new Extent2D
-                        {
-                            Width = (uint)vulkanFramebuffer.Size.X,
-                            Height = (uint)vulkanFramebuffer.Size.Y
-                        }
-                    },
+                    Framebuffer = framebuffer.Framebuffer,
+                    RenderArea = scissor,
                     ClearValueCount = (uint)clearValues.Length,
                     PClearValues = clearValuePtr
                 };
 
-                var api = VulkanContext.API;
-                api.CmdBeginRenderPass(commandBuffer.Buffer, beginInfo, SubpassContents.Inline);
+                api.CmdBeginRenderPass(buffer, beginInfo, SubpassContents.Inline);
             }
+
+            api.CmdSetScissor(buffer, 0, 1, scissor);
+            api.CmdSetViewport(buffer, 0, 1, VulkanUtilities.Init<Viewport>() with
+            {
+                X = 0f,
+                Y = flipViewport ? height : 0f,
+                Width = width,
+                Height = height * (flipViewport ? -1f : 1f)
+            });
         }
 
         public void EndRender(ICommandList commandList)

@@ -81,6 +81,10 @@ namespace VulkanTest
         [EventHandler(nameof(Closing))]
         private void OnClose()
         {
+            var device = GraphicsContext?.Device;
+            var queue = device?.GetQueue(CommandQueueFlags.Graphics);
+            queue?.ClearCache();
+
             mPipeline?.Dispose();
             mShaderLibrary?.Dispose();
             GraphicsContext?.Dispose();

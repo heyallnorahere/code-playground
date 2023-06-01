@@ -29,9 +29,7 @@ namespace VulkanTest.Shaders
             [Layout(Location = 0)]
             public Vector3<float> Normal;
             [Layout(Location = 1)]
-            public float UV_X;
-            [Layout(Location = 2)]
-            public float UV_Y;
+            public Vector2<float> UV;
         }
 
         [Layout(Set = 0, Binding = 0)]
@@ -46,8 +44,7 @@ namespace VulkanTest.Shaders
                 OutputData = new FragmentIn
                 {
                     Normal = input.Normal.Normalize(),
-                    UV_X = input.UV.X,
-                    UV_Y = input.UV.Y
+                    UV = input.UV,
                 }
             };
         }
@@ -56,7 +53,7 @@ namespace VulkanTest.Shaders
         [return: Layout(Location = 0)]
         public static Vector4<float> FragmentMain(FragmentIn input)
         {
-            return uTexture!.Sample(new Vector2<float>(input.UV_X, input.UV_Y));
+            return uTexture!.Sample(input.UV);
         }
     }
 }

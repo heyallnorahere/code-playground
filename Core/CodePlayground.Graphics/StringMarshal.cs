@@ -9,6 +9,7 @@ namespace CodePlayground.Graphics
         public StringMarshal()
         {
             mPointers = new List<nint>();
+            mStringIndices = new Dictionary<string, int>();
         }
 
         ~StringMarshal() => FreeMemory();
@@ -16,7 +17,14 @@ namespace CodePlayground.Graphics
 
         public byte* MarshalString(string value)
         {
+            if (mStringIndices.TryGetValue(value, out int index))
+            {
+                return (byte*)mPointers[index];
+            }
+
             nint pointer = Marshal.StringToHGlobalAnsi(value);
+
+            mStringIndices.Add(value, mPointers.Count);
             mPointers.Add(pointer);
 
             return (byte*)pointer;
@@ -26,8 +34,10 @@ namespace CodePlayground.Graphics
         {
             mPointers.ForEach(Marshal.FreeHGlobal);
             mPointers.Clear();
+            mStringIndices.Clear();
         }
 
         private readonly List<nint> mPointers;
+        private readonly Dictionary<string, int> mStringIndices;
     }
 }

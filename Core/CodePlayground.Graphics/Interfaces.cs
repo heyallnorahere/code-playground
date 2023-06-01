@@ -83,7 +83,9 @@ namespace CodePlayground.Graphics
     public enum ShaderStage
     {
         Vertex,
-        Fragment
+        Fragment,
+        Geometry,
+        Compute
     }
 
     [Flags]
@@ -117,6 +119,20 @@ namespace CodePlayground.Graphics
     {
         Graphics,
         Compute
+    }
+
+    public enum PipelineBlendMode
+    {
+        None,
+        SourceAlphaOneMinusSourceAlpha,
+        OneZero,
+        ZeroSourceColor
+    }
+
+    public enum PipelineFrontFace
+    {
+        Clockwise,
+        CounterClockwise
     }
 
     public struct DeviceImageInfo
@@ -173,6 +189,7 @@ namespace CodePlayground.Graphics
         public IRenderTarget? RenderTarget { get; set; }
         public PipelineType Type { get; set; }
         public int FrameCount { get; set; }
+        public IPipelineSpecification? Specification { get; set; }
     }
 
     public interface IGraphicsContext : IDisposable
@@ -223,14 +240,16 @@ namespace CodePlayground.Graphics
 
         public ICommandList Release();
         public void Submit(ICommandList commandList, bool wait = false);
+
         public void Wait();
+        public void ClearCache();
     }
 
     public interface IRenderTarget : IDisposable
     {
         public IReadOnlyList<AttachmentType> AttachmentTypes { get; }
 
-        public void BeginRender(ICommandList commandList, IFramebuffer framebuffer, Vector4D<float> clearColor);
+        public void BeginRender(ICommandList commandList, IFramebuffer framebuffer, Vector4D<float> clearColor, bool flipViewport = false);
         public void EndRender(ICommandList commandList);
     }
 
@@ -313,5 +332,11 @@ namespace CodePlayground.Graphics
         // todo: texture binding
 
         public void Load(IReadOnlyDictionary<ShaderStage, IShader> shaders);
+    }
+
+    public interface IPipelineSpecification
+    {
+        public PipelineBlendMode BlendMode { get; }
+        public PipelineFrontFace FrontFace { get; }
     }
 }

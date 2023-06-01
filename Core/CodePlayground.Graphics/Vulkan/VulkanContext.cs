@@ -534,7 +534,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         IPipeline IGraphicsContext.CreatePipeline(PipelineDescription description)
         {
-            return new VulkanPipeline(mDevice!, description);
+            return new VulkanPipeline(this, description);
         }
 
         public void Dispose()
