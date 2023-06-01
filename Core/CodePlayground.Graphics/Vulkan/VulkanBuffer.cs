@@ -4,14 +4,14 @@ using VMASharp;
 
 namespace CodePlayground.Graphics.Vulkan
 {
-    public sealed class VulkanBuffer : IDeviceBuffer
+    public sealed class VulkanBuffer : IDeviceBuffer, IBindableVulkanResource
     {
         public static BufferUsageFlags GetUsageFlags(DeviceBufferUsage usage)
         {
             return usage switch
             {
-                DeviceBufferUsage.Vertex => BufferUsageFlags.VertexBufferBit,
-                DeviceBufferUsage.Index => BufferUsageFlags.IndexBufferBit,
+                DeviceBufferUsage.Vertex => BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit,
+                DeviceBufferUsage.Index => BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit,
                 DeviceBufferUsage.Uniform => BufferUsageFlags.UniformBufferBit,
                 DeviceBufferUsage.Staging => BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit,
                 _ => throw new ArgumentException("Invalid buffer usage!")
@@ -158,7 +158,7 @@ namespace CodePlayground.Graphics.Vulkan
         public void BindVertices(VulkanCommandBuffer commandBuffer, int index)
         {
             var api = VulkanContext.API;
-            api.CmdBindVertexBuffers(commandBuffer.Buffer, (uint)index, 0, mBuffer, 0);
+            api.CmdBindVertexBuffers(commandBuffer.Buffer, (uint)index, 1, mBuffer, 0);
         }
 
         void IDeviceBuffer.BindIndices(ICommandList commandList, DeviceBufferIndexType indexType)
@@ -180,6 +180,33 @@ namespace CodePlayground.Graphics.Vulkan
                 DeviceBufferIndexType.UInt32 => IndexType.Uint32,
                 _ => throw new ArgumentException("Invalid index type!")
             });
+        }
+
+        public unsafe void Bind(DescriptorSet[] descriptorSets, int binding, int index)
+        {
+            var bufferInfo = VulkanUtilities.Init<DescriptorBufferInfo>() with
+            {
+                Buffer = mBuffer,
+                Offset = 0,
+                Range = (ulong)mSize
+            };
+
+            var writes = new WriteDescriptorSet[descriptorSets.Length];
+            for (int i = 0; i < writes.Length; i++)
+            {
+                writes[i] = VulkanUtilities.Init<WriteDescriptorSet>() with
+                {
+                    DstSet = descriptorSets[i],
+                    DstBinding = (uint)binding,
+                    DstArrayElement = (uint)index,
+                    DescriptorCount = 1,
+                    DescriptorType = DescriptorType.UniformBuffer,
+                    PBufferInfo = &bufferInfo
+                };
+            }
+
+            var api = VulkanContext.API;
+            api.UpdateDescriptorSets(mDevice.Device, writes, 0, null);
         }
 
         public DeviceBufferUsage Usage => mUsage;

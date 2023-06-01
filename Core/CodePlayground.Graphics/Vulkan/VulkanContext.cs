@@ -506,6 +506,16 @@ namespace CodePlayground.Graphics.Vulkan
             return surface;
         }
 
+        public IShaderCompiler CreateCompiler()
+        {
+            return new VulkanShaderCompiler(mVulkanVersion!);
+        }
+
+        IRenderer IGraphicsContext.CreateRenderer()
+        {
+            return new VulkanRenderer();
+        }
+
         IDeviceBuffer IGraphicsContext.CreateDeviceBuffer(DeviceBufferUsage usage, int size)
         {
             return new VulkanBuffer(mDevice!, mAllocator!, usage, size);
@@ -520,11 +530,6 @@ namespace CodePlayground.Graphics.Vulkan
                 MipLevels = info.MipLevels,
                 Format = info.Format
             });
-        }
-
-        public IShaderCompiler CreateCompiler()
-        {
-            return new VulkanShaderCompiler(mVulkanVersion!);
         }
 
         IShader IGraphicsContext.LoadShader(IReadOnlyList<byte> data, ShaderStage stage, string entrypoint)

@@ -201,9 +201,11 @@ namespace CodePlayground.Graphics
         public bool IsApplicable(WindowOptions options);
         public void Initialize(IWindow window, GraphicsApplication application);
 
+        public IShaderCompiler CreateCompiler();
+        public IRenderer CreateRenderer();
+
         public IDeviceBuffer CreateDeviceBuffer(DeviceBufferUsage usage, int size);
         public IDeviceImage CreateDeviceImage(DeviceImageInfo info);
-        public IShaderCompiler CreateCompiler();
         public IShader LoadShader(IReadOnlyList<byte> data, ShaderStage stage, string entrypoint);
         public IPipeline CreatePipeline(PipelineDescription description);
     }
@@ -222,7 +224,10 @@ namespace CodePlayground.Graphics
     public interface IGraphicsDevice
     {
         public IGraphicsDeviceInfo DeviceInfo { get; }
+
         public ICommandQueue GetQueue(CommandQueueFlags usage);
+        public void Wait();
+        public void ClearQueues();
     }
 
     public interface ICommandList
@@ -338,5 +343,10 @@ namespace CodePlayground.Graphics
     {
         public PipelineBlendMode BlendMode { get; }
         public PipelineFrontFace FrontFace { get; }
+    }
+
+    public interface IRenderer
+    {
+        public void RenderIndexed(ICommandList commandBuffer, int indexCount);
     }
 }

@@ -221,6 +221,21 @@ namespace CodePlayground.Graphics.Vulkan
             return mQueues[queueFamily];
         }
 
+        public void Wait()
+        {
+            var api = VulkanContext.API;
+            api.DeviceWaitIdle(mDevice).Assert();
+        }
+
+        public void ClearQueues()
+        {
+            Wait();
+            foreach (var queue in mQueues.Values)
+            {
+                queue.ClearCache();
+            }
+        }
+
         public VulkanPhysicalDevice PhysicalDevice => mPhysicalDevice;
         public Device Device => mDevice;
         IGraphicsDeviceInfo IGraphicsDevice.DeviceInfo => throw new NotImplementedException();

@@ -386,7 +386,7 @@ namespace CodePlayground.Graphics.Vulkan
             var setIndices = mDescriptorSets.Keys.ToList();
             setIndices.Sort((a, b) => -a.CompareTo(b));
 
-            var setLayouts = new DescriptorSetLayout[setIndices[0] + 1];
+            var setLayouts = new DescriptorSetLayout[setIndices.Count > 0 ? (setIndices[0] + 1) : 0];
             foreach (var set in mDescriptorSets.Keys)
             {
                 setLayouts[set] = mDescriptorSets[set].Layout;
