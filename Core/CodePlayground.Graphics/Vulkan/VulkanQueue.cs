@@ -160,18 +160,18 @@ namespace CodePlayground.Graphics.Vulkan
         {
             if (mStoredBuffers.Count > 0)
             {
+                var buffer = mStoredBuffers.Peek();
                 if (mBufferCap >= 0 && mStoredBuffers.Count > mBufferCap)
                 {
-                    var front = mStoredBuffers.Peek();
-                    WaitFence(front.Fence);
+                    WaitFence(buffer.Fence);
                 }
 
-                var buffer = mStoredBuffers.Dequeue();
                 var fence = buffer.Fence;
                 var commandBuffer = buffer.CommandBuffer;
 
                 var api = VulkanContext.API;
                 var fenceStatus = api.GetFenceStatus(mDevice, buffer.Fence);
+
                 if (fenceStatus == Result.Success)
                 {
                     if (buffer.OwnsFence)
@@ -181,6 +181,8 @@ namespace CodePlayground.Graphics.Vulkan
                     }
 
                     api.ResetCommandBuffer(commandBuffer.Buffer, CommandBufferResetFlags.None);
+                    mStoredBuffers.Dequeue();
+
                     return buffer.CommandBuffer;
                 }
             }
