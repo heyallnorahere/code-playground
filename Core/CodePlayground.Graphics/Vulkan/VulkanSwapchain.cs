@@ -158,8 +158,16 @@ namespace CodePlayground.Graphics.Vulkan
         private void Resize(Vector2D<int> windowSize) => mNewSize = windowSize;
         public unsafe void Invalidate()
         {
+            mDevice.ClearQueues();
+
             DestroyFramebuffers();
             mDepthBuffer.Dispose();
+
+            if (mNewSize is not null)
+            {
+                mExtent.Width = (uint)mNewSize.Value.X;
+                mExtent.Height = (uint)mNewSize.Value.Y;
+            }
 
             var old = Create(mExtent);
             if (old.Handle != 0)
@@ -515,12 +523,7 @@ namespace CodePlayground.Graphics.Vulkan
                     var result = mSwapchainExtension.QueuePresent(mPresentQueue.Queue, &presentInfo);
                     if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr || mNewSize is not null)
                     {
-                        Create(new Extent2D
-                        {
-                            Width = (uint?)mNewSize?.X ?? mExtent.Width,
-                            Height = (uint?)mNewSize?.Y ?? mExtent.Height
-                        });
-
+                        Invalidate();
                         mNewSize = null;
                     }
                     else
