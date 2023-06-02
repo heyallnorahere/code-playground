@@ -6,6 +6,7 @@ using Silk.NET.Windowing;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using VMASharp;
 
 namespace CodePlayground.Graphics.Vulkan
 {
@@ -25,6 +26,8 @@ namespace CodePlayground.Graphics.Vulkan
 
     public sealed class VulkanSwapchain : ISwapchain, IDisposable
     {
+        private const ImageTiling DepthBufferImageTiling = ImageTiling.Optimal;
+
         public static unsafe int FindPresentQueueFamily(KhrSurface extension, VulkanPhysicalDevice physicalDevice, SurfaceKHR surface)
         {
             var queueFamilies = physicalDevice.GetQueueFamilyProperties();
@@ -76,19 +79,22 @@ namespace CodePlayground.Graphics.Vulkan
             return presentModes;
         }
 
-        internal VulkanSwapchain(SurfaceKHR surface, VulkanDevice device, Instance instance, IWindow window)
+        internal VulkanSwapchain(SurfaceKHR surface, VulkanContext context, Instance instance, IWindow window)
         {
+            mDevice = context.Device;
+            mAllocator = context.Allocator;
+            mInstance = instance;
+            mWindow = window;
+
             var api = VulkanContext.API;
-            mSwapchainExtension = api.GetDeviceExtension<KhrSwapchain>(instance, device.Device);
+            mSwapchainExtension = api.GetDeviceExtension<KhrSwapchain>(instance, mDevice.Device);
             mSurfaceExtension = api.GetInstanceExtension<KhrSurface>(instance);
             mDisposed = false;
             mVSync = false;
 
-            mPresentQueueFamily = FindPresentQueueFamily(mSurfaceExtension, device.PhysicalDevice, surface);
-            mPresentQueue = device.GetQueue(mPresentQueueFamily);
-            mDevice = device;
-            mInstance = instance;
-            mWindow = window;
+            mDepthFormat = VulkanImage.FindSupportedDepthFormat(mDevice.PhysicalDevice, DepthBufferImageTiling);
+            mPresentQueueFamily = FindPresentQueueFamily(mSurfaceExtension, mDevice.PhysicalDevice, surface);
+            mPresentQueue = mDevice.GetQueue(mPresentQueueFamily);
 
             mCurrentImage = 0;
             mCurrentSyncFrame = 0;
@@ -142,6 +148,7 @@ namespace CodePlayground.Graphics.Vulkan
             }
 
             DestroyFramebuffers();
+            mDepthBuffer.Dispose();
             mRenderPass.Dispose();
 
             mSwapchainExtension.DestroySwapchain(mDevice.Device, mSwapchain, null);
@@ -152,6 +159,7 @@ namespace CodePlayground.Graphics.Vulkan
         public unsafe void Invalidate()
         {
             DestroyFramebuffers();
+            mDepthBuffer.Dispose();
 
             var old = Create(mExtent);
             if (old.Handle != 0)
@@ -195,7 +203,7 @@ namespace CodePlayground.Graphics.Vulkan
             return PresentModeKHR.FifoKhr;
         }
 
-        private Extent2D ChooseExtent(Extent2D passedExtent, SurfaceCapabilitiesKHR capabilities)
+        private static Extent2D ChooseExtent(Extent2D passedExtent, SurfaceCapabilitiesKHR capabilities)
         {
             if (capabilities.CurrentExtent.Width != uint.MaxValue)
             {
@@ -214,6 +222,7 @@ namespace CodePlayground.Graphics.Vulkan
         [MemberNotNull(nameof(mRenderPass))]
         [MemberNotNull(nameof(mFramebuffers))]
         [MemberNotNull(nameof(mSyncObjects))]
+        [MemberNotNull(nameof(mDepthBuffer))]
         private unsafe SwapchainKHR Create(Extent2D extent)
         {
             var queueFamilyIndices = mDevice.PhysicalDevice.FindQueueTypes();
@@ -266,6 +275,7 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             }
 
+            var depthStencilLayout = VulkanImage.GetLayout(DeviceImageLayoutName.DepthStencilAttachment).Layout;
             mRenderPass ??= new VulkanRenderPass(mDevice, new VulkanRenderPassInfo
             {
                 ColorAttachments = new VulkanRenderPassAttachment[]
@@ -283,19 +293,58 @@ namespace CodePlayground.Graphics.Vulkan
                         Layout = ImageLayout.ColorAttachmentOptimal
                     }
                 },
+                DepthAttachment = new VulkanRenderPassAttachment
+                {
+                    ImageFormat = mDepthFormat,
+                    Samples = SampleCountFlags.Count1Bit,
+                    LoadOp = AttachmentLoadOp.Clear,
+                    StoreOp = AttachmentStoreOp.Store,
+                    StencilLoadOp = AttachmentLoadOp.Clear,
+                    StencilStoreOp = AttachmentStoreOp.DontCare,
+                    InitialLayout = ImageLayout.Undefined,
+                    FinalLayout = depthStencilLayout,
+                    Layout = depthStencilLayout
+                },
                 SubpassDependency = new VulkanSubpassDependency // todo: add flags for depth attachment
                 {
-                    SourceStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
+                    SourceStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
                     SourceAccessMask = 0,
-                    DestinationStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-                    DestinationAccessMask = AccessFlags.ColorAttachmentWriteBit
+                    DestinationStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
+                    DestinationAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit
                 }
             });
 
             mSyncObjects ??= CreateSyncObjects();
+            mDepthBuffer = CreateDepthBuffer();
             mFramebuffers = CreateFramebuffers();
 
             return old;
+        }
+
+        private VulkanImage CreateDepthBuffer()
+        {
+            var image = new VulkanImage(mDevice, mAllocator, new VulkanImageCreateInfo
+            {
+                Size = new SixLabors.ImageSharp.Size((int)mExtent.Width, (int)mExtent.Height),
+                Usage = DeviceImageUsageFlags.DepthStencilAttachment,
+                MipLevels = 1,
+                Format = DeviceImageFormat.DepthStencil,
+                VulkanFormat = mDepthFormat,
+                Tiling = DepthBufferImageTiling
+            });
+
+            var queue = mDevice.GetQueue(CommandQueueFlags.Transfer);
+            var commandBuffer = queue.Release();
+            commandBuffer.Begin();
+
+            var newLayout = VulkanImage.GetLayout(DeviceImageLayoutName.DepthStencilAttachment);
+            image.TransitionLayout(commandBuffer, image.Layout, newLayout, 0, 1);
+
+            commandBuffer.End();
+            queue.Submit(commandBuffer, wait: true);
+
+            image.Layout = newLayout;
+            return image;
         }
 
         private unsafe VulkanSwapchainFrameSyncObjects[] CreateSyncObjects()
@@ -372,7 +421,11 @@ namespace CodePlayground.Graphics.Vulkan
                     {
                         Size = Size,
                         RenderPass = mRenderPass,
-                        Attachments = new ImageView[] { view } // todo: add depth view
+                        Attachments = new ImageView[]
+                        {
+                            view,
+                            mDepthBuffer.View
+                        }
                     })
                 };
             }
@@ -506,6 +559,7 @@ namespace CodePlayground.Graphics.Vulkan
         private readonly int mPresentQueueFamily;
         private readonly VulkanQueue mPresentQueue;
         private readonly VulkanDevice mDevice;
+        private readonly VulkanMemoryAllocator mAllocator;
         private readonly Instance mInstance;
         private readonly IWindow mWindow;
 
@@ -519,6 +573,10 @@ namespace CodePlayground.Graphics.Vulkan
 
         private VulkanSwapchainFramebuffer[] mFramebuffers;
         private Format mImageFormat;
+
+        private VulkanImage mDepthBuffer;
+        private readonly Format mDepthFormat;
+
         private Extent2D mExtent;
         private Vector2D<int>? mNewSize;
 

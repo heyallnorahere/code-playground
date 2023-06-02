@@ -193,7 +193,6 @@ namespace CodePlayground.Graphics.Vulkan
                 AdditionalQueueFamilies = new int[] { presentQueue }
             });
 
-            mSwapchain = new VulkanSwapchain(windowSurface, mDevice, mInstance!.Value, window);
             mAllocator = new VulkanMemoryAllocator(new VulkanMemoryAllocatorCreateInfo
             {
                 VulkanAPIVersion = VulkanUtilities.MakeVersion(mVulkanVersion),
@@ -203,9 +202,10 @@ namespace CodePlayground.Graphics.Vulkan
                 LogicalDevice = mDevice.Device,
                 PreferredLargeHeapBlockSize = 0,
                 HeapSizeLimits = null,
-                FrameInUseCount = mSwapchain.FrameCount
+                FrameInUseCount = 0
             });
 
+            mSwapchain = new VulkanSwapchain(windowSurface, this, mInstance!.Value, window);
             mInitialized = true;
         }
 
@@ -565,11 +565,11 @@ namespace CodePlayground.Graphics.Vulkan
                 API.DeviceWaitIdle(mDevice.Device);
             }
 
-            mAllocator?.Dispose();
-            mAllocator = null;
-
             mSwapchain?.Dispose();
             mSwapchain = null;
+
+            mAllocator?.Dispose();
+            mAllocator = null;
 
             mDevice?.Dispose();
             mDevice = null;

@@ -504,6 +504,7 @@ namespace CodePlayground.Graphics.Vulkan
             var spec = mDesc.Specification;
             var frontFace = spec?.FrontFace ?? PipelineFrontFace.Clockwise;
             var blendMode = spec?.BlendMode ?? PipelineBlendMode.None;
+            var enableDepthTesting = spec?.EnableDepthTesting ?? false;
 
             var dynamicStates = new DynamicState[]
             {
@@ -577,9 +578,9 @@ namespace CodePlayground.Graphics.Vulkan
                             DepthBoundsTestEnable = false,
                             StencilTestEnable = false,
 
-                            // depth-stencil tests not implemented yet... sorry :/
-                            DepthTestEnable = false,
-                            DepthWriteEnable = false
+                            DepthTestEnable = enableDepthTesting,
+                            DepthWriteEnable = enableDepthTesting,
+                            DepthCompareOp = CompareOp.Less
                         };
 
                         var colorBlendAttachment = VulkanUtilities.Init<PipelineColorBlendAttachmentState>() with

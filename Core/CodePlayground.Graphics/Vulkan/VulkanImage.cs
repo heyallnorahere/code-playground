@@ -2,7 +2,6 @@ using Silk.NET.Vulkan;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
-using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using VMASharp;
 
@@ -28,6 +27,27 @@ namespace CodePlayground.Graphics.Vulkan
 
     public sealed class VulkanImage : IDeviceImage
     {
+        private static readonly Format[] sPreferredDepthFormats;
+        static VulkanImage()
+        {
+            sPreferredDepthFormats = new Format[]
+            {
+                Format.D32SfloatS8Uint,
+                Format.D32Sfloat,
+                Format.D24UnormS8Uint
+            };
+        }
+
+        public static Format FindSupportedDepthFormat(VulkanPhysicalDevice device, ImageTiling tiling)
+        {
+            if (!device.FindSupportedFormat(sPreferredDepthFormats, tiling, FormatFeatureFlags.DepthStencilAttachmentBit, out Format format))
+            {
+                throw new InvalidOperationException("Unable to find a suitable depth format!");
+            }
+
+            return format;
+        }
+
         private static ImageUsageFlags ConvertUsageFlags(DeviceImageUsageFlags flags)
         {
             var values = flags.SplitFlags();
@@ -75,7 +95,7 @@ namespace CodePlayground.Graphics.Vulkan
                     DeviceImageFormat.RGBA8_UNORM => Format.R8G8B8A8Unorm,
                     DeviceImageFormat.RGB8_SRGB => Format.R8G8B8Srgb,
                     DeviceImageFormat.RGB8_UNORM => Format.R8G8B8Unorm,
-                    DeviceImageFormat.DepthStencil => Format.D32SfloatS8Uint,
+                    DeviceImageFormat.DepthStencil => FindSupportedDepthFormat(device.PhysicalDevice, info.Tiling),
                     _ => throw new ArgumentException("Invalid image format!")
                 };
             }
@@ -116,7 +136,11 @@ namespace CodePlayground.Graphics.Vulkan
             }
             else
             {
-                AspectMask = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
+                AspectMask = ImageAspectFlags.DepthBit;
+                if (VulkanFormat.HasStencil())
+                {
+                    AspectMask |= ImageAspectFlags.StencilBit;
+                }
             }
 
             mDevice = device;
@@ -253,7 +277,7 @@ namespace CodePlayground.Graphics.Vulkan
         }
 
         object IDeviceImage.GetLayout(DeviceImageLayoutName name) => GetLayout(name);
-        public VulkanImageLayout GetLayout(DeviceImageLayoutName name)
+        public static VulkanImageLayout GetLayout(DeviceImageLayoutName name)
         {
             return name switch
             {
@@ -498,6 +522,7 @@ namespace CodePlayground.Graphics.Vulkan
         public VulkanImageLayout Layout { get; set; }
         public ImageAspectFlags AspectMask { get; }
         public ImageTiling Tiling { get; }
+        public ImageView View => mView;
 
         object IDeviceImage.Layout
         {

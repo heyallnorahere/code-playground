@@ -343,6 +343,7 @@ namespace CodePlayground.Graphics
     {
         public PipelineBlendMode BlendMode { get; }
         public PipelineFrontFace FrontFace { get; }
+        public bool EnableDepthTesting { get; }
     }
 
     public interface IRenderer

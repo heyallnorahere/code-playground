@@ -210,5 +210,11 @@ namespace CodePlayground.Graphics.Vulkan
         {
             return GetProcAddress<T>(name => api.GetDeviceProcAddr(device, name));
         }
+
+        public static bool HasStencil(this Format format)
+        {
+            var formatName = format.ToString();
+            return formatName.EndsWith(nameof(Format.S8Uint));
+        }
     }
 }

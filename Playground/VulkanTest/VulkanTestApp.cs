@@ -25,11 +25,13 @@ namespace VulkanTest
     {
         public PipelineBlendMode BlendMode { get; set; }
         public PipelineFrontFace FrontFace { get; set; }
+        public bool EnableDepthTesting { get; set; }
     }
 
     [ApplicationTitle("Vulkan Test")]
     [ApplicationGraphicsAPI(AppGraphicsAPI.Vulkan)]
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
+    [VulkanAPIVersion("1.3")]
     public class VulkanTestApp : GraphicsApplication
     {
         private static readonly Vertex[] sVertices;
@@ -87,7 +89,8 @@ namespace VulkanTest
                 Specification = new PipelineSpecification
                 {
                     FrontFace = PipelineFrontFace.CounterClockwise,
-                    BlendMode = PipelineBlendMode.SourceAlphaOneMinusSourceAlpha
+                    BlendMode = PipelineBlendMode.SourceAlphaOneMinusSourceAlpha,
+                    EnableDepthTesting = true
                 }
             });
 

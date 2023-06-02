@@ -43,6 +43,30 @@ namespace CodePlayground.Graphics.Vulkan
             api.GetPhysicalDeviceFormatProperties(Device, format, out properties);
         }
 
+        public bool FindSupportedFormat(IEnumerable<Format> candidates, ImageTiling tiling, FormatFeatureFlags requiredFeatures, out Format format)
+        {
+            foreach (var currentFormat in candidates)
+            {
+                GetFormatProperties(currentFormat, out FormatProperties properties);
+
+                var featureFlags = tiling switch
+                {
+                    ImageTiling.Linear => properties.LinearTilingFeatures,
+                    ImageTiling.Optimal => properties.OptimalTilingFeatures,
+                    _ => throw new ArgumentException("Invalid image tiling!")
+                };
+
+                if (featureFlags.HasFlag(requiredFeatures))
+                {
+                    format = currentFormat;
+                    return true;
+                }
+            }
+
+            format = Format.Undefined;
+            return false;
+        }
+
         public unsafe IReadOnlyList<QueueFamilyProperties> GetQueueFamilyProperties()
         {
             var api = VulkanContext.API;

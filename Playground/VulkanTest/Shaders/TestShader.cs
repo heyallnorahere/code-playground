@@ -1,6 +1,5 @@
 using CodePlayground.Graphics;
 using CodePlayground.Graphics.Shaders;
-using System.Runtime.CompilerServices;
 
 namespace VulkanTest.Shaders
 {
