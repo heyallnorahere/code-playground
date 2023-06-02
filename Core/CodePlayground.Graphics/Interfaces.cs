@@ -337,6 +337,7 @@ namespace CodePlayground.Graphics
         // todo: texture binding
 
         public void Load(IReadOnlyDictionary<ShaderStage, IShader> shaders);
+        public int GetBufferOffset(string resource, string expression);
     }
 
     public interface IPipelineSpecification

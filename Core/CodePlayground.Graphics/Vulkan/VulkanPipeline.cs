@@ -2,9 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace CodePlayground.Graphics.Vulkan
 {
@@ -186,7 +184,7 @@ namespace CodePlayground.Graphics.Vulkan
         public bool Bind(IBindableVulkanResource resource, string name, int index)
         {
             AssertLoaded();
-            if (!FindResource(name, out int set, out int binding))
+            if (!FindResource(name, out ShaderStage stage, out int set, out int binding))
             {
                 return false;
             }
@@ -203,10 +201,11 @@ namespace CodePlayground.Graphics.Vulkan
             resource.Bind(sets, binding, index);
         }
 
-        public bool FindResource(string name, out int set, out int binding)
+        public bool FindResource(string name, out ShaderStage stage, out int set, out int binding)
         {
-            foreach (var data in mReflectionData.Values)
+            foreach (var currentStage in mReflectionData.Keys)
             {
+                var data = mReflectionData[currentStage];
                 foreach (int currentSet in data.Resources.Keys)
                 {
                     var setResources = data.Resources[currentSet];
@@ -215,6 +214,7 @@ namespace CodePlayground.Graphics.Vulkan
                         var currentResource = setResources[currentBinding];
                         if (currentResource.Name == name)
                         {
+                            stage = currentStage;
                             set = currentSet;
                             binding = currentBinding;
 
@@ -224,6 +224,7 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             }
 
+            stage = ShaderStage.Vertex;
             set = binding = -1;
             return false;
         }
@@ -696,6 +697,130 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 throw new ArgumentException("The passed compute shader is not a Vulkan shader!");
             }
+        }
+
+        public int GetBufferOffset(string resource, string expression)
+        {
+            if (!FindResource(resource, out ShaderStage stage, out int set, out int binding))
+            {
+                return -1;
+            }
+
+            return GetBufferOffset(stage, set, binding, expression);
+        }
+
+        public int GetBufferOffset(ShaderStage stage, int set, int binding, string expression)
+        {
+            var reflectionData = mReflectionData[stage];
+            var resource = reflectionData.Resources[set][binding];
+            var typeData = reflectionData.Types[resource.Type];
+
+            if (typeData.Class != ShaderTypeClass.Struct)
+            {
+                throw new ArgumentException($"The resource at set {set} binding {binding} is not a buffer!");
+            }
+
+            return GetTypeOffset(stage, resource.Type, expression);
+        }
+
+        private int GetTypeOffset(ShaderStage stage, int type, string expression)
+        {
+            const char beginIndexCharacter = '[';
+            const char endIndexCharacter = ']';
+
+            var reflectionData = mReflectionData[stage];
+            var typeData = reflectionData.Types[type];
+            var fields = typeData.Fields!;
+
+            if (typeData.Class != ShaderTypeClass.Struct)
+            {
+                return -1;
+            }
+
+            int memberOperator = expression.IndexOf('.');
+            string fieldExpression = memberOperator < 0 ? expression : expression[0..memberOperator];
+
+            int beginIndexOperator = fieldExpression.IndexOf(beginIndexCharacter);
+            string fieldName = beginIndexOperator < 0 ? fieldExpression : fieldExpression[0..beginIndexOperator];
+
+            if (string.IsNullOrEmpty(fieldName))
+            {
+                throw new ArgumentException("No field name given!");
+            }
+
+            if (!fields.ContainsKey(fieldName))
+            {
+                return -1;
+            }
+
+            var field = fields[fieldName];
+            int offset = field.Offset;
+
+            if (beginIndexOperator >= 0)
+            {
+                const int alignment = 16;
+
+                var fieldType = reflectionData.Types[field.Type];
+                int remainder = fieldType.Size % alignment;
+                int stride = fieldType.Size + (remainder > 0 ? alignment - remainder : 0);
+
+                if (fieldType.ArrayDimensions is null || !fieldType.ArrayDimensions.Any())
+                {
+                    throw new InvalidOperationException("Cannot index a non-array field!");
+                }
+
+                var indexStrings = new List<string>();
+                for (int i = beginIndexOperator; i < fieldExpression.Length; i++)
+                {
+                    char character = fieldExpression[i];
+                    if (character == beginIndexCharacter)
+                    {
+                        indexStrings.Add(beginIndexCharacter.ToString());
+                    }
+                    else
+                    {
+                        var currentString = indexStrings[^1];
+                        if (currentString[^1] == endIndexCharacter)
+                        {
+                            throw new InvalidOperationException("Malformed index operator!");
+                        }
+
+                        indexStrings[^1] = currentString + character;
+                    }
+                }
+
+                for (int i = 0; i < indexStrings.Count; i++)
+                {
+                    var indexString = indexStrings[i];
+                    if (indexString[^1] != endIndexCharacter)
+                    {
+                        throw new InvalidOperationException("Malformed index operator!");
+                    }
+
+                    int index = int.Parse(indexString[1..^1]);
+                    int dimensionIndex = fieldType.ArrayDimensions.Count - (i + 1);
+                    int dimensionStride = stride;
+
+                    if (index < 0 || index >= fieldType.ArrayDimensions[dimensionIndex])
+                    {
+                        throw new IndexOutOfRangeException();
+                    }
+
+                    for (int j = 0; j < dimensionIndex; j++)
+                    {
+                        dimensionStride *= fieldType.ArrayDimensions[j];
+                    }
+
+                    offset += index * dimensionStride;
+                }
+            }
+
+            if (memberOperator >= 0)
+            {
+                offset += GetTypeOffset(stage, field.Type, expression[(memberOperator + 1)..]);
+            }
+
+            return offset;
         }
 
         public PipelineDescription Description => mDesc;
