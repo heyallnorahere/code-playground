@@ -1,5 +1,4 @@
-﻿using Silk.NET.Maths;
-using Silk.NET.Vulkan;
+﻿using Silk.NET.Vulkan;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,7 +7,8 @@ namespace CodePlayground.Graphics.Vulkan
 {
     internal struct VulkanFramebufferInfo
     {
-        public Vector2D<int> Size { get; set; }
+        public int Width { get; set; }
+        public int Height { get; set; }
         public VulkanRenderPass RenderPass { get; set; }
         public IReadOnlyList<ImageView> Attachments { get; set; }
     }
@@ -31,8 +31,8 @@ namespace CodePlayground.Graphics.Vulkan
                     RenderPass = info.RenderPass.RenderPass,
                     AttachmentCount = (uint)images.Length,
                     PAttachments = imagePtr,
-                    Width = (uint)info.Size.X,
-                    Height = (uint)info.Size.Y,
+                    Width = (uint)info.Width,
+                    Height = (uint)info.Height,
                     Layers = 1
                 };
 
@@ -44,7 +44,9 @@ namespace CodePlayground.Graphics.Vulkan
             }
 
             mDevice = device;
-            mSize = info.Size;
+            mWidth = info.Width;
+            mHeight = info.Height;
+            
             mDisposed = false;
         }
 
@@ -74,13 +76,14 @@ namespace CodePlayground.Graphics.Vulkan
             api.DestroyFramebuffer(mDevice.Device, mFramebuffer, null);
         }
 
-        public Vector2D<int> Size => mSize;
+        public int Width => mWidth;
+        public int Height => mHeight;
         public Framebuffer Framebuffer => mFramebuffer;
 
         private readonly VulkanDevice mDevice;
         private readonly Framebuffer mFramebuffer;
 
-        private readonly Vector2D<int> mSize;
+        private readonly int mWidth, mHeight;
         private bool mDisposed;
     }
 }

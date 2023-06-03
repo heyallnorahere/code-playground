@@ -24,6 +24,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         public HashSet<Type> Dependencies { get; set; }
         public HashSet<Type> Dependents { get; set; }
         public Dictionary<string, string> DefinedFields { get; set; }
+        public bool Define { get; set; }
     }
 
     internal struct StageIOField
@@ -36,7 +37,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
     internal struct ShaderResource
     {
         public string Layout { get; set; }
-        public string TypeName { get; set; }
+        public Type ResourceType { get; set; }
         public ShaderResourceType Type { get; set; }
     }
 

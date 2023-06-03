@@ -261,7 +261,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             }
         }
 
-        private void ProcessType(Type type, Type shaderType)
+        private void ProcessType(Type type, Type shaderType, bool defineStruct = true)
         {
             if (mStructDependencies.ContainsKey(type) || !type.IsValueType || type.IsPrimitive)
             {
@@ -272,7 +272,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             {
                 Dependencies = new HashSet<Type>(),
                 Dependents = new HashSet<Type>(),
-                DefinedFields = new Dictionary<string, string>()
+                DefinedFields = new Dictionary<string, string>(),
+                Define = defineStruct
             };
 
             // make sure that we don't get a stack overflow
@@ -493,6 +494,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             else if (!mStageResources.ContainsKey(fieldName))
                             {
                                 var fieldType = field.FieldType;
+                                ProcessType(fieldType, type, false);
 
                                 string layoutString = $"set = {layoutAttribute.Set}, binding = {layoutAttribute.Binding}";
                                 if (!fieldType.Extends<__SamplerBase>())
@@ -503,7 +505,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 mStageResources.Add(fieldName, new ShaderResource
                                 {
                                     Layout = layoutString,
-                                    TypeName = GetTypeName(fieldType, type, true),
+                                    ResourceType = fieldType,
                                     Type = layoutAttribute.ResourceType
                                 });
                             }
@@ -1211,9 +1213,14 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             foreach (var definedStruct in structOrder)
             {
                 var info = mStructDependencies[definedStruct];
-                var name = GetTypeName(definedStruct, type, true);
+                if (!info.Define)
+                {
+                    continue;
+                }
 
+                var name = GetTypeName(definedStruct, type, true);
                 builder.AppendLine($"struct {name} {{");
+                
                 foreach (var fieldName in info.DefinedFields.Keys)
                 {
                     var fieldType = info.DefinedFields[fieldName];
@@ -1240,7 +1247,16 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 var nameAttribute = resourceTypeField!.GetCustomAttribute<ShaderFieldNameAttribute>();
 
                 var resourceTypeName = (nameAttribute?.Name ?? resourceType.ToString()).ToLower();
-                builder.AppendLine($"layout({resourceData.Layout}) {resourceTypeName} {resourceData.TypeName} {fieldName};");
+                builder.AppendLine($"layout({resourceData.Layout}) {resourceTypeName} {fieldName}_struct_definition_ {{");
+
+                var info = mStructDependencies[resourceData.ResourceType];
+                foreach (var currentFieldName in info.DefinedFields.Keys)
+                {
+                    var fieldType = info.DefinedFields[currentFieldName];
+                    builder.AppendLine($"{fieldType} {currentFieldName};");
+                }
+
+                builder.AppendLine($"}} {fieldName};");
             }
 
             var functionOrder = ResolveFunctionOrder();

@@ -1,7 +1,7 @@
-﻿using Silk.NET.Maths;
-using Silk.NET.Vulkan;
+﻿using Silk.NET.Vulkan;
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 
 namespace CodePlayground.Graphics.Vulkan
 {
@@ -164,7 +164,7 @@ namespace CodePlayground.Graphics.Vulkan
             api.DestroyRenderPass(mDevice.Device, mRenderPass, null);
         }
 
-        void IRenderTarget.BeginRender(ICommandList commandList, IFramebuffer framebuffer, Vector4D<float> clearColor, bool flipViewport)
+        void IRenderTarget.BeginRender(ICommandList commandList, IFramebuffer framebuffer, Vector4 clearColor, bool flipViewport)
         {
             if (commandList is not VulkanCommandBuffer || framebuffer is not VulkanFramebuffer)
             {
@@ -174,7 +174,7 @@ namespace CodePlayground.Graphics.Vulkan
             BeginRender((VulkanCommandBuffer)commandList, (VulkanFramebuffer)framebuffer, clearColor, flipViewport);
         }
 
-        public unsafe void BeginRender(VulkanCommandBuffer commandBuffer, VulkanFramebuffer framebuffer, Vector4D<float> clearColor, bool flipViewport = false)
+        public unsafe void BeginRender(VulkanCommandBuffer commandBuffer, VulkanFramebuffer framebuffer, Vector4 clearColor, bool flipViewport = false)
         {
             var clearValues = new ClearValue[mAttachmentTypes.Count];
             for (int i = 0; i < clearValues.Length; i++)
@@ -202,8 +202,8 @@ namespace CodePlayground.Graphics.Vulkan
             var api = VulkanContext.API;
             var buffer = commandBuffer.Buffer;
 
-            var width = framebuffer.Size.X;
-            var height = framebuffer.Size.Y;
+            var width = framebuffer.Width;
+            var height = framebuffer.Height;
 
             var scissor = new Rect2D
             {

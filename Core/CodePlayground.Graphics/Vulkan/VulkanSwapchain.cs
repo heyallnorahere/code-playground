@@ -176,7 +176,7 @@ namespace CodePlayground.Graphics.Vulkan
             }
 
             mCurrentImage = 0;
-            SwapchainInvalidated?.Invoke(Size);
+            SwapchainInvalidated?.Invoke(Width, Height);
         }
 
         private SurfaceFormatKHR ChooseSurfaceFormat()
@@ -427,7 +427,8 @@ namespace CodePlayground.Graphics.Vulkan
                     View = view,
                     Framebuffer = new VulkanFramebuffer(mDevice, new VulkanFramebufferInfo
                     {
-                        Size = Size,
+                        Width = Width,
+                        Height = Height,
                         RenderPass = mRenderPass,
                         Attachments = new ImageView[]
                         {
@@ -466,7 +467,7 @@ namespace CodePlayground.Graphics.Vulkan
                                                                       ulong.MaxValue, currentFrame.ImageAvailable,
                                                                       new Fence(null), currentImage);
 
-                    if (result == Result.ErrorOutOfDateKhr)
+                    if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr)
                     {
                         Invalidate();
                         continue;
@@ -551,13 +552,10 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        public Vector2D<int> Size => new Vector2D<int>
-        {
-            X = (int)mExtent.Width,
-            Y = (int)mExtent.Height
-        };
+        public int Width => (int)mExtent.Width;
+        public int Height => (int)mExtent.Height;
 
-        public event Action<Vector2D<int>>? SwapchainInvalidated;
+        public event Action<int, int>? SwapchainInvalidated;
 
         private readonly int mPresentQueueFamily;
         private readonly VulkanQueue mPresentQueue;

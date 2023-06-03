@@ -219,7 +219,7 @@ namespace CodePlayground.Graphics.Vulkan
                 var id = resource.id.Value;
 
                 var type = resource.type_id.Value;
-                ProcessType(compiler, type);
+                ProcessType(compiler, type, resource.base_type_id.Value);
 
                 var location = (int)spvc_compiler_get_decoration(compiler, id, SpvDecoration.SpvDecorationLocation);
                 mReflectionResult.StageIO.Add(new ReflectedStageIOField
@@ -258,18 +258,19 @@ namespace CodePlayground.Graphics.Vulkan
                 }
 
                 var type = resource.type_id.Value;
-                ProcessType(compiler, type);
+                ProcessType(compiler, type, resource.base_type_id.Value);
 
+                var name = spvc_compiler_get_name(compiler, id);
                 bindings.Add(binding, new ReflectedShaderResource
                 {
-                    Name = Marshal.PtrToStringAnsi((nint)resource.name) ?? string.Empty,
+                    Name = Marshal.PtrToStringAnsi((nint)name) ?? string.Empty,
                     Type = (int)type,
                     ResourceType = typeFlags
                 });
             }
         }
 
-        private unsafe void ProcessType(spvc_compiler* compiler, uint type)
+        private unsafe void ProcessType(spvc_compiler* compiler, uint type, uint? baseType)
         {
             int typeId = (int)type;
             if (mReflectionResult.Types.ContainsKey(typeId))
@@ -281,7 +282,8 @@ namespace CodePlayground.Graphics.Vulkan
             mReflectionResult.Types.Add(typeId, new ReflectedShaderType());
 
             var handle = spvc_compiler_get_type_handle(compiler, type);
-            var typeName = spvc_compiler_get_name(compiler, type);
+
+            var typeName = spvc_compiler_get_name(compiler, baseType ?? type);
             var typeDesc = new ReflectedShaderType
             {
                 Name = Marshal.PtrToStringAnsi((nint)typeName) ?? string.Empty,
@@ -303,8 +305,8 @@ namespace CodePlayground.Graphics.Vulkan
                 typeDesc.ArrayDimensions = arrayDimensions;
             }
 
-            var baseType = spvc_type_get_basetype(handle);
-            switch (baseType)
+            var basetype = spvc_type_get_basetype(handle);
+            switch (basetype)
             {
                 case spvc_basetype.SPVC_BASETYPE_BOOLEAN:
                     typeDesc.Class = ShaderTypeClass.Bool;
@@ -365,18 +367,26 @@ namespace CodePlayground.Graphics.Vulkan
                         for (uint i = 0; i < memberCount; i++)
                         {
                             var memberTypeId = spvc_type_get_member_type(handle, i);
-                            ProcessType(compiler, memberTypeId.Value);
+                            ProcessType(compiler, memberTypeId.Value, null);
 
-                            var memberName = spvc_compiler_get_member_name(compiler, type, i);
-                            var key = Marshal.PtrToStringAnsi((nint)memberName) ?? $"field_{i}";
+                            var memberName = spvc_compiler_get_member_name(compiler, baseType ?? type, i);
+                            var key = Marshal.PtrToStringAnsi((nint)memberName);
+                            if (string.IsNullOrEmpty(key))
+                            {
+                                key = $"field_{i}";
+                            }
 
                             uint offset;
                             spvc_compiler_type_struct_member_offset(compiler, handle, i, &offset).Assert();
 
+                            uint stride;
+                            bool hasStride = spvc_compiler_type_struct_member_array_stride(compiler, handle, i, &stride) == spvc_result.SPVC_SUCCESS;
+
                             fields.Add(key, new ReflectedShaderField
                             {
                                 Type = (int)memberTypeId.Value,
-                                Offset = (int)offset
+                                Offset = (int)offset,
+                                Stride = hasStride ? (int)stride : -1
                             });
                         }
 
@@ -398,7 +408,7 @@ namespace CodePlayground.Graphics.Vulkan
                     typeDesc.Size = -1;
                     break;
                 default:
-                    throw new InvalidOperationException($"Unimplemented base type: {baseType}");
+                    throw new InvalidOperationException($"Unimplemented base type: {basetype}");
             }
 
             mReflectionResult.Types[typeId] = typeDesc;

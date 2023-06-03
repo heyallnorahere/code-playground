@@ -506,6 +506,7 @@ namespace CodePlayground.Graphics.Vulkan
             var frontFace = spec?.FrontFace ?? PipelineFrontFace.Clockwise;
             var blendMode = spec?.BlendMode ?? PipelineBlendMode.None;
             var enableDepthTesting = spec?.EnableDepthTesting ?? false;
+            bool disableCulling = spec?.DisableCulling ?? false;
 
             var dynamicStates = new DynamicState[]
             {
@@ -553,7 +554,7 @@ namespace CodePlayground.Graphics.Vulkan
                             DepthClampEnable = false,
                             RasterizerDiscardEnable = false,
                             PolygonMode = PolygonMode.Fill,
-                            CullMode = CullModeFlags.BackBit,
+                            CullMode = disableCulling ? CullModeFlags.None : CullModeFlags.BackBit,
                             FrontFace = frontFace switch
                             {
                                 PipelineFrontFace.Clockwise => FrontFace.Clockwise,
@@ -699,6 +700,35 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
+        public bool ResourceExists(string resource)
+        {
+            return FindResource(resource, out ShaderStage stage, out int set, out int binding);
+        }
+
+        public int GetBufferSize(string resource)
+        {
+            if (!FindResource(resource, out ShaderStage stage, out int set, out int binding))
+            {
+                return -1;
+            }
+
+            return GetBufferSize(stage, set, binding);
+        }
+
+        public int GetBufferSize(ShaderStage stage, int set, int binding)
+        {
+            var reflectionData = mReflectionData[stage];
+            var resource = reflectionData.Resources[set][binding];
+            var typeData = reflectionData.Types[resource.Type];
+
+            if (typeData.Class != ShaderTypeClass.Struct)
+            {
+                return -1;
+            }
+
+            return typeData.Size;
+        }
+
         public int GetBufferOffset(string resource, string expression)
         {
             if (!FindResource(resource, out ShaderStage stage, out int set, out int binding))
@@ -717,7 +747,7 @@ namespace CodePlayground.Graphics.Vulkan
 
             if (typeData.Class != ShaderTypeClass.Struct)
             {
-                throw new ArgumentException($"The resource at set {set} binding {binding} is not a buffer!");
+                return -1;
             }
 
             return GetTypeOffset(stage, resource.Type, expression);
@@ -758,15 +788,16 @@ namespace CodePlayground.Graphics.Vulkan
 
             if (beginIndexOperator >= 0)
             {
-                const int alignment = 16;
-
                 var fieldType = reflectionData.Types[field.Type];
-                int remainder = fieldType.Size % alignment;
-                int stride = fieldType.Size + (remainder > 0 ? alignment - remainder : 0);
-
                 if (fieldType.ArrayDimensions is null || !fieldType.ArrayDimensions.Any())
                 {
                     throw new InvalidOperationException("Cannot index a non-array field!");
+                }
+
+                int stride = field.Stride;
+                if (stride <= 0)
+                {
+                    throw new InvalidOperationException("SPIRV-Cross did not provide a stride value!");
                 }
 
                 var indexStrings = new List<string>();

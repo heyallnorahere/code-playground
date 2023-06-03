@@ -1,10 +1,9 @@
-﻿using Silk.NET.Maths;
-using Silk.NET.Vulkan;
-using Silk.NET.Windowing;
+﻿using Silk.NET.Windowing;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 
 namespace CodePlayground.Graphics
 {
@@ -162,6 +161,7 @@ namespace CodePlayground.Graphics
     {
         public int Type { get; set; }
         public int Offset { get; set; }
+        public int Stride { get; set; }
     }
 
     public struct ReflectedShaderType
@@ -254,7 +254,7 @@ namespace CodePlayground.Graphics
     {
         public IReadOnlyList<AttachmentType> AttachmentTypes { get; }
 
-        public void BeginRender(ICommandList commandList, IFramebuffer framebuffer, Vector4D<float> clearColor, bool flipViewport = false);
+        public void BeginRender(ICommandList commandList, IFramebuffer framebuffer, Vector4 clearColor, bool flipViewport = false);
         public void EndRender(ICommandList commandList);
     }
 
@@ -266,9 +266,10 @@ namespace CodePlayground.Graphics
         public int FrameCount { get; }
 
         public bool VSync { get; set; }
-        public Vector2D<int> Size { get; }
+        public int Width { get; }
+        public int Height { get; }
 
-        public event Action<Vector2D<int>>? SwapchainInvalidated;
+        public event Action<int, int>? SwapchainInvalidated;
 
         public void Invalidate();
         public void AcquireImage();
@@ -277,7 +278,8 @@ namespace CodePlayground.Graphics
 
     public interface IFramebuffer : IDisposable
     {
-        public Vector2D<int> Size { get; }
+        public int Width { get; }
+        public int Height { get; }
     }
 
     public interface IDeviceBuffer : IDisposable
@@ -285,8 +287,8 @@ namespace CodePlayground.Graphics
         public DeviceBufferUsage Usage { get; }
         public int Size { get; }
 
-        public unsafe void CopyFromCPU(void* address, int size);
-        public unsafe void CopyToCPU(void* address, int size);
+        public unsafe void CopyFromCPU(void* address, int size, int offset = 0);
+        public unsafe void CopyToCPU(void* address, int size, int offset = 0);
 
         // command list commands
         public void CopyBuffers(ICommandList commandList, IDeviceBuffer destination, int size, int srcOffset = 0, int dstOffset = 0);
@@ -337,6 +339,9 @@ namespace CodePlayground.Graphics
         // todo: texture binding
 
         public void Load(IReadOnlyDictionary<ShaderStage, IShader> shaders);
+
+        public bool ResourceExists(string resource);
+        public int GetBufferSize(string resource);
         public int GetBufferOffset(string resource, string expression);
     }
 
@@ -345,6 +350,7 @@ namespace CodePlayground.Graphics
         public PipelineBlendMode BlendMode { get; }
         public PipelineFrontFace FrontFace { get; }
         public bool EnableDepthTesting { get; }
+        public bool DisableCulling { get; }
     }
 
     public interface IRenderer
