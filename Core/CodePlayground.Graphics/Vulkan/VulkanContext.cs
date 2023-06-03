@@ -4,6 +4,7 @@ using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Windowing;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -430,6 +431,41 @@ namespace CodePlayground.Graphics.Vulkan
         private unsafe uint DebugMessengerCallback(DebugUtilsMessageSeverityFlagsEXT messageSeverity, DebugUtilsMessageTypeFlagsEXT messageTypes, DebugUtilsMessengerCallbackDataEXT* callbackData, void* userData)
         {
             DebugMessage?.Invoke(messageSeverity, messageTypes, *callbackData);
+
+            var severityNames = new Dictionary<DebugUtilsMessageSeverityFlagsEXT, string>
+            {
+                [DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt] = "Verbose",
+                [DebugUtilsMessageSeverityFlagsEXT.InfoBitExt] = "Info",
+                [DebugUtilsMessageSeverityFlagsEXT.WarningBitExt] = "Warning",
+                [DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt] = "Error"
+            };
+
+            string severityName = string.Empty;
+            foreach (var severityFlag in severityNames.Keys)
+            {
+                if (messageSeverity.HasFlag(severityFlag))
+                {
+                    if (severityName.Length > 0)
+                    {
+                        severityName += ", ";
+                    }
+
+                    severityName += severityNames[severityFlag];
+                }
+            }
+
+            var vulkanMessage = Marshal.PtrToStringAnsi((nint)callbackData->PMessage);
+            var message = $"Vulkan validation layer: [{severityName}] {vulkanMessage}";
+
+            if (messageSeverity.HasFlag(DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt))
+            {
+                throw new InvalidOperationException(message);
+            }
+            else
+            {
+                Console.WriteLine(message);
+            }
+
             return Vk.False;
         }
 
