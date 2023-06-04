@@ -514,15 +514,32 @@ namespace CodePlayground.Graphics.Vulkan
                                    DependencyFlags.None, 0, null, 0, null, 1, &barrier);
         }
 
+        ITexture IDeviceImage.CreateTexture(bool ownsImage, ISamplerSettings? samplerSettings)
+        {
+            return new VulkanTexture(this, ownsImage, samplerSettings);
+        }
+
         public DeviceImageUsageFlags Usage { get; }
         public Size Size { get; }
         public int MipLevels { get; }
         public DeviceImageFormat ImageFormat { get; }
         public Format VulkanFormat { get; }
-        public VulkanImageLayout Layout { get; set; }
         public ImageAspectFlags AspectMask { get; }
         public ImageTiling Tiling { get; }
         public ImageView View => mView;
+
+        public VulkanImageLayout Layout
+        {
+            get => mLayout;
+            set
+            {
+                mLayout = value;
+                OnLayoutChanged?.Invoke(value);
+            }
+        }
+
+        public event Action<VulkanImageLayout>? OnLayoutChanged;
+        internal VulkanDevice Device => mDevice;
 
         object IDeviceImage.Layout
         {
@@ -536,6 +553,7 @@ namespace CodePlayground.Graphics.Vulkan
         private Silk.NET.Vulkan.Image mImage;
         private ImageView mView;
         private Allocation mAllocation;
+        private VulkanImageLayout mLayout;
 
         private readonly Filter mMipmapBlitFilter;
         private bool mDisposed;

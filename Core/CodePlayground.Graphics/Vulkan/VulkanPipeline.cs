@@ -12,16 +12,35 @@ namespace CodePlayground.Graphics.Vulkan
         public DescriptorSet[] Sets;
     }
 
+    internal struct DescriptorSetPipelineResources
+    {
+        public Dictionary<int, BindingPipelineResources> Bindings { get; set; }
+    }
+
+    internal struct BindingPipelineResources
+    {
+        public Dictionary<int, IBindableVulkanResource> BoundResources { get; set; }
+    }
+
     public interface IBindableVulkanResource
     {
-        public void Bind(DescriptorSet[] sets, int binding, int index);
+        public ulong ID { get; }
+
+        public void Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline);
+        public void Unbind(int set, int binding, int index, VulkanPipeline pipeline);
     }
 
     public sealed class VulkanPipeline : IPipeline
     {
         private static readonly IReadOnlyDictionary<ShaderTypeClass, IReadOnlyDictionary<int, Format>> sAttributeFormats;
+        private static readonly Dictionary<ulong, VulkanPipeline> sPipelines;
+        private static ulong sCurrentID;
+
         static VulkanPipeline()
         {
+            sCurrentID = 0;
+            sPipelines = new Dictionary<ulong, VulkanPipeline>();
+
             sAttributeFormats = new Dictionary<ShaderTypeClass, IReadOnlyDictionary<int, Format>>
             {
                 [ShaderTypeClass.Float] = new Dictionary<int, Format>
@@ -48,10 +67,24 @@ namespace CodePlayground.Graphics.Vulkan
             };
         }
 
+        public static ulong GenerateID() => sCurrentID++;
+        public static VulkanPipeline? LookupID(ulong id)
+        {
+            if (sPipelines.TryGetValue(id, out VulkanPipeline? pipeline))
+            {
+                return pipeline;
+            }
+            else
+            {
+                return null;
+            }
+        }
+
         public unsafe VulkanPipeline(VulkanContext context, PipelineDescription description)
         {
             mDesc = description;
             mReflectionData = new Dictionary<ShaderStage, ShaderReflectionResult>();
+            mBoundResources = new Dictionary<int, DescriptorSetPipelineResources>();
 
             mDescriptorSets = new Dictionary<int, VulkanPipelineDescriptorSet>();
             mDevice = context.Device;
@@ -91,20 +124,49 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        ~VulkanPipeline() => Dispose();
-        public unsafe void Dispose()
+        ~VulkanPipeline()
+        {
+            if (!mDisposed)
+            {
+                Dispose(false);
+                mDisposed = true;
+            }
+        }
+
+        public void Dispose()
         {
             if (mDisposed)
             {
                 return;
             }
 
+            Dispose(true);
+            mDisposed = true;
+        }
+
+        private unsafe void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                foreach (int set in mBoundResources.Keys)
+                {
+                    var setData = mBoundResources[set];
+                    foreach (int binding in setData.Bindings.Keys)
+                    {
+                        var bindingData = setData.Bindings[binding];
+                        foreach (int index in bindingData.BoundResources.Keys)
+                        {
+                            var resource = bindingData.BoundResources[index];
+                            resource.Unbind(set, binding, index, this);
+                        }
+                    }
+                }
+            }
+
             Cleanup();
 
             var api = VulkanContext.API;
             api.DestroyDescriptorPool(mDevice.Device, mDescriptorPool, null);
-
-            mDisposed = true;
         }
 
         private unsafe void Cleanup()
@@ -169,9 +231,12 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        bool IPipeline.Bind(IDeviceBuffer buffer, string name, int index)
+        bool IPipeline.Bind(IDeviceBuffer buffer, string name, int index) => BindObject(buffer, name, index);
+        bool IPipeline.Bind(ITexture texture, string name, int index) => BindObject(texture, name, index);
+
+        private bool BindObject(object passedObject, string name, int index)
         {
-            if (buffer is IBindableVulkanResource resource)
+            if (passedObject is IBindableVulkanResource resource)
             {
                 return Bind(resource, name, index);
             }
@@ -193,12 +258,38 @@ namespace CodePlayground.Graphics.Vulkan
             return true;
         }
 
+        private void UnbindResource(int set, int binding, int index, ulong? newId)
+        {
+            if (!mBoundResources.TryGetValue(set, out DescriptorSetPipelineResources setData))
+            {
+                return;
+            }
+
+            if (!setData.Bindings.TryGetValue(binding, out BindingPipelineResources bindingData))
+            {
+                return;
+            }
+
+            if (!bindingData.BoundResources.TryGetValue(index, out IBindableVulkanResource? resource) || resource is null)
+            {
+                return;
+            }
+
+            if (resource.ID == newId)
+            {
+                return;
+            }
+
+            resource.Unbind(set, binding, index, this);
+        }
+
         public void Bind(IBindableVulkanResource resource, int set, int binding, int index)
         {
             AssertLoaded();
+            UnbindResource(set, binding, index, resource.ID);
 
             var sets = mDescriptorSets[set].Sets;
-            resource.Bind(sets, binding, index);
+            resource.Bind(sets, set, binding, index, this);
         }
 
         public bool FindResource(string name, out ShaderStage stage, out int set, out int binding)
@@ -862,6 +953,7 @@ namespace CodePlayground.Graphics.Vulkan
         private Pipeline mPipeline;
         private PipelineLayout mLayout;
 
+        private readonly Dictionary<int, DescriptorSetPipelineResources> mBoundResources;
         private readonly Dictionary<int, VulkanPipelineDescriptorSet> mDescriptorSets;
         private readonly DescriptorPool mDescriptorPool;
 

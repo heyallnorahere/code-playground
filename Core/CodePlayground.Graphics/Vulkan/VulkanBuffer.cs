@@ -22,6 +22,7 @@ namespace CodePlayground.Graphics.Vulkan
         {
             mDevice = device;
             mAllocator = allocator;
+            mID = VulkanPipeline.GenerateID();
 
             mUsage = usage;
             mSize = size;
@@ -182,7 +183,7 @@ namespace CodePlayground.Graphics.Vulkan
             });
         }
 
-        public unsafe void Bind(DescriptorSet[] descriptorSets, int binding, int index)
+        public unsafe void Bind(DescriptorSet[] descriptorSets, int set, int binding, int index, VulkanPipeline pipeline)
         {
             var bufferInfo = VulkanUtilities.Init<DescriptorBufferInfo>() with
             {
@@ -209,15 +210,22 @@ namespace CodePlayground.Graphics.Vulkan
             api.UpdateDescriptorSets(mDevice.Device, writes, 0, null);
         }
 
+        public void Unbind(int set, int binding, int index, VulkanPipeline pipeline)
+        {
+            // nothing, we don't have to do any rebinding
+        }
+
         public DeviceBufferUsage Usage => mUsage;
         public int Size => mSize;
         public Silk.NET.Vulkan.Buffer Buffer => mBuffer;
+        public ulong ID => mID;
 
         private readonly VulkanDevice mDevice;
         private readonly VulkanMemoryAllocator mAllocator;
 
         private readonly DeviceBufferUsage mUsage;
         private readonly int mSize;
+        private readonly ulong mID;
         private bool mDisposed;
 
         private readonly Silk.NET.Vulkan.Buffer mBuffer;

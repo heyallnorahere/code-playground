@@ -73,6 +73,25 @@ namespace CodePlayground.Graphics
         CopyDestination
     }
 
+    public enum AddressMode
+    {
+        Repeat,
+        MirroredRepeat,
+        ClampToEdge,
+        ClampToBorder,
+        MirrorClampToEdge
+    }
+
+    public enum SamplerFilter
+    {
+        Linear,
+        Nearest,
+        /// <summary>
+        /// Vulkan: Requires VK_EXT_filter_cubic or VK_IMG_filter_cubic
+        /// </summary>
+        Cubic
+    }
+
     public enum ShaderLanguage
     {
         HLSL,
@@ -206,6 +225,7 @@ namespace CodePlayground.Graphics
 
         public IDeviceBuffer CreateDeviceBuffer(DeviceBufferUsage usage, int size);
         public IDeviceImage CreateDeviceImage(DeviceImageInfo info);
+
         public IShader LoadShader(IReadOnlyList<byte> data, ShaderStage stage, string entrypoint);
         public IPipeline CreatePipeline(PipelineDescription description);
     }
@@ -313,6 +333,23 @@ namespace CodePlayground.Graphics
         public void CopyFromBuffer(ICommandList commandList, IDeviceBuffer source, object currentLayout);
         public void CopyToBuffer(ICommandList commandList, IDeviceBuffer destination, object currentLayout);
         public void TransitionLayout(ICommandList commandList, object srcLayout, object dstLayout);
+
+        public ITexture CreateTexture(bool ownsImage, ISamplerSettings? samplerSettings = null);
+    }
+
+    public interface ITexture : IDisposable
+    {
+        public IDeviceImage Image { get; }
+        public bool OwnsImage { get; }
+        public ISamplerSettings? SamplerSettings { get; }
+
+        public void InvalidateSampler();
+    }
+
+    public interface ISamplerSettings
+    {
+        public AddressMode AddressMode { get; }
+        public SamplerFilter Filter { get; }
     }
 
     public interface IShaderCompiler : IDisposable
@@ -336,7 +373,7 @@ namespace CodePlayground.Graphics
 
         public void Bind(ICommandList commandList, int frame);
         public bool Bind(IDeviceBuffer buffer, string name, int index = 0);
-        // todo: texture binding
+        public bool Bind(ITexture texture, string name, int index = 0);
 
         public void Load(IReadOnlyDictionary<ShaderStage, IShader> shaders);
 
