@@ -306,14 +306,14 @@ namespace CodePlayground.Graphics.Vulkan
                     ImageFormat = mDepthFormat,
                     Samples = SampleCountFlags.Count1Bit,
                     LoadOp = AttachmentLoadOp.Clear,
-                    StoreOp = AttachmentStoreOp.Store,
+                    StoreOp = AttachmentStoreOp.DontCare,
                     StencilLoadOp = AttachmentLoadOp.Clear,
                     StencilStoreOp = AttachmentStoreOp.DontCare,
                     InitialLayout = ImageLayout.Undefined,
                     FinalLayout = depthStencilLayout,
                     Layout = depthStencilLayout
                 },
-                SubpassDependency = new VulkanSubpassDependency // todo: add flags for depth attachment
+                SubpassDependency = new VulkanSubpassDependency
                 {
                     SourceStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
                     SourceAccessMask = 0,

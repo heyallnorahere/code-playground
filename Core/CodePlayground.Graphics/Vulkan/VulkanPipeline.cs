@@ -582,7 +582,7 @@ namespace CodePlayground.Graphics.Vulkan
 
                             DepthTestEnable = enableDepthTesting,
                             DepthWriteEnable = enableDepthTesting,
-                            DepthCompareOp = CompareOp.Less
+                            DepthCompareOp = CompareOp.Less,
                         };
 
                         var colorBlendAttachment = VulkanUtilities.Init<PipelineColorBlendAttachmentState>() with

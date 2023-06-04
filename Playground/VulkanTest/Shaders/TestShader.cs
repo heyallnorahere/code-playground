@@ -32,15 +32,24 @@ namespace VulkanTest.Shaders
             [Layout(Location = 0)]
             public Vector3<float> Position;
             [Layout(Location = 1)]
-            public Vector3<float> Color;
+            public Vector3<float> Normal;
+            [Layout(Location = 2)]
+            public Vector2<float> UV;
         }
 
         public struct VertexOut
         {
             [OutputPosition]
             public Vector4<float> Position;
+            public FragmentIn Data;
+        }
+
+        public struct FragmentIn
+        {
             [Layout(Location = 0)]
-            public Vector3<float> Color;
+            public Vector3<float> Normal;
+            [Layout(Location = 1)]
+            public Vector2<float> UV;
         }
 
         public struct UniformBufferData
@@ -60,15 +69,19 @@ namespace VulkanTest.Shaders
             return new VertexOut
             {
                 Position = u_UniformBuffer.ViewProjection * worldPosition,
-                Color = input.Color,
+                Data = new FragmentIn
+                {
+                    Normal = input.Normal,
+                    UV = input.UV
+                },
             };
         }
 
         [ShaderEntrypoint(ShaderStage.Fragment)]
         [return: Layout(Location = 0)]
-        public static Vector4<float> FragmentMain([Layout(Location = 0)] Vector3<float> color)
+        public static Vector4<float> FragmentMain(FragmentIn input)
         {
-            return new Vector4<float>(color, color.X);
+            return new Vector4<float>(input.UV, 0f, 1f);
         }
     }
 }

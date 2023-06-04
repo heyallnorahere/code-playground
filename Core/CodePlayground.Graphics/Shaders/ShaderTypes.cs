@@ -277,6 +277,16 @@ namespace CodePlayground.Graphics.Shaders
             throw new NotImplementedException();
         }
 
+        public Vector4(Vector2<T> xy, T z, T w) : base(xy.X, xy.Y, z)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Vector4(T x, T y, Vector2<T> zw) : base(x, y, zw.X)
+        {
+            throw new NotImplementedException();
+        }
+
         [ShaderFieldName("w")]
         public T W;
         [ShaderFieldName("a")]

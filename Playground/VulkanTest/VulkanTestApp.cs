@@ -2,7 +2,9 @@
 using CodePlayground.Graphics;
 using CodePlayground.Graphics.Vulkan;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using VulkanTest.Shaders;
@@ -13,7 +15,8 @@ namespace VulkanTest
     internal struct Vertex
     {
         public Vector3 Position;
-        public Vector3 Color;
+        public Vector3 Normal;
+        public Vector2 UV;
     }
 
     internal struct PipelineSpecification : IPipelineSpecification
@@ -29,40 +32,133 @@ namespace VulkanTest
         public Matrix4x4 ViewProjection, Model;
     }
 
+    internal struct QuadDirection
+    {
+        public Vector3 Direction { get; set; }
+        public Vector3[] OtherDirections { get; set; }
+    }
+
     [ApplicationTitle("Vulkan Test")]
     [ApplicationGraphicsAPI(AppGraphicsAPI.Vulkan)]
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
     [VulkanAPIVersion("1.3")]
     public class VulkanTestApp : GraphicsApplication
     {
+        public const PipelineFrontFace FrontFace = PipelineFrontFace.CounterClockwise;
+
         private static readonly Vertex[] sVertices;
         private static readonly uint[] sIndices;
 
         static VulkanTestApp()
         {
-            sVertices = new Vertex[]
+            var directions = new QuadDirection[]
             {
-                new Vertex
+                new QuadDirection
                 {
-                    Position = new Vector3(-0.5f, -0.5f, 0f),
-                    Color = new Vector3(1f, 0f, 0f)
+                    Direction = Vector3.UnitX,
+                    OtherDirections = new Vector3[]
+                    {
+                        Vector3.UnitY,
+                        Vector3.UnitZ,
+                    }
                 },
-                new Vertex
+                new QuadDirection
                 {
-                    Position = new Vector3(0.5f, -0.5f, 0f),
-                    Color = new Vector3(0f, 1f, 0f)
+                    Direction = Vector3.UnitY,
+                    OtherDirections = new Vector3[]
+                    {
+                        Vector3.UnitZ,
+                        Vector3.UnitX
+                    }
                 },
-                new Vertex
+                new QuadDirection
                 {
-                    Position = new Vector3(0f, 0.5f, 0f),
-                    Color = new Vector3(0f, 0f, 1f)
+                    Direction = Vector3.UnitZ,
+                    OtherDirections = new Vector3[]
+                    {
+                        Vector3.UnitX,
+                        Vector3.UnitY
+                    }
                 }
             };
 
-            sIndices = new uint[]
+            var counterClockwiseTemplateIndices = new int[]
             {
-                0, 2, 1
+                0, 3, 1,
+                1, 3, 2
             };
+
+            var clockwiseTemplateIndices = new int[]
+            {
+                0, 1, 3,
+                1, 2, 3
+            };
+
+            var faceDirections = new List<int>();
+            for (int i = 0; i < directions.Length; i++)
+            {
+                int value = i + 1;
+                faceDirections.Add(value);
+                faceDirections.Add(-value);
+            }
+
+            var vertices = new List<Vertex>();
+            var indices = new List<int>();
+
+            var templateIndices = FrontFace == PipelineFrontFace.Clockwise ? clockwiseTemplateIndices : counterClockwiseTemplateIndices;
+            foreach (var directionValue in faceDirections)
+            {
+                var abs = Math.Abs(directionValue);
+                var index = abs - 1;
+
+                var factor = directionValue / abs;
+                var direction = directions[index];
+                var directionVector = direction.Direction * factor;
+                var otherDirections = direction.OtherDirections;
+
+                var vertexPositions = new Vertex[]
+                {
+                    new Vertex
+                    {
+                        Position = otherDirections[0] * factor + otherDirections[1],
+                        UV = new Vector2(1f, 1f)
+                    },
+                    new Vertex
+                    {
+                        Position = -otherDirections[0] * factor + otherDirections[1],
+                        UV = new Vector2(0f, 1f)
+                    },
+                    new Vertex
+                    {
+                        Position = -otherDirections[0] * factor - otherDirections[1],
+                        UV = new Vector2(0f, 0f)
+                    },
+                    new Vertex
+                    {
+                        Position = otherDirections[0] * factor - otherDirections[1],
+                        UV = new Vector2(1f, 0f)
+                    }
+                };
+
+                int indexOffset = vertices.Count;
+                foreach (var vertex in vertexPositions)
+                {
+                    vertices.Add(new Vertex
+                    {
+                        Position = (vertex.Position + directionVector) / 2f,
+                        Normal = directionVector,
+                        UV = vertex.UV
+                    });
+                }
+
+                foreach (var templateIndex in templateIndices)
+                {
+                    indices.Add(templateIndex + indexOffset);
+                }
+            }
+
+            sVertices = vertices.ToArray();
+            sIndices = indices.Select(index => (uint)index).ToArray();
         }
 
         public VulkanTestApp()
@@ -89,9 +185,9 @@ namespace VulkanTest
                 FrameCount = swapchain.FrameCount,
                 Specification = new PipelineSpecification
                 {
-                    FrontFace = PipelineFrontFace.Clockwise,
+                    FrontFace = FrontFace,
                     BlendMode = PipelineBlendMode.SourceAlphaOneMinusSourceAlpha,
-                    EnableDepthTesting = false,
+                    EnableDepthTesting = true,
                     DisableCulling = false
                 }
             });
@@ -171,26 +267,32 @@ namespace VulkanTest
             return new Matrix4x4(right.X, right.Y, right.Z, -Vector3.Dot(right, eye),
                                  crossUp.X, crossUp.Y, crossUp.Z, -Vector3.Dot(crossUp, eye),
                                  direction.X, direction.Y, direction.Z, -Vector3.Dot(direction, eye),
-                                 1f, 1f, 1f, 1f);
+                                 0f, 0f, 0f, 1f);
         }
 
         [EventHandler(nameof(Update))]
         private void OnUpdate(double delta)
         {
+            mTime += (float)delta;
+
             var swapchain = GraphicsContext?.Swapchain;
             if (swapchain is null)
             {
                 return;
             }
 
+            float radius = 7.5f;
+            float x = MathF.Cos(mTime) * radius;
+            float z = -MathF.Sin(mTime) * radius;
+
             float aspectRatio = (float)swapchain.Width / (float)swapchain.Height;
             var projection = Perspective(MathF.PI / 4f, aspectRatio, 0.1f, 100f);
-            var view = LookAt(new Vector3(0f, 0f, -2f), Vector3.Zero, Vector3.UnitY);
-            var model = Matrix4x4.Identity;
+            var view = LookAt(new Vector3(x, 0f, z), Vector3.Zero, Vector3.UnitY);
+            var model = Matrix4x4.CreateRotationX(mTime);
 
             mUniformBuffer!.MapStructure(mPipeline!, nameof(TestShader.u_UniformBuffer), new UniformBufferData
             {
-                ViewProjection = projection * view,
+                ViewProjection = Matrix4x4.Transpose(projection * view),
                 Model = model
             });
         }
@@ -218,5 +320,6 @@ namespace VulkanTest
         private IPipeline? mPipeline;
         private IDeviceBuffer? mVertexBuffer, mIndexBuffer, mUniformBuffer;
         private IRenderer? mRenderer;
+        private float mTime;
     }
 }
