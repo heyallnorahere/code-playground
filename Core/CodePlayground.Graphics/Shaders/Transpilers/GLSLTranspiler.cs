@@ -1220,7 +1220,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
                 var name = GetTypeName(definedStruct, type, true);
                 builder.AppendLine($"struct {name} {{");
-                
+
                 foreach (var fieldName in info.DefinedFields.Keys)
                 {
                     var fieldType = info.DefinedFields[fieldName];
@@ -1242,21 +1242,34 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             {
                 var resourceData = mStageResources[fieldName];
                 var resourceType = resourceData.Type;
+                var dataType = resourceData.ResourceType;
 
                 var resourceTypeField = typeof(ShaderResourceType).GetField(resourceType.ToString());
                 var nameAttribute = resourceTypeField!.GetCustomAttribute<ShaderFieldNameAttribute>();
 
                 var resourceTypeName = (nameAttribute?.Name ?? resourceType.ToString()).ToLower();
-                builder.AppendLine($"layout({resourceData.Layout}) {resourceTypeName} {fieldName}_struct_definition_ {{");
+                builder.Append($"layout({resourceData.Layout}) {resourceTypeName} ");
 
-                var info = mStructDependencies[resourceData.ResourceType];
-                foreach (var currentFieldName in info.DefinedFields.Keys)
+                if (dataType.IsValueType)
                 {
-                    var fieldType = info.DefinedFields[currentFieldName];
-                    builder.AppendLine($"{fieldType} {currentFieldName};");
+                    builder.AppendLine($"{fieldName}_struct_definition_ {{");
+
+                    var info = mStructDependencies[dataType];
+                    foreach (var currentFieldName in info.DefinedFields.Keys)
+                    {
+                        var fieldType = info.DefinedFields[currentFieldName];
+                        builder.AppendLine($"{fieldType} {currentFieldName};");
+                    }
+
+                    builder.Append("} ");
+                }
+                else
+                {
+                    var typeName = GetTypeName(dataType, type, true);
+                    builder.Append(typeName + ' ');
                 }
 
-                builder.AppendLine($"}} {fieldName};");
+                builder.AppendLine(fieldName + ';');
             }
 
             var functionOrder = ResolveFunctionOrder();

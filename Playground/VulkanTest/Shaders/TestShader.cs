@@ -60,6 +60,9 @@ namespace VulkanTest.Shaders
         [Layout(Set = 0, Binding = 0)]
         public static UniformBufferData u_UniformBuffer;
 
+        [Layout(Set = 0, Binding = 1)]
+        public static Sampler2D<float>? u_Texture;
+
         [ShaderEntrypoint(ShaderStage.Vertex)]
         public static VertexOut VertexMain(VertexIn input)
         {
@@ -81,7 +84,7 @@ namespace VulkanTest.Shaders
         [return: Layout(Location = 0)]
         public static Vector4<float> FragmentMain(FragmentIn input)
         {
-            return new Vector4<float>(input.UV, 0f, 1f);
+            return u_Texture!.Sample(input.UV);
         }
     }
 }

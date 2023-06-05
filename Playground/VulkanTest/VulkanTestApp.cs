@@ -1,11 +1,15 @@
 ﻿using CodePlayground;
 using CodePlayground.Graphics;
 using CodePlayground.Graphics.Vulkan;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using VulkanTest.Shaders;
 
@@ -161,6 +165,17 @@ namespace VulkanTest
             sIndices = indices.Select(index => (uint)index).ToArray();
         }
 
+        private Image<T> LoadImage<T>(Assembly assembly, string resourceName) where T : unmanaged, IPixel<T>
+        {
+            var stream = assembly.GetManifestResourceStream(resourceName);
+            if (stream is null)
+            {
+                throw new FileNotFoundException();
+            }
+
+            return Image.Load<T>(stream);
+        }
+
         public VulkanTestApp()
         {
             Utilities.BindHandlers(this, this);
@@ -201,32 +216,61 @@ namespace VulkanTest
             }
 
             mUniformBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize);
-            if (!mPipeline.Bind(mUniformBuffer, resourceName, 0))
-            {
-                throw new InvalidOperationException("Failed to bind buffer!");
-            }
 
             int vertexBufferSize = sVertices.Length * Marshal.SizeOf<Vertex>();
             int indexBufferSize = sIndices.Length * Marshal.SizeOf<uint>();
 
+            var image = LoadImage<Rgba32>(GetType().Assembly, "VulkanTest.Resources.Textures.disaster.png");
+            int imageBufferSize = image.Width * image.Height * Marshal.SizeOf<Rgba32>();
+
             using var vertexStagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, vertexBufferSize);
             using var indexStagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, indexBufferSize);
-
-            mVertexBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Vertex, vertexBufferSize);
-            mIndexBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Index, indexBufferSize);
+            using var imageStagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, imageBufferSize);
 
             vertexStagingBuffer.CopyFromCPU(sVertices);
             indexStagingBuffer.CopyFromCPU(sIndices);
 
+            var imageDataBuffer = new Rgba32[image.Width * image.Height];
+            image.CopyPixelDataTo(imageDataBuffer);
+            imageStagingBuffer.CopyFromCPU(imageDataBuffer);
+
+            mVertexBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Vertex, vertexBufferSize);
+            mIndexBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Index, indexBufferSize);
+
+            mTexture = context.CreateDeviceImage(new DeviceImageInfo
+            {
+                Size = image.Size,
+                Usage = DeviceImageUsageFlags.Render | DeviceImageUsageFlags.CopySource | DeviceImageUsageFlags.CopyDestination,
+                Format = DeviceImageFormat.RGBA8_UNORM
+            }).CreateTexture(true);
+
+            var copyLayout = mTexture.Image.GetLayout(DeviceImageLayoutName.CopyDestination);
+            var renderLayout = mTexture.Image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
+
             var transferQueue = context.Device.GetQueue(CommandQueueFlags.Transfer);
             var commandList = transferQueue.Release();
-
             commandList.Begin();
+
             vertexStagingBuffer.CopyBuffers(commandList, mVertexBuffer, vertexBufferSize);
             indexStagingBuffer.CopyBuffers(commandList, mIndexBuffer, indexBufferSize);
-            commandList.End();
 
+            mTexture.Image.TransitionLayout(commandList, mTexture.Image.Layout, copyLayout);
+            mTexture.Image.CopyFromBuffer(commandList, imageStagingBuffer, copyLayout);
+            mTexture.Image.TransitionLayout(commandList, copyLayout, renderLayout);
+
+            commandList.End();
             transferQueue.Submit(commandList, true);
+
+            mTexture.Image.Layout = renderLayout;
+            if (!mPipeline.Bind(mTexture, nameof(TestShader.u_Texture), 0))
+            {
+                throw new InvalidOperationException("Failed to bind texture!");
+            }
+
+            if (!mPipeline.Bind(mUniformBuffer, resourceName, 0))
+            {
+                throw new InvalidOperationException("Failed to bind buffer!");
+            }
         }
 
         [EventHandler(nameof(Closing))]
@@ -239,6 +283,7 @@ namespace VulkanTest
             mVertexBuffer?.Dispose();
             mIndexBuffer?.Dispose();
             mUniformBuffer?.Dispose();
+            mTexture?.Dispose();
 
             mShaderLibrary?.Dispose();
             GraphicsContext?.Dispose();
@@ -319,6 +364,7 @@ namespace VulkanTest
         private ShaderLibrary? mShaderLibrary;
         private IPipeline? mPipeline;
         private IDeviceBuffer? mVertexBuffer, mIndexBuffer, mUniformBuffer;
+        private ITexture? mTexture;
         private IRenderer? mRenderer;
         private float mTime;
     }

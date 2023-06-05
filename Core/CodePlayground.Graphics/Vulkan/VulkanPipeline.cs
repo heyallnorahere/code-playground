@@ -33,14 +33,11 @@ namespace CodePlayground.Graphics.Vulkan
     public sealed class VulkanPipeline : IPipeline
     {
         private static readonly IReadOnlyDictionary<ShaderTypeClass, IReadOnlyDictionary<int, Format>> sAttributeFormats;
-        private static readonly Dictionary<ulong, VulkanPipeline> sPipelines;
         private static ulong sCurrentID;
 
         static VulkanPipeline()
         {
             sCurrentID = 0;
-            sPipelines = new Dictionary<ulong, VulkanPipeline>();
-
             sAttributeFormats = new Dictionary<ShaderTypeClass, IReadOnlyDictionary<int, Format>>
             {
                 [ShaderTypeClass.Float] = new Dictionary<int, Format>
@@ -68,23 +65,13 @@ namespace CodePlayground.Graphics.Vulkan
         }
 
         public static ulong GenerateID() => sCurrentID++;
-        public static VulkanPipeline? LookupID(ulong id)
-        {
-            if (sPipelines.TryGetValue(id, out VulkanPipeline? pipeline))
-            {
-                return pipeline;
-            }
-            else
-            {
-                return null;
-            }
-        }
 
         public unsafe VulkanPipeline(VulkanContext context, PipelineDescription description)
         {
             mDesc = description;
             mReflectionData = new Dictionary<ShaderStage, ShaderReflectionResult>();
             mBoundResources = new Dictionary<int, DescriptorSetPipelineResources>();
+            mID = GenerateID();
 
             mDescriptorSets = new Dictionary<int, VulkanPipelineDescriptorSet>();
             mDevice = context.Device;
@@ -946,6 +933,7 @@ namespace CodePlayground.Graphics.Vulkan
         }
 
         public PipelineDescription Description => mDesc;
+        public ulong ID => mID;
 
         private readonly PipelineDescription mDesc;
         private readonly Dictionary<ShaderStage, ShaderReflectionResult> mReflectionData;
@@ -959,6 +947,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private readonly VulkanDevice mDevice;
         private readonly IShaderCompiler mCompiler;
+        private readonly ulong mID;
         private bool mLoaded, mDisposed;
     }
 }

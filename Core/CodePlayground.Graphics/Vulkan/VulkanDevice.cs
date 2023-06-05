@@ -161,6 +161,7 @@ namespace CodePlayground.Graphics.Vulkan
                 {
                     fixed (DeviceQueueCreateInfo* queuePtr = queueInfo)
                     {
+                        PhysicalDevice.GetFeatures(out PhysicalDeviceFeatures features);
                         var createInfo = VulkanUtilities.Init<DeviceCreateInfo>() with
                         {
                             QueueCreateInfoCount = (uint)queueInfo.Length,
@@ -169,6 +170,7 @@ namespace CodePlayground.Graphics.Vulkan
                             PpEnabledLayerNames = layers,
                             EnabledExtensionCount = (uint)info.Extensions.Count(),
                             PpEnabledExtensionNames = extensions,
+                            PEnabledFeatures = &features
                         };
 
                         fixed (Device* devicePtr = &mDevice)

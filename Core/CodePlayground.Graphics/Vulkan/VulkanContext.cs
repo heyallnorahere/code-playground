@@ -471,10 +471,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void CreateDebugMessenger()
         {
-#if !DEBUG
-            return;
-#endif
-
+#if DEBUG
             var instance = mInstance!.Value;
             if (!API.TryGetInstanceExtension(instance, out ExtDebugUtils debugUtils))
             {
@@ -493,6 +490,7 @@ namespace CodePlayground.Graphics.Vulkan
             debugUtils.CreateDebugUtilsMessenger(instance, &createInfo, null, &debugMessenger).Assert();
 
             mDebugMessenger = debugMessenger;
+#endif
         }
 
         private unsafe VulkanPhysicalDevice ChoosePhysicalDevice()

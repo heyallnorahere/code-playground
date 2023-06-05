@@ -4,12 +4,18 @@ using System.Collections.Generic;
 
 namespace CodePlayground.Graphics.Vulkan
 {
-    internal struct BoundPipelineDescriptorSets
+    internal struct BoundPipelineData
     {
-        public Dictionary<int, BoundPipelineBindings> Bindings { get; set; }
+        public Dictionary<int, BoundPipelineDescriptorSet> Sets { get; set; }
+        public VulkanPipeline Pipeline { get; set; }
     }
 
-    internal struct BoundPipelineBindings
+    internal struct BoundPipelineDescriptorSet
+    {
+        public Dictionary<int, BoundPipelineBinding> Bindings { get; set; }
+    }
+
+    internal struct BoundPipelineBinding
     {
         public HashSet<int> BoundIndices { get; set; }
     }
@@ -20,6 +26,7 @@ namespace CodePlayground.Graphics.Vulkan
         {
             mDisposed = false;
             mDevice = image.Device;
+            mBoundPipelines = new Dictionary<ulong, BoundPipelineData>();
 
             ID = VulkanPipeline.GenerateID();
             Image = image;
@@ -74,10 +81,32 @@ namespace CodePlayground.Graphics.Vulkan
             api.DestroySampler(mDevice.Device, mImageInfo.Sampler, null);
         }
 
+        private void Rebind()
+        {
+            foreach (var pipelineId in mBoundPipelines.Keys)
+            {
+                var pipelineData = mBoundPipelines[pipelineId];
+                var pipeline = pipelineData.Pipeline;
+
+                foreach (int set in pipelineData.Sets.Keys)
+                {
+                    var setData = pipelineData.Sets[set];
+                    foreach (int binding in setData.Bindings.Keys)
+                    {
+                        var bindingData = setData.Bindings[binding];
+                        foreach (int index in bindingData.BoundIndices)
+                        {
+                            pipeline.Bind(this, set, binding, index);
+                        }
+                    }
+                }
+            }
+        }
+
         private void OnLayoutChanged(VulkanImageLayout layout)
         {
             mImageInfo.ImageLayout = layout.Layout;
-            // todo: rebind
+            Rebind();
         }
 
         public unsafe void InvalidateSampler()
@@ -123,7 +152,7 @@ namespace CodePlayground.Graphics.Vulkan
                 CompareEnable = false,
                 CompareOp = CompareOp.Always,
                 MinLod = 0f,
-                MaxLod = 0f,
+                MaxLod = Image.MipLevels,
                 BorderColor = BorderColor.IntOpaqueBlack,
                 UnnormalizedCoordinates = false
             };
@@ -134,17 +163,102 @@ namespace CodePlayground.Graphics.Vulkan
                 api.CreateSampler(mDevice.Device, &createInfo, null, sampler).Assert();
             }
 
-            // todo: rebind
+            Rebind();
         }
 
-        public void Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline)
+        private void AddBindingIndex(int set, int binding, int index, VulkanPipeline pipeline)
         {
-            // todo: bind
+            ulong id = pipeline.ID;
+            if (!mBoundPipelines.TryGetValue(id, out BoundPipelineData pipelineData))
+            {
+                mBoundPipelines.Add(id, pipelineData = new BoundPipelineData
+                {
+                    Sets = new Dictionary<int, BoundPipelineDescriptorSet>(),
+                    Pipeline = pipeline
+                });
+            }
+
+            if (!pipelineData.Sets.TryGetValue(set, out BoundPipelineDescriptorSet setData))
+            {
+                pipelineData.Sets.Add(set, setData = new BoundPipelineDescriptorSet
+                {
+                    Bindings = new Dictionary<int, BoundPipelineBinding>()
+                });
+            }
+
+            if (!setData.Bindings.TryGetValue(binding, out BoundPipelineBinding bindingData))
+            {
+                setData.Bindings.Add(binding, bindingData = new BoundPipelineBinding
+                {
+                    BoundIndices = new HashSet<int>()
+                });
+            }
+
+            bindingData.BoundIndices.Add(index);
+        }
+
+        public unsafe void Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline)
+        {
+            AddBindingIndex(set, binding, index, pipeline);
+
+            fixed (DescriptorImageInfo* imageInfo = &mImageInfo)
+            {
+                var writes = new WriteDescriptorSet[sets.Length];
+                for (int i = 0; i < writes.Length; i++)
+                {
+                    writes[i] = VulkanUtilities.Init<WriteDescriptorSet>() with
+                    {
+                        DstSet = sets[i],
+                        DstBinding = (uint)binding,
+                        DstArrayElement = (uint)index,
+                        DescriptorCount = 1,
+                        DescriptorType = DescriptorType.CombinedImageSampler,
+                        PImageInfo = imageInfo
+                    };
+                }
+
+                var api = VulkanContext.API;
+                api.UpdateDescriptorSets(mDevice.Device, writes, 0, null);
+            }
         }
 
         public void Unbind(int set, int binding, int index, VulkanPipeline pipeline)
         {
-            // todo: unbind
+            ulong id = pipeline.ID;
+            if (!mBoundPipelines.TryGetValue(id, out BoundPipelineData pipelineData))
+            {
+                return;
+            }
+
+            if (!pipelineData.Sets.TryGetValue(set, out BoundPipelineDescriptorSet setData))
+            {
+                return;
+            }
+
+            if (!setData.Bindings.TryGetValue(binding, out BoundPipelineBinding bindingData))
+            {
+                return;
+            }
+
+            if (bindingData.BoundIndices.Count == 1)
+            {
+                if (setData.Bindings.Count == 1)
+                {
+                    if (pipelineData.Sets.Count == 1)
+                    {
+                        mBoundPipelines.Remove(id);
+                        return;
+                    }
+
+                    pipelineData.Sets.Remove(set);
+                    return;
+                }
+
+                setData.Bindings.Remove(binding);
+                return;
+            }
+
+            bindingData.BoundIndices.Remove(index);
         }
 
         public VulkanImage Image { get; }
@@ -157,5 +271,6 @@ namespace CodePlayground.Graphics.Vulkan
         private bool mDisposed;
         private readonly VulkanDevice mDevice;
         private DescriptorImageInfo mImageInfo;
+        private readonly Dictionary<ulong, BoundPipelineData> mBoundPipelines;
     }
 }

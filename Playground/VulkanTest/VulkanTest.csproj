@@ -9,4 +9,10 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Resources Include="Resources\**\*" />
+    <Content Remove="@(Resources)" />
+    <EmbeddedResource Include="@(Resources)" />
+  </ItemGroup>
+
 </Project>

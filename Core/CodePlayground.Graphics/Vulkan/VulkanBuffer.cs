@@ -183,7 +183,7 @@ namespace CodePlayground.Graphics.Vulkan
             });
         }
 
-        public unsafe void Bind(DescriptorSet[] descriptorSets, int set, int binding, int index, VulkanPipeline pipeline)
+        public unsafe void Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline)
         {
             var bufferInfo = VulkanUtilities.Init<DescriptorBufferInfo>() with
             {
@@ -192,16 +192,20 @@ namespace CodePlayground.Graphics.Vulkan
                 Range = (ulong)mSize
             };
 
-            var writes = new WriteDescriptorSet[descriptorSets.Length];
+            var writes = new WriteDescriptorSet[sets.Length];
             for (int i = 0; i < writes.Length; i++)
             {
                 writes[i] = VulkanUtilities.Init<WriteDescriptorSet>() with
                 {
-                    DstSet = descriptorSets[i],
+                    DstSet = sets[i],
                     DstBinding = (uint)binding,
                     DstArrayElement = (uint)index,
                     DescriptorCount = 1,
-                    DescriptorType = DescriptorType.UniformBuffer,
+                    DescriptorType = mUsage switch
+                    {
+                        DeviceBufferUsage.Uniform => DescriptorType.UniformBuffer,
+                        _ => throw new InvalidOperationException($"Cannot bind a buffer of type {mUsage}")
+                    },
                     PBufferInfo = &bufferInfo
                 };
             }
