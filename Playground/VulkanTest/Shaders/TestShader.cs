@@ -22,6 +22,13 @@ namespace VulkanTest.Shaders
         {
             throw new NotImplementedException();
         }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("transpose")]
+        public Matrix4x4<T> Transpose()
+        {
+            throw new NotImplementedException();
+        }
     }
 
     [CompiledShader]
@@ -35,6 +42,8 @@ namespace VulkanTest.Shaders
             public Vector3<float> Normal;
             [Layout(Location = 2)]
             public Vector2<float> UV;
+            [Layout(Location = 3)]
+            public int Transform;
         }
 
         public struct VertexOut
@@ -54,7 +63,7 @@ namespace VulkanTest.Shaders
 
         public struct UniformBufferData
         {
-            public Matrix4x4<float> ViewProjection, Model;
+            public Matrix4x4<float> ModelViewProjection;
         }
 
         [Layout(Set = 0, Binding = 0)]
@@ -67,11 +76,20 @@ namespace VulkanTest.Shaders
         public static VertexOut VertexMain(VertexIn input)
         {
             var vertexPosition = new Vector4<float>(input.Position, 1f);
-            var worldPosition = u_UniformBuffer.Model * vertexPosition;
+
+            Vector4<float> outputPosition;
+            if (input.Transform == 1)
+            {
+                outputPosition = u_UniformBuffer.ModelViewProjection * vertexPosition;
+            }
+            else
+            {
+                outputPosition = vertexPosition;
+            }
 
             return new VertexOut
             {
-                Position = u_UniformBuffer.ViewProjection * worldPosition,
+                Position = outputPosition,
                 Data = new FragmentIn
                 {
                     Normal = input.Normal,
@@ -84,7 +102,9 @@ namespace VulkanTest.Shaders
         [return: Layout(Location = 0)]
         public static Vector4<float> FragmentMain(FragmentIn input)
         {
-            return u_Texture!.Sample(input.UV);
+            var normalColor = new Vector4<float>(input.Normal, 1f);
+            var textureColor = u_Texture!.Sample(input.UV);
+            return BuiltinFunctions.Lerp(normalColor, textureColor, 0.5f);
         }
     }
 }

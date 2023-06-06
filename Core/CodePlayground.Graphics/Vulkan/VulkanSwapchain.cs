@@ -307,7 +307,7 @@ namespace CodePlayground.Graphics.Vulkan
                     Samples = SampleCountFlags.Count1Bit,
                     LoadOp = AttachmentLoadOp.Clear,
                     StoreOp = AttachmentStoreOp.DontCare,
-                    StencilLoadOp = AttachmentLoadOp.Clear,
+                    StencilLoadOp = AttachmentLoadOp.DontCare,
                     StencilStoreOp = AttachmentStoreOp.DontCare,
                     InitialLayout = ImageLayout.Undefined,
                     FinalLayout = depthStencilLayout,

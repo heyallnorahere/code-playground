@@ -39,7 +39,7 @@ namespace CodePlayground.Graphics.Vulkan
                 fixed (Framebuffer* framebuffer = &mFramebuffer)
                 {
                     var api = VulkanContext.API;
-                    api.CreateFramebuffer(device.Device, &createInfo, null, framebuffer);
+                    api.CreateFramebuffer(device.Device, &createInfo, null, framebuffer).Assert();
                 }
             }
 

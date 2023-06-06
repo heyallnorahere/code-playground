@@ -480,7 +480,7 @@ namespace CodePlayground.Graphics.Vulkan
 
             var createInfo = VulkanUtilities.Init<DebugUtilsMessengerCreateInfoEXT>() with
             {
-                MessageSeverity = DebugUtilsMessageSeverityFlagsEXT.InfoBitExt | DebugUtilsMessageSeverityFlagsEXT.WarningBitExt | DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt,
+                MessageSeverity = DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt | DebugUtilsMessageSeverityFlagsEXT.InfoBitExt | DebugUtilsMessageSeverityFlagsEXT.WarningBitExt | DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt,
                 MessageType = DebugUtilsMessageTypeFlagsEXT.GeneralBitExt | DebugUtilsMessageTypeFlagsEXT.ValidationBitExt | DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt,
                 PfnUserCallback = (DebugUtilsMessengerCallbackFunctionEXT)DebugMessengerCallback,
                 PUserData = null

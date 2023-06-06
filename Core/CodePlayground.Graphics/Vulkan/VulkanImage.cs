@@ -302,7 +302,7 @@ namespace CodePlayground.Graphics.Vulkan
                 DeviceImageLayoutName.DepthStencilAttachment => new VulkanImageLayout
                 {
                     Layout = ImageLayout.DepthStencilAttachmentOptimal,
-                    Stage = PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.ColorAttachmentOutputBit,
+                    Stage = PipelineStageFlags.EarlyFragmentTestsBit,
                     AccessMask = AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit
                 },
                 DeviceImageLayoutName.CopySource => new VulkanImageLayout

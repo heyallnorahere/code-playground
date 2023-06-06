@@ -459,7 +459,13 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         }
                         else
                         {
-                            expressionString = $"{invokedObject}, {expressionString}";
+                            var existingExpressions = expressionString;
+                            expressionString = invokedObject;
+                            
+                            if (existingExpressions.Length > 0)
+                            {
+                                expressionString += $", {existingExpressions}";
+                            }
                         }
                     }
 

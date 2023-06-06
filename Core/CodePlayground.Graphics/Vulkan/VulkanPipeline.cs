@@ -581,10 +581,10 @@ namespace CodePlayground.Graphics.Vulkan
             }
 
             var spec = mDesc.Specification;
-            var frontFace = spec?.FrontFace ?? PipelineFrontFace.Clockwise;
-            var blendMode = spec?.BlendMode ?? PipelineBlendMode.None;
-            var enableDepthTesting = spec?.EnableDepthTesting ?? false;
-            bool disableCulling = spec?.DisableCulling ?? false;
+            var frontFace = spec?.FrontFace ?? default;
+            var blendMode = spec?.BlendMode ?? default;
+            var enableDepthTesting = spec?.EnableDepthTesting ?? default;
+            bool disableCulling = spec?.DisableCulling ?? default;
 
             var dynamicStates = new DynamicState[]
             {
@@ -647,7 +647,7 @@ namespace CodePlayground.Graphics.Vulkan
                         {
                             RasterizationSamples = SampleCountFlags.Count1Bit,
                             SampleShadingEnable = false,
-                            MinSampleShading = 1f,
+                            MinSampleShading = 0f,
                             PSampleMask = null,
                             AlphaToCoverageEnable = false,
                             AlphaToOneEnable = false
@@ -655,12 +655,12 @@ namespace CodePlayground.Graphics.Vulkan
 
                         var depthStencil = VulkanUtilities.Init<PipelineDepthStencilStateCreateInfo>() with
                         {
-                            DepthBoundsTestEnable = false,
-                            StencilTestEnable = false,
-
                             DepthTestEnable = enableDepthTesting,
                             DepthWriteEnable = enableDepthTesting,
-                            DepthCompareOp = CompareOp.Less,
+                            DepthCompareOp = CompareOp.LessOrEqual,
+
+                            DepthBoundsTestEnable = false,
+                            StencilTestEnable = false,
                         };
 
                         var colorBlendAttachment = VulkanUtilities.Init<PipelineColorBlendAttachmentState>() with

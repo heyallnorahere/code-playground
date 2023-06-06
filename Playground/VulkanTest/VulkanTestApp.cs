@@ -21,6 +21,7 @@ namespace VulkanTest
         public Vector3 Position;
         public Vector3 Normal;
         public Vector2 UV;
+        public int Transform;
     }
 
     internal struct PipelineSpecification : IPipelineSpecification
@@ -33,7 +34,7 @@ namespace VulkanTest
 
     internal struct UniformBufferData
     {
-        public Matrix4x4 ViewProjection, Model;
+        public Matrix4x4 ModelViewProjection;
     }
 
     internal struct QuadDirection
@@ -106,10 +107,42 @@ namespace VulkanTest
                 faceDirections.Add(-value);
             }
 
-            var vertices = new List<Vertex>();
-            var indices = new List<int>();
+            var vertices = new List<Vertex>
+            {
+                // quad
+                new Vertex
+                {
+                    Position = new Vector3(0.5f, -0.5f, 0f),
+                    Normal = new Vector3(0f, 0f, -1f),
+                    UV = new Vector2(0f, 1f),
+                    Transform = 0
+                },
+                new Vertex
+                {
+                    Position = new Vector3(-0.5f, -0.5f, 0f),
+                    Normal = new Vector3(0f, 0f, 1f),
+                    UV = new Vector2(1f, 1f),
+                    Transform = 0
+                },
+                new Vertex
+                {
+                    Position = new Vector3(-0.5f, 0.5f, 0f),
+                    Normal = new Vector3(1f, 0f, 0f),
+                    UV = new Vector2(1f, 0f),
+                    Transform = 0
+                },
+                new Vertex
+                {
+                    Position = new Vector3(0.5f, 0.5f, 0f),
+                    Normal = new Vector3(-1f, 0f, 0f),
+                    UV = new Vector2(0f, 0f),
+                    Transform = 0
+                }
+            };
 
             var templateIndices = FrontFace == PipelineFrontFace.Clockwise ? clockwiseTemplateIndices : counterClockwiseTemplateIndices;
+            var indices = new List<int>();
+
             foreach (var directionValue in faceDirections)
             {
                 var abs = Math.Abs(directionValue);
@@ -151,7 +184,8 @@ namespace VulkanTest
                     {
                         Position = (vertex.Position + directionVector) / 2f,
                         Normal = directionVector,
-                        UV = vertex.UV
+                        UV = vertex.UV,
+                        Transform = 1
                     });
                 }
 
@@ -201,9 +235,9 @@ namespace VulkanTest
                 Specification = new PipelineSpecification
                 {
                     FrontFace = FrontFace,
-                    BlendMode = PipelineBlendMode.SourceAlphaOneMinusSourceAlpha,
+                    BlendMode = PipelineBlendMode.None,
                     EnableDepthTesting = true,
-                    DisableCulling = false
+                    DisableCulling = true
                 }
             });
 
@@ -293,13 +327,27 @@ namespace VulkanTest
         // https://github.com/g-truc/glm/blob/efec5db081e3aad807d0731e172ac597f6a39447/glm/ext/matrix_clip_space.inl#L265
         private static Matrix4x4 Perspective(float verticalFov, float aspectRatio, float nearPlane, float farPlane)
         {
-            float g = 1.0f / MathF.Tan(verticalFov / 2f);
+            float g = 1f / MathF.Tan(verticalFov / 2f);
             float k = farPlane / (farPlane - nearPlane);
 
             return new Matrix4x4(g / aspectRatio, 0f, 0f, 0f,
                                  0f, g, 0f, 0f,
                                  0f, 0f, k, -nearPlane * k,
                                  0f, 0f, 1f, 0f);
+
+            /* GLM code
+            assert(abs(aspect - std::numeric_limits<T>::epsilon()) > static_cast<T>(0));
+
+		    T const tanHalfFovy = tan(fovy / static_cast<T>(2));
+
+		    mat<4, 4, T, defaultp> Result(static_cast<T>(0));
+		    Result[0][0] = static_cast<T>(1) / (aspect * tanHalfFovy);
+		    Result[1][1] = static_cast<T>(1) / (tanHalfFovy);
+		    Result[2][2] = zFar / (zFar - zNear);
+		    Result[2][3] = static_cast<T>(1);
+		    Result[3][2] = -(zFar * zNear) / (zFar - zNear);
+		    return Result;
+            */
         }
 
         // https://github.com/g-truc/glm/blob/efec5db081e3aad807d0731e172ac597f6a39447/glm/ext/matrix_transform.inl#L176
@@ -313,6 +361,41 @@ namespace VulkanTest
                                  crossUp.X, crossUp.Y, crossUp.Z, -Vector3.Dot(crossUp, eye),
                                  direction.X, direction.Y, direction.Z, -Vector3.Dot(direction, eye),
                                  0f, 0f, 0f, 1f);
+
+            /* GLM code
+            vec<3, T, Q> const f(normalize(center - eye));
+		    vec<3, T, Q> const s(normalize(cross(up, f)));
+		    vec<3, T, Q> const u(cross(f, s));
+
+		    mat<4, 4, T, Q> Result(1);
+		    Result[0][0] = s.x;
+		    Result[1][0] = s.y;
+		    Result[2][0] = s.z;
+		    Result[0][1] = u.x;
+		    Result[1][1] = u.y;
+		    Result[2][1] = u.z;
+		    Result[0][2] = f.x;
+		    Result[1][2] = f.y;
+		    Result[2][2] = f.z;
+		    Result[3][0] = -dot(s, eye);
+		    Result[3][1] = -dot(u, eye);
+		    Result[3][2] = -dot(f, eye);
+		    return Result;
+            */
+        }
+
+        private static Vector4 Multiply(Matrix4x4 lhs, Vector4 rhs)
+        {
+            var result = Vector4.Zero;
+            for (int c = 0; c < 4; c++)
+            {
+                for (int r = 0; r < 4; r++)
+                {
+                    result[c] += rhs[r] * lhs[r, c];
+                }
+            }
+
+            return result;
         }
 
         [EventHandler(nameof(Update))]
@@ -326,19 +409,18 @@ namespace VulkanTest
                 return;
             }
 
-            float radius = 7.5f;
+            float radius = 5f;
             float x = MathF.Cos(mTime) * radius;
             float z = -MathF.Sin(mTime) * radius;
 
             float aspectRatio = (float)swapchain.Width / (float)swapchain.Height;
-            var projection = Perspective(MathF.PI / 4f, aspectRatio, 0.1f, 100f);
+            var projection = Perspective(MathF.PI / 4f, aspectRatio, 0.1f, 10f);
             var view = LookAt(new Vector3(x, 0f, z), Vector3.Zero, Vector3.UnitY);
-            var model = Matrix4x4.CreateRotationX(mTime);
+            var model = Matrix4x4.CreateRotationX(mTime / 2f);
 
             mUniformBuffer!.MapStructure(mPipeline!, nameof(TestShader.u_UniformBuffer), new UniformBufferData
             {
-                ViewProjection = Matrix4x4.Transpose(projection * view),
-                Model = model
+                ModelViewProjection = Matrix4x4.Transpose(projection * view * model)
             });
         }
 
