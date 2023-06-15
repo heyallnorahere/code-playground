@@ -502,10 +502,18 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 var fieldType = field.FieldType;
                                 ProcessType(fieldType, type, false);
 
-                                string layoutString = $"set = {layoutAttribute.Set}, binding = {layoutAttribute.Binding}";
-                                if (!fieldType.Extends<__SamplerBase>())
+                                string layoutString;
+                                if (layoutAttribute.PushConstants)
                                 {
-                                    layoutString = "std140, " + layoutString;
+                                    layoutString = "push_constant";
+                                }
+                                else
+                                {
+                                    layoutString = $"set = {layoutAttribute.Set}, binding = {layoutAttribute.Binding}";
+                                    if (!fieldType.Extends<__SamplerBase>())
+                                    {
+                                        layoutString = "std140, " + layoutString;
+                                    }
                                 }
 
                                 mStageResources.Add(fieldName, new ShaderResource

@@ -161,6 +161,12 @@ namespace CodePlayground.Graphics
         public int MipLevels { get; set; }
     }
 
+    public struct ReflectedPushConstantBuffer
+    {
+        public int Type { get; set; }
+        public string Name { get; set; }
+    }
+
     public struct ReflectedShaderResource
     {
         public string Name { get; set; }
@@ -200,6 +206,7 @@ namespace CodePlayground.Graphics
     {
         public List<ReflectedStageIOField> StageIO { get; set; }
         public Dictionary<int, Dictionary<int, ReflectedShaderResource>> Resources { get; set; }
+        public List<ReflectedPushConstantBuffer> PushConstantBuffers { get; set; }
         public Dictionary<int, ReflectedShaderType> Types { get; set; }
     }
 
@@ -302,6 +309,7 @@ namespace CodePlayground.Graphics
         public int Height { get; }
     }
 
+    public delegate void BufferMapCallback(Span<byte> memory);
     public interface IDeviceBuffer : IDisposable
     {
         public DeviceBufferUsage Usage { get; }
@@ -309,6 +317,7 @@ namespace CodePlayground.Graphics
 
         public unsafe void CopyFromCPU(void* address, int size, int offset = 0);
         public unsafe void CopyToCPU(void* address, int size, int offset = 0);
+        public void Map(BufferMapCallback callback);
 
         // command list commands
         public void CopyBuffers(ICommandList commandList, IDeviceBuffer destination, int size, int srcOffset = 0, int dstOffset = 0);
@@ -372,6 +381,8 @@ namespace CodePlayground.Graphics
         public PipelineDescription Description { get; }
 
         public void Bind(ICommandList commandList, int frame);
+        public void PushConstants(ICommandList commandList, BufferMapCallback callback);
+
         public bool Bind(IDeviceBuffer buffer, string name, int index = 0);
         public bool Bind(ITexture texture, string name, int index = 0);
 

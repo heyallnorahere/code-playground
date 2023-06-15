@@ -72,12 +72,14 @@ namespace CodePlayground.Graphics.Shaders
             Location = -1;
             Set = Binding = 0;
             ResourceType = ShaderResourceType.Uniform;
+            PushConstants = false;
         }
 
         public int Location { get; set; }
         public int Set { get; set; }
         public int Binding { get; set; }
         public ShaderResourceType ResourceType { get; set; }
+        public bool PushConstants { get; set; }
     }
 
     [AttributeUsage(AttributeTargets.Field, AllowMultiple = false, Inherited = true)]

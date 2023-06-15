@@ -2,7 +2,6 @@ using CodePlayground.Graphics.Shaders.Transpilers;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Reflection.Emit;
 
 namespace CodePlayground.Graphics.Shaders
 {

@@ -36,6 +36,12 @@ namespace VulkanTest
         public Matrix4x4 ViewProjection;
     }
 
+    internal struct PushConstantData
+    {
+        public Matrix4x4 Model;
+        public Vector4 Color;
+    }
+
     internal struct QuadDirection
     {
         public Vector3 Direction { get; set; }
@@ -55,7 +61,20 @@ namespace VulkanTest
 
         static VulkanTestApp()
         {
-            var vertices = new Vertex[]
+
+            var counterClockwiseIndices = new uint[]
+            {
+                0, 3, 1,
+                1, 3, 2
+            };
+
+            var clockwiseIndices = new uint[]
+            {
+                0, 1, 3,
+                1, 2, 3
+            };
+
+            sVertices = new Vertex[]
             {
                 // quad
                 new Vertex
@@ -84,59 +103,13 @@ namespace VulkanTest
                 }
             };
 
-            var positionValues = new float[]
-            {
-                0f, -1f, 1f
-            };
-
-            var counterClockwiseIndices = new int[]
-            {
-                0, 3, 1,
-                1, 3, 2
-            };
-
-            var clockwiseIndices = new int[]
-            {
-                0, 1, 3,
-                1, 2, 3
-            };
-
-            var indices = FrontFace == PipelineFrontFace.Clockwise ? clockwiseIndices : counterClockwiseIndices;
-            var vertexData = new List<Vertex>();
-            var indexData = new List<int>();
-
-            foreach (float positionValue in positionValues)
-            {
-                foreach (int index in indices)
-                {
-                    indexData.Add(index + vertexData.Count);
-                }
-
-                var offset = (Vector3.UnitX + Vector3.UnitZ) * positionValue / 2f;
-                foreach (var vertex in vertices)
-                {
-                    vertexData.Add(new Vertex
-                    {
-                        Position = vertex.Position + offset,
-                        Normal = vertex.Normal,
-                        UV = vertex.UV
-                    });
-                }
-            }
-
-            sVertices = vertexData.ToArray();
-            sIndices = indexData.Select(index => (uint)index).ToArray();
+            sIndices = FrontFace == PipelineFrontFace.Clockwise ? clockwiseIndices : counterClockwiseIndices;
         }
 
-        private Image<T> LoadImage<T>(Assembly assembly, string resourceName) where T : unmanaged, IPixel<T>
+        private static Image<T> LoadImage<T>(Assembly assembly, string resourceName) where T : unmanaged, IPixel<T>
         {
             var stream = assembly.GetManifestResourceStream(resourceName);
-            if (stream is null)
-            {
-                throw new FileNotFoundException();
-            }
-
-            return Image.Load<T>(stream);
+            return Image.Load<T>(stream ?? throw new FileNotFoundException());
         }
 
         public VulkanTestApp()
@@ -330,10 +303,29 @@ namespace VulkanTest
             var clearColor = new Vector4(0f, 0f, 0f, 1f);
             renderInfo.RenderTarget.BeginRender(renderInfo.CommandList, renderInfo.Framebuffer, clearColor, true);
 
+            mPipeline!.Bind(renderInfo.CommandList, renderInfo.CurrentFrame);
             mVertexBuffer!.BindVertices(renderInfo.CommandList, 0);
             mIndexBuffer!.BindIndices(renderInfo.CommandList, DeviceBufferIndexType.UInt32);
-            mPipeline!.Bind(renderInfo.CommandList, renderInfo.CurrentFrame);
-            mRenderer!.RenderIndexed(renderInfo.CommandList, sIndices.Length);
+
+            for (int i = 0; i < 3; i++)
+            {
+                var position = i - 1;
+                var model = Matrix4x4.CreateTranslation((Vector3.UnitX - Vector3.UnitZ) * position / 2f);
+
+                var color = new Vector3(0f);
+                color[i] = 1f;
+
+                mPipeline!.PushConstants(renderInfo.CommandList, mapped =>
+                {
+                    mPipeline!.MapStructure(mapped, nameof(TestShader.u_PushConstants), new PushConstantData
+                    {
+                        Model = model,
+                        Color = new Vector4(color, 1f)
+                    });
+                });
+
+                mRenderer!.RenderIndexed(renderInfo.CommandList, sIndices.Length);
+            }
 
             renderInfo.RenderTarget.EndRender(renderInfo.CommandList);
         }

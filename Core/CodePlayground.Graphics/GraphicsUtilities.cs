@@ -77,16 +77,27 @@ namespace CodePlayground.Graphics
             return deviceImage.CreateTexture(true);
         }
 
-        public static unsafe void MapStructure<T>(this IDeviceBuffer buffer, IPipeline pipeline, string resourceName, T data) where T : unmanaged
+        public static void MapStructure<T>(this IDeviceBuffer buffer, IPipeline pipeline, string resourceName, T data) where T : unmanaged
         {
-            int count = MapFields(buffer, pipeline, resourceName, string.Empty, &data, typeof(T));
+            buffer.Map(mapped =>
+            {
+                pipeline.MapStructure(mapped, resourceName, data);
+            });
+        }
+
+        public static unsafe void MapStructure<T>(this IPipeline pipeline, Span<byte> destination, string resourceName, T data) where T : unmanaged
+        {
+            int count = MapFields(pipeline, destination, resourceName, string.Empty, &data, typeof(T));
             if (count == 0)
             {
-                buffer.CopyFromCPU(data);
+                fixed (byte* spanPointer = destination)
+                {
+                    Buffer.MemoryCopy(&data, spanPointer, destination.Length, sizeof(T));
+                }
             }
         }
 
-        private static unsafe int MapFields(this IDeviceBuffer buffer, IPipeline pipeline, string resourceName, string baseExpression, void* data, Type type)
+        private static unsafe int MapFields(IPipeline pipeline, Span<byte> destination, string resourceName, string baseExpression, void* data, Type type)
         {
             if (type.IsPrimitive)
             {
@@ -131,7 +142,7 @@ namespace CodePlayground.Graphics
                     nint cpuOffset = Marshal.OffsetOf(type, field.Name) + (i * fieldSize);
                     void* cpuPointer = (void*)((nint)data + cpuOffset);
 
-                    int count = MapFields(buffer, pipeline, resourceName, expression, cpuPointer, field.FieldType);
+                    int count = MapFields(pipeline, destination, resourceName, expression, cpuPointer, field.FieldType);
                     if (count == 0)
                     {
                         int gpuOffset = pipeline.GetBufferOffset(resourceName, expression);
@@ -141,7 +152,10 @@ namespace CodePlayground.Graphics
                             break;
                         }
 
-                        buffer.CopyFromCPU(cpuPointer, fieldSize, gpuOffset);
+                        fixed (byte* spanPointer = destination.Slice(gpuOffset))
+                        {
+                            Buffer.MemoryCopy(cpuPointer, spanPointer, fieldSize, fieldSize);
+                        }
                     }
                 }
 

@@ -22,14 +22,11 @@ namespace VulkanTest
     {
         public ShaderLibrary(GraphicsApplication application)
         {
-            mAssembly = application.GetType().Assembly;
-            mContext = application.GraphicsContext!;
-            mCompiler = mContext.CreateCompiler();
-            mTranspiler = ShaderTranspiler.Create(mCompiler.PreferredLanguage);
             mShaders = new Dictionary<string, IShader>();
+            mContext = application.GraphicsContext!;
             mDisposed = false;
 
-            Load();
+            Load(application.GetType().Assembly);
         }
 
         public void Dispose()
@@ -44,25 +41,38 @@ namespace VulkanTest
                 shader.Dispose();
             }
 
-            mCompiler.Dispose();
             mDisposed = true;
         }
 
-        private void Load()
+        private static string GetShaderID(Type type)
         {
-            var assemblyDirectory = Path.GetDirectoryName(mAssembly.Location);
+            var attribute = type.GetCustomAttribute<CompiledShaderAttribute>();
+            if (attribute is null)
+            {
+                throw new ArgumentException("Type is not a compiled shader!");
+            }
+
+            return string.IsNullOrEmpty(attribute.ID) ? type.Name : attribute.ID;
+        }
+
+        private void Load(Assembly assembly)
+        {
+            using var compiler = mContext.CreateCompiler();
+            var transpiler = ShaderTranspiler.Create(compiler.PreferredLanguage);
+
+            var assemblyDirectory = Path.GetDirectoryName(assembly.Location);
             var shaderDirectory = Path.Join(assemblyDirectory, "shaders");
             var sourceDirectory = Path.Join(shaderDirectory, "src");
             var binaryDirectory = Path.Join(shaderDirectory, "bin");
 
-            string binaryExtension = mCompiler.PreferredLanguage switch
+            string binaryExtension = compiler.PreferredLanguage switch
             {
                 ShaderLanguage.GLSL => "spv",
                 ShaderLanguage.HLSL => "bin",
-                _ => throw new InvalidOperationException($"Unsupported language: {mCompiler.PreferredLanguage}")
+                _ => throw new InvalidOperationException($"Unsupported language: {compiler.PreferredLanguage}")
             };
 
-            var types = mAssembly.GetTypes();
+            var types = assembly.GetTypes();
             foreach (var type in types)
             {
                 if (!type.IsClass)
@@ -76,7 +86,7 @@ namespace VulkanTest
                     continue;
                 }
 
-                var source = mTranspiler.Transpile(type);
+                var source = transpiler.Transpile(type);
                 string shaderName = string.IsNullOrEmpty(attribute.ID) ? type.Name : attribute.ID;
                 foreach (var stage in source.Keys)
                 {
@@ -86,7 +96,7 @@ namespace VulkanTest
                         throw new InvalidOperationException($"Duplicate shader stage: {shaderId}");
                     }
 
-                    var language = mTranspiler.OutputLanguage;
+                    var language = transpiler.OutputLanguage;
                     var sourcePath = Path.Join(sourceDirectory, shaderId) + '.' + language.ToString().ToLower();
 
                     var shaderSourceDirectory = Path.GetDirectoryName(sourcePath);
@@ -99,7 +109,7 @@ namespace VulkanTest
                     writer.Write(stageSource.Source);
                     writer.Flush();
 
-                    byte[] bytecode = mCompiler.Compile(stageSource.Source, sourcePath, language, stage, stageSource.Entrypoint);
+                    byte[] bytecode = compiler.Compile(stageSource.Source, sourcePath, language, stage, stageSource.Entrypoint);
                     var shader = mContext.LoadShader(bytecode, stage, stageSource.Entrypoint);
                     mShaders.Add(shaderId, shader);
 
@@ -135,17 +145,25 @@ namespace VulkanTest
         public IPipeline LoadPipeline<T>(PipelineDescription description) where T : class => LoadPipeline(typeof(T), description);
         public IPipeline LoadPipeline(Type type, PipelineDescription description)
         {
-            var attribute = type.GetCustomAttribute<CompiledShaderAttribute>();
-            if (attribute is null)
-            {
-                throw new ArgumentException("Type is not a compiled shader!");
-            }
-
-            string id = string.IsNullOrEmpty(attribute.ID) ? type.Name : attribute.ID;
+            string id = GetShaderID(type);
             return LoadPipeline(id, description);
         }
 
         public IPipeline LoadPipeline(string prefix, PipelineDescription description)
+        {
+            var pipeline = mContext.CreatePipeline(description);
+            LoadPipeline(prefix, pipeline);
+            return pipeline;
+        }
+
+        public void LoadPipeline<T>(IPipeline pipeline) where T : class => LoadPipeline(typeof(T), pipeline);
+        public void LoadPipeline(Type type, IPipeline pipeline)
+        {
+            string id = GetShaderID(type);
+            LoadPipeline(id, pipeline);
+        }
+
+        public void LoadPipeline(string prefix, IPipeline pipeline)
         {
             var stages = GetStages(prefix);
             if (stages.Count == 0)
@@ -153,16 +171,11 @@ namespace VulkanTest
                 throw new ArgumentException($"Failed to find stages matching prefix \"{prefix}\"");
             }
 
-            var pipeline = mContext.CreatePipeline(description);
             pipeline.Load(stages);
-            return pipeline;
         }
 
-        private readonly Assembly mAssembly;
-        private readonly IGraphicsContext mContext;
-        private readonly IShaderCompiler mCompiler;
-        private readonly ShaderTranspiler mTranspiler;
         private readonly Dictionary<string, IShader> mShaders;
+        private readonly IGraphicsContext mContext;
 
         private bool mDisposed;
     }

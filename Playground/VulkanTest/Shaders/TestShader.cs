@@ -64,11 +64,20 @@ namespace VulkanTest.Shaders
             public Matrix4x4<float> ViewProjection;
         }
 
+        public struct PushConstantData
+        {
+            public Matrix4x4<float> Model;
+            public Vector4<float> Color;
+        }
+
         [Layout(Set = 0, Binding = 0)]
         public static CameraBufferData u_CameraBuffer;
 
         [Layout(Set = 0, Binding = 1)]
         public static Sampler2D<float>? u_Texture;
+
+        [Layout(PushConstants = true)]
+        public static PushConstantData u_PushConstants;
 
         [ShaderEntrypoint(ShaderStage.Vertex)]
         public static VertexOut VertexMain(VertexIn input)
@@ -76,7 +85,7 @@ namespace VulkanTest.Shaders
             var vertexPosition = new Vector4<float>(input.Position, 1f);
             return new VertexOut
             {
-                Position = u_CameraBuffer.ViewProjection * vertexPosition,
+                Position = u_CameraBuffer.ViewProjection * u_PushConstants.Model * vertexPosition,
                 Data = new FragmentIn
                 {
                     Normal = input.Normal,
@@ -89,7 +98,8 @@ namespace VulkanTest.Shaders
         [return: Layout(Location = 0)]
         public static Vector4<float> FragmentMain(FragmentIn input)
         {
-            return u_Texture!.Sample(input.UV);
+            var sampled = u_Texture!.Sample(input.UV);
+            return sampled * u_PushConstants.Color;
         }
     }
 }

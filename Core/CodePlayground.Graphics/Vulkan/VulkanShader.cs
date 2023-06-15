@@ -168,6 +168,7 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 StageIO = new List<ReflectedStageIOField>(),
                 Resources = new Dictionary<int, Dictionary<int, ReflectedShaderResource>>(),
+                PushConstantBuffers = new List<ReflectedPushConstantBuffer>(),
                 Types = new Dictionary<int, ReflectedShaderType>()
             };
 
@@ -186,6 +187,14 @@ namespace CodePlayground.Graphics.Vulkan
 
             spvc_resources* resources;
             spvc_compiler_create_shader_resources(compiler, &resources).Assert();
+
+            {
+                spvc_reflected_resource* resourceList;
+                nuint resourceCount;
+                spvc_resources_get_resource_list_for_type(resources, spvc_resource_type.SPVC_RESOURCE_TYPE_PUSH_CONSTANT, &resourceList, &resourceCount).Assert();
+
+                ProcessPushConstantBuffers(compiler, resourceList, resourceCount);
+            }
 
             foreach (var resourceType in sResourceTypeMap.Keys)
             {
@@ -266,6 +275,25 @@ namespace CodePlayground.Graphics.Vulkan
                     Name = Marshal.PtrToStringAnsi((nint)name) ?? string.Empty,
                     Type = (int)type,
                     ResourceType = typeFlags
+                });
+            }
+        }
+
+        private unsafe void ProcessPushConstantBuffers(spvc_compiler* compiler, spvc_reflected_resource* resources, nuint count)
+        {
+            for (nuint i = 0; i < count; i++)
+            {
+                var resource = resources[i];
+                var type = resource.type_id.Value;
+                ProcessType(compiler, type, resource.base_type_id.Value);
+
+                var id = resource.id.Value;
+                var name = spvc_compiler_get_name(compiler, id);
+
+                mReflectionResult.PushConstantBuffers.Add(new ReflectedPushConstantBuffer
+                {
+                    Type = (int)type,
+                    Name = Marshal.PtrToStringAnsi((nint)name) ?? string.Empty
                 });
             }
         }
