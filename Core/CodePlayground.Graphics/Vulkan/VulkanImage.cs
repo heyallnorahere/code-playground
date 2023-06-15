@@ -75,13 +75,7 @@ namespace CodePlayground.Graphics.Vulkan
             Size = info.Size;
             ImageFormat = info.Format;
             Tiling = info.Tiling;
-
-            Layout = new VulkanImageLayout
-            {
-                Layout = ImageLayout.Undefined,
-                Stage = PipelineStageFlags.TopOfPipeBit,
-                AccessMask = AccessFlags.None
-            };
+            Layout = GetLayout(DeviceImageLayoutName.Undefined);
 
             if (info.VulkanFormat != Format.Undefined)
             {
@@ -196,7 +190,7 @@ namespace CodePlayground.Graphics.Vulkan
                 MipLevels = (uint)MipLevels,
                 ArrayLayers = 1,
                 Samples = SampleCountFlags.Count1Bit,
-                Tiling = ImageTiling.Optimal,
+                Tiling = Tiling,
                 Usage = ConvertUsageFlags(Usage),
                 InitialLayout = Layout.Layout
             };
@@ -241,13 +235,6 @@ namespace CodePlayground.Graphics.Vulkan
                 Image = mImage,
                 ViewType = ImageViewType.Type2D,
                 Format = VulkanFormat,
-                Components = VulkanUtilities.Init<ComponentMapping>() with
-                {
-                    R = ComponentSwizzle.R,
-                    G = ComponentSwizzle.G,
-                    B = ComponentSwizzle.B,
-                    A = ComponentSwizzle.A
-                },
                 SubresourceRange = VulkanUtilities.Init<ImageSubresourceRange>() with
                 {
                     AspectMask = AspectMask,

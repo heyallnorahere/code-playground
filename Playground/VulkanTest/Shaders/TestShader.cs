@@ -42,8 +42,6 @@ namespace VulkanTest.Shaders
             public Vector3<float> Normal;
             [Layout(Location = 2)]
             public Vector2<float> UV;
-            [Layout(Location = 3)]
-            public int Transform;
         }
 
         public struct VertexOut
@@ -61,13 +59,13 @@ namespace VulkanTest.Shaders
             public Vector2<float> UV;
         }
 
-        public struct UniformBufferData
+        public struct CameraBufferData
         {
-            public Matrix4x4<float> ModelViewProjection;
+            public Matrix4x4<float> ViewProjection;
         }
 
         [Layout(Set = 0, Binding = 0)]
-        public static UniformBufferData u_UniformBuffer;
+        public static CameraBufferData u_CameraBuffer;
 
         [Layout(Set = 0, Binding = 1)]
         public static Sampler2D<float>? u_Texture;
@@ -76,20 +74,9 @@ namespace VulkanTest.Shaders
         public static VertexOut VertexMain(VertexIn input)
         {
             var vertexPosition = new Vector4<float>(input.Position, 1f);
-
-            Vector4<float> outputPosition;
-            if (input.Transform == 1)
-            {
-                outputPosition = u_UniformBuffer.ModelViewProjection * vertexPosition;
-            }
-            else
-            {
-                outputPosition = vertexPosition;
-            }
-
             return new VertexOut
             {
-                Position = outputPosition,
+                Position = u_CameraBuffer.ViewProjection * vertexPosition,
                 Data = new FragmentIn
                 {
                     Normal = input.Normal,
@@ -102,9 +89,7 @@ namespace VulkanTest.Shaders
         [return: Layout(Location = 0)]
         public static Vector4<float> FragmentMain(FragmentIn input)
         {
-            var normalColor = new Vector4<float>(input.Normal, 1f);
-            var textureColor = u_Texture!.Sample(input.UV);
-            return BuiltinFunctions.Lerp(normalColor, textureColor, 0.5f);
+            return u_Texture!.Sample(input.UV);
         }
     }
 }

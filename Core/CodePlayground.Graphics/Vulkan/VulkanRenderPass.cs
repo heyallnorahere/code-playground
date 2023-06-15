@@ -239,7 +239,9 @@ namespace CodePlayground.Graphics.Vulkan
                 X = 0f,
                 Y = flipViewport ? height : 0f,
                 Width = width,
-                Height = height * (flipViewport ? -1f : 1f)
+                Height = height * (flipViewport ? -1f : 1f),
+                MinDepth = 0f,
+                MaxDepth = 1f
             });
         }
 

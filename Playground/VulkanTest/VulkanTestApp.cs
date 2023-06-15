@@ -21,7 +21,6 @@ namespace VulkanTest
         public Vector3 Position;
         public Vector3 Normal;
         public Vector2 UV;
-        public int Transform;
     }
 
     internal struct PipelineSpecification : IPipelineSpecification
@@ -34,7 +33,7 @@ namespace VulkanTest
 
     internal struct UniformBufferData
     {
-        public Matrix4x4 ModelViewProjection;
+        public Matrix4x4 ViewProjection;
     }
 
     internal struct QuadDirection
@@ -56,147 +55,77 @@ namespace VulkanTest
 
         static VulkanTestApp()
         {
-            var directions = new QuadDirection[]
-            {
-                new QuadDirection
-                {
-                    Direction = Vector3.UnitX,
-                    OtherDirections = new Vector3[]
-                    {
-                        Vector3.UnitY,
-                        Vector3.UnitZ,
-                    }
-                },
-                new QuadDirection
-                {
-                    Direction = Vector3.UnitY,
-                    OtherDirections = new Vector3[]
-                    {
-                        Vector3.UnitZ,
-                        Vector3.UnitX
-                    }
-                },
-                new QuadDirection
-                {
-                    Direction = Vector3.UnitZ,
-                    OtherDirections = new Vector3[]
-                    {
-                        Vector3.UnitX,
-                        Vector3.UnitY
-                    }
-                }
-            };
-
-            var counterClockwiseTemplateIndices = new int[]
-            {
-                0, 3, 1,
-                1, 3, 2
-            };
-
-            var clockwiseTemplateIndices = new int[]
-            {
-                0, 1, 3,
-                1, 2, 3
-            };
-
-            var faceDirections = new List<int>();
-            for (int i = 0; i < directions.Length; i++)
-            {
-                int value = i + 1;
-                faceDirections.Add(value);
-                faceDirections.Add(-value);
-            }
-
-            var vertices = new List<Vertex>
+            var vertices = new Vertex[]
             {
                 // quad
                 new Vertex
                 {
                     Position = new Vector3(0.5f, -0.5f, 0f),
-                    Normal = new Vector3(0f, 0f, -1f),
-                    UV = new Vector2(0f, 1f),
-                    Transform = 0
+                    Normal = -Vector3.UnitZ,
+                    UV = new Vector2(1f, 1f),
                 },
                 new Vertex
                 {
                     Position = new Vector3(-0.5f, -0.5f, 0f),
-                    Normal = new Vector3(0f, 0f, 1f),
-                    UV = new Vector2(1f, 1f),
-                    Transform = 0
+                    Normal = -Vector3.UnitZ,
+                    UV = new Vector2(0f, 1f),
                 },
                 new Vertex
                 {
                     Position = new Vector3(-0.5f, 0.5f, 0f),
-                    Normal = new Vector3(1f, 0f, 0f),
-                    UV = new Vector2(1f, 0f),
-                    Transform = 0
+                    Normal = -Vector3.UnitZ,
+                    UV = new Vector2(0f, 0f),
                 },
                 new Vertex
                 {
                     Position = new Vector3(0.5f, 0.5f, 0f),
-                    Normal = new Vector3(-1f, 0f, 0f),
-                    UV = new Vector2(0f, 0f),
-                    Transform = 0
+                    Normal = -Vector3.UnitZ,
+                    UV = new Vector2(1f, 0f),
                 }
             };
 
-            var templateIndices = FrontFace == PipelineFrontFace.Clockwise ? clockwiseTemplateIndices : counterClockwiseTemplateIndices;
-            var indices = new List<int>();
-
-            foreach (var directionValue in faceDirections)
+            var positionValues = new float[]
             {
-                var abs = Math.Abs(directionValue);
-                var index = abs - 1;
+                0f, -1f, 1f
+            };
 
-                var factor = directionValue / abs;
-                var direction = directions[index];
-                var directionVector = direction.Direction * factor;
-                var otherDirections = direction.OtherDirections;
+            var counterClockwiseIndices = new int[]
+            {
+                0, 3, 1,
+                1, 3, 2
+            };
 
-                var vertexPositions = new Vertex[]
+            var clockwiseIndices = new int[]
+            {
+                0, 1, 3,
+                1, 2, 3
+            };
+
+            var indices = FrontFace == PipelineFrontFace.Clockwise ? clockwiseIndices : counterClockwiseIndices;
+            var vertexData = new List<Vertex>();
+            var indexData = new List<int>();
+
+            foreach (float positionValue in positionValues)
+            {
+                foreach (int index in indices)
                 {
-                    new Vertex
-                    {
-                        Position = otherDirections[0] * factor + otherDirections[1],
-                        UV = new Vector2(1f, 1f)
-                    },
-                    new Vertex
-                    {
-                        Position = -otherDirections[0] * factor + otherDirections[1],
-                        UV = new Vector2(0f, 1f)
-                    },
-                    new Vertex
-                    {
-                        Position = -otherDirections[0] * factor - otherDirections[1],
-                        UV = new Vector2(0f, 0f)
-                    },
-                    new Vertex
-                    {
-                        Position = otherDirections[0] * factor - otherDirections[1],
-                        UV = new Vector2(1f, 0f)
-                    }
-                };
-
-                int indexOffset = vertices.Count;
-                foreach (var vertex in vertexPositions)
-                {
-                    vertices.Add(new Vertex
-                    {
-                        Position = (vertex.Position + directionVector) / 2f,
-                        Normal = directionVector,
-                        UV = vertex.UV,
-                        Transform = 1
-                    });
+                    indexData.Add(index + vertexData.Count);
                 }
 
-                foreach (var templateIndex in templateIndices)
+                var offset = (Vector3.UnitX + Vector3.UnitZ) * positionValue / 2f;
+                foreach (var vertex in vertices)
                 {
-                    indices.Add(templateIndex + indexOffset);
+                    vertexData.Add(new Vertex
+                    {
+                        Position = vertex.Position + offset,
+                        Normal = vertex.Normal,
+                        UV = vertex.UV
+                    });
                 }
             }
 
-            sVertices = vertices.ToArray();
-            sIndices = indices.Select(index => (uint)index).ToArray();
+            sVertices = vertexData.ToArray();
+            sIndices = indexData.Select(index => (uint)index).ToArray();
         }
 
         private Image<T> LoadImage<T>(Assembly assembly, string resourceName) where T : unmanaged, IPixel<T>
@@ -235,51 +164,32 @@ namespace VulkanTest
                 Specification = new PipelineSpecification
                 {
                     FrontFace = FrontFace,
-                    BlendMode = PipelineBlendMode.None,
+                    BlendMode = PipelineBlendMode.SourceAlphaOneMinusSourceAlpha,
                     EnableDepthTesting = true,
                     DisableCulling = true
                 }
             });
 
-            var resourceName = nameof(TestShader.u_UniformBuffer);
-            int bufferSize = mPipeline.GetBufferSize(resourceName);
+            var resourceName = nameof(TestShader.u_CameraBuffer);
+            int uniformBufferSize = mPipeline.GetBufferSize(resourceName);
 
-            if (bufferSize < 0)
+            if (uniformBufferSize < 0)
             {
                 throw new ArgumentException($"Failed to find buffer \"{resourceName}\"");
             }
 
-            mUniformBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize);
-
             int vertexBufferSize = sVertices.Length * Marshal.SizeOf<Vertex>();
             int indexBufferSize = sIndices.Length * Marshal.SizeOf<uint>();
 
-            var image = LoadImage<Rgba32>(GetType().Assembly, "VulkanTest.Resources.Textures.disaster.png");
-            int imageBufferSize = image.Width * image.Height * Marshal.SizeOf<Rgba32>();
-
             using var vertexStagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, vertexBufferSize);
             using var indexStagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, indexBufferSize);
-            using var imageStagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, imageBufferSize);
 
             vertexStagingBuffer.CopyFromCPU(sVertices);
             indexStagingBuffer.CopyFromCPU(sIndices);
 
-            var imageDataBuffer = new Rgba32[image.Width * image.Height];
-            image.CopyPixelDataTo(imageDataBuffer);
-            imageStagingBuffer.CopyFromCPU(imageDataBuffer);
-
             mVertexBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Vertex, vertexBufferSize);
             mIndexBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Index, indexBufferSize);
-
-            mTexture = context.CreateDeviceImage(new DeviceImageInfo
-            {
-                Size = image.Size,
-                Usage = DeviceImageUsageFlags.Render | DeviceImageUsageFlags.CopySource | DeviceImageUsageFlags.CopyDestination,
-                Format = DeviceImageFormat.RGBA8_UNORM
-            }).CreateTexture(true);
-
-            var copyLayout = mTexture.Image.GetLayout(DeviceImageLayoutName.CopyDestination);
-            var renderLayout = mTexture.Image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
+            mUniformBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Uniform, uniformBufferSize);
 
             var transferQueue = context.Device.GetQueue(CommandQueueFlags.Transfer);
             var commandList = transferQueue.Release();
@@ -288,14 +198,12 @@ namespace VulkanTest
             vertexStagingBuffer.CopyBuffers(commandList, mVertexBuffer, vertexBufferSize);
             indexStagingBuffer.CopyBuffers(commandList, mIndexBuffer, indexBufferSize);
 
-            mTexture.Image.TransitionLayout(commandList, mTexture.Image.Layout, copyLayout);
-            mTexture.Image.CopyFromBuffer(commandList, imageStagingBuffer, copyLayout);
-            mTexture.Image.TransitionLayout(commandList, copyLayout, renderLayout);
+            var image = LoadImage<Rgba32>(GetType().Assembly, "VulkanTest.Resources.Textures.disaster.png");
+            mTexture = context.LoadTexture(image, DeviceImageFormat.RGBA8_SRGB, commandList, out IDeviceBuffer imageStagingBuffer);
 
             commandList.End();
             transferQueue.Submit(commandList, true);
 
-            mTexture.Image.Layout = renderLayout;
             if (!mPipeline.Bind(mTexture, nameof(TestShader.u_Texture), 0))
             {
                 throw new InvalidOperationException("Failed to bind texture!");
@@ -305,6 +213,8 @@ namespace VulkanTest
             {
                 throw new InvalidOperationException("Failed to bind buffer!");
             }
+
+            imageStagingBuffer.Dispose();
         }
 
         [EventHandler(nameof(Closing))]
@@ -325,6 +235,9 @@ namespace VulkanTest
 
         // https://computergraphics.stackexchange.com/questions/12448/vulkan-perspective-matrix-vs-opengl-perspective-matrix
         // https://github.com/g-truc/glm/blob/efec5db081e3aad807d0731e172ac597f6a39447/glm/ext/matrix_clip_space.inl#L265
+        /// <summary>
+        /// Left-handed, depth 0-1
+        /// </summary>
         private static Matrix4x4 Perspective(float verticalFov, float aspectRatio, float nearPlane, float farPlane)
         {
             float g = 1f / MathF.Tan(verticalFov / 2f);
@@ -351,6 +264,9 @@ namespace VulkanTest
         }
 
         // https://github.com/g-truc/glm/blob/efec5db081e3aad807d0731e172ac597f6a39447/glm/ext/matrix_transform.inl#L176
+        /// <summary>
+        /// Left-handed
+        /// </summary>
         private static Matrix4x4 LookAt(Vector3 eye, Vector3 center, Vector3 up)
         {
             var direction = Vector3.Normalize(center - eye);
@@ -384,43 +300,22 @@ namespace VulkanTest
             */
         }
 
-        private static Vector4 Multiply(Matrix4x4 lhs, Vector4 rhs)
-        {
-            var result = Vector4.Zero;
-            for (int c = 0; c < 4; c++)
-            {
-                for (int r = 0; r < 4; r++)
-                {
-                    result[c] += rhs[r] * lhs[r, c];
-                }
-            }
-
-            return result;
-        }
-
         [EventHandler(nameof(Update))]
         private void OnUpdate(double delta)
         {
-            mTime += (float)delta;
-
             var swapchain = GraphicsContext?.Swapchain;
             if (swapchain is null)
             {
                 return;
             }
 
-            float radius = 5f;
-            float x = MathF.Cos(mTime) * radius;
-            float z = -MathF.Sin(mTime) * radius;
+            float aspectRatio = swapchain.Width / (float)swapchain.Height;
+            var projection = Perspective(MathF.PI / 4f, aspectRatio, 0.1f, 100f);
+            var view = LookAt(Vector3.UnitZ * -2f, Vector3.Zero, Vector3.UnitY);
 
-            float aspectRatio = (float)swapchain.Width / (float)swapchain.Height;
-            var projection = Perspective(MathF.PI / 4f, aspectRatio, 0.1f, 10f);
-            var view = LookAt(new Vector3(x, 0f, z), Vector3.Zero, Vector3.UnitY);
-            var model = Matrix4x4.CreateRotationX(mTime / 2f);
-
-            mUniformBuffer!.MapStructure(mPipeline!, nameof(TestShader.u_UniformBuffer), new UniformBufferData
+            mUniformBuffer!.MapStructure(mPipeline!, nameof(TestShader.u_CameraBuffer), new UniformBufferData
             {
-                ModelViewProjection = Matrix4x4.Transpose(projection * view * model)
+                ViewProjection = Matrix4x4.Transpose(projection * view)
             });
         }
 
@@ -448,6 +343,5 @@ namespace VulkanTest
         private IDeviceBuffer? mVertexBuffer, mIndexBuffer, mUniformBuffer;
         private ITexture? mTexture;
         private IRenderer? mRenderer;
-        private float mTime;
     }
 }
