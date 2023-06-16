@@ -374,53 +374,57 @@ namespace CodePlayground.Graphics.Vulkan
             TransitionLayout(commandBuffer, currentLayout, transferDst, 0, MipLevels);
             api.CmdCopyBufferToImage(commandBuffer.Buffer, source.Buffer, mImage, transferDst.Layout, 1, copyRegion);
 
-            int currentWidth = Size.Width;
-            int currentHeight = Size.Height;
-            for (int i = 1; i < MipLevels; i++)
+            if (MipLevels > 1)
             {
-                int nextWidth = currentWidth > 1 ? currentWidth / 2 : 1;
-                int nextHeight = currentHeight > 1 ? currentHeight / 2 : 1;
-
-                var blitRegion = VulkanUtilities.Init<ImageBlit>() with
+                int currentWidth = Size.Width;
+                int currentHeight = Size.Height;
+                for (int i = 1; i < MipLevels; i++)
                 {
-                    SrcSubresource = VulkanUtilities.Init<ImageSubresourceLayers>() with
+                    int nextWidth = currentWidth > 1 ? currentWidth / 2 : 1;
+                    int nextHeight = currentHeight > 1 ? currentHeight / 2 : 1;
+
+                    var blitRegion = VulkanUtilities.Init<ImageBlit>() with
                     {
-                        AspectMask = AspectMask,
-                        MipLevel = (uint)i - 1,
-                        BaseArrayLayer = 0,
-                        LayerCount = 1
-                    },
-                    DstSubresource = VulkanUtilities.Init<ImageSubresourceLayers>() with
+                        SrcSubresource = VulkanUtilities.Init<ImageSubresourceLayers>() with
+                        {
+                            AspectMask = AspectMask,
+                            MipLevel = (uint)i - 1,
+                            BaseArrayLayer = 0,
+                            LayerCount = 1
+                        },
+                        DstSubresource = VulkanUtilities.Init<ImageSubresourceLayers>() with
+                        {
+                            AspectMask = AspectMask,
+                            MipLevel = (uint)i,
+                            BaseArrayLayer = 0,
+                            LayerCount = 1
+                        }
+                    };
+
+                    blitRegion.SrcOffsets.Element1 = new Offset3D
                     {
-                        AspectMask = AspectMask,
-                        MipLevel = (uint)i,
-                        BaseArrayLayer = 0,
-                        LayerCount = 1
-                    }
-                };
+                        X = currentWidth,
+                        Y = currentHeight,
+                        Z = 1
+                    };
 
-                blitRegion.SrcOffsets.Element1 = new Offset3D
-                {
-                    X = currentWidth,
-                    Y = currentHeight,
-                    Z = 1
-                };
+                    blitRegion.DstOffsets.Element1 = new Offset3D
+                    {
+                        X = nextWidth,
+                        Y = nextHeight,
+                        Z = 1
+                    };
 
-                blitRegion.DstOffsets.Element1 = new Offset3D
-                {
-                    X = nextWidth,
-                    Y = nextHeight,
-                    Z = 1
-                };
+                    TransitionLayout(commandBuffer, transferDst, transferSrc, i - 1, 1);
+                    api.CmdBlitImage(commandBuffer.Buffer, mImage, transferSrc.Layout, mImage, transferDst.Layout, 1, blitRegion, mMipmapBlitFilter);
 
-                TransitionLayout(commandBuffer, transferDst, transferSrc, i - 1, 1);
-                api.CmdBlitImage(commandBuffer.Buffer, mImage, transferSrc.Layout, mImage, transferDst.Layout, 1, blitRegion, mMipmapBlitFilter);
+                    currentWidth = nextWidth;
+                    currentHeight = nextHeight;
+                }
 
-                currentWidth = nextWidth;
-                currentHeight = nextHeight;
+                TransitionLayout(commandBuffer, transferSrc, currentLayout, 0, MipLevels - 1);
             }
 
-            TransitionLayout(commandBuffer, transferSrc, currentLayout, 0, MipLevels - 1);
             TransitionLayout(commandBuffer, transferDst, currentLayout, MipLevels - 1, 1);
         }
 

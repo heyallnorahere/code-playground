@@ -380,6 +380,7 @@ namespace CodePlayground.Graphics
     public interface IPipeline : IDisposable
     {
         public PipelineDescription Description { get; }
+        public ulong ID { get; }
 
         public void Bind(ICommandList commandList, int frame);
         public void PushConstants(ICommandList commandList, BufferMapCallback callback);

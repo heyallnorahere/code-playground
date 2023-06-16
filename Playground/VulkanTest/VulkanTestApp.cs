@@ -1,7 +1,6 @@
 ﻿using CodePlayground;
 using CodePlayground.Graphics;
 using CodePlayground.Graphics.Vulkan;
-using Silk.NET.Assimp;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
@@ -40,7 +39,6 @@ namespace VulkanTest
     internal struct PushConstantData
     {
         public Matrix4x4 Model;
-        public Vector4 Color;
     }
 
     internal struct QuadDirection
@@ -58,8 +56,9 @@ namespace VulkanTest
             mCommandList = null;
         }
 
-        public bool ShouldCopyPostLoad => true;
+        public IGraphicsContext GraphicsContext => mContext;
 
+        public bool ShouldCopyPostLoad => true;
         public bool FlipUVs => true;
         public bool LeftHanded => true;
 
@@ -142,9 +141,60 @@ namespace VulkanTest
             return image.CreateTexture(true);
         }
 
-        public ITexture LoadTexture(string texturePath, string modelPath, bool loadedFromFile)
+        public ITexture LoadTexture(string texturePath, string modelPath, bool loadedFromFile, ISamplerSettings samplerSettings)
         {
-            throw new NotImplementedException();
+            Image<Rgba32> image;
+            if (loadedFromFile)
+            {
+                var path = Path.IsPathFullyQualified(texturePath) ? texturePath : Path.GetFullPath(Path.Join(Path.GetDirectoryName(modelPath), texturePath));
+                image = Image.Load<Rgba32>(path);
+            }
+            else
+            {
+                if (Path.IsPathFullyQualified(texturePath))
+                {
+                    throw new ArgumentException("Cannot load a fully qualified path!");
+                }
+
+                var relativePath = Path.Join(Path.GetDirectoryName(modelPath), texturePath).Replace('\\', '/').Replace("./", string.Empty);
+
+                int directoryEscapePosition;
+                while ((directoryEscapePosition = relativePath.LastIndexOf("..")) > 0)
+                {
+                    int separatorPosition = relativePath.LastIndexOf("/", directoryEscapePosition - 2);
+                    if (separatorPosition < 0)
+                    {
+                        separatorPosition = 0;
+                    }
+
+                    relativePath = relativePath.Remove(separatorPosition, directoryEscapePosition + 2 - separatorPosition);
+                }
+
+                var stream = VulkanTestApp.GetResourceStream(relativePath);
+                image = Image.Load<Rgba32>(stream ?? throw new FileNotFoundException());
+            }
+
+            var deviceImage = mContext.CreateDeviceImage(new DeviceImageInfo
+            {
+                Size = image.Size,
+                Usage = DeviceImageUsageFlags.CopySource | DeviceImageUsageFlags.CopyDestination | DeviceImageUsageFlags.Render,
+                Format = DeviceImageFormat.RGBA8_SRGB
+            });
+
+            var pixelData = new Rgba32[image.Width * image.Height];
+            image.CopyPixelDataTo(pixelData);
+
+            var stagingBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Staging, pixelData.Length * Marshal.SizeOf<Rgba32>());
+            stagingBuffer.CopyFromCPU(pixelData);
+
+            var newLayout = deviceImage.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
+            BeginCommandList();
+            deviceImage.TransitionLayout(mCommandList, deviceImage.Layout, newLayout);
+            deviceImage.CopyFromBuffer(mCommandList, stagingBuffer, newLayout);
+            deviceImage.Layout = newLayout;
+
+            mStagingBuffers.Add(stagingBuffer);
+            return deviceImage.CreateTexture(true);
         }
 
         public void CopyBuffers()
@@ -181,15 +231,34 @@ namespace VulkanTest
             Utilities.BindHandlers(this, this);
         }
 
+        public static Stream? GetResourceStream(string path)
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            string resourceId = $"{assembly.GetName().Name}.Resources.{path.Replace('\\', '/').Replace('/', '.')}";
+            return assembly.GetManifestResourceStream(resourceId);
+        }
+
+        private static Model? LoadModelResource(string path, IModelImportContext importContext)
+        {
+            var stream = GetResourceStream(path);
+            if (stream is null)
+            {
+                return null;
+            }
+
+            var buffer = new byte[stream.Length];
+            int totalRead = 0;
+            while (totalRead < buffer.Length)
+            {
+                totalRead += stream.Read(buffer, totalRead, buffer.Length - totalRead);
+            }
+
+            return Model.Load(buffer, path, importContext);
+        }
+
         [EventHandler(nameof(Load))]
         private void OnLoad()
         {
-            var arguments = CommandLineArguments;
-            if (arguments.Length == 0)
-            {
-                throw new ArgumentException("No model specified!");
-            }
-
             CreateGraphicsContext<VulkanContext>();
 
             var context = GraphicsContext!;
@@ -199,35 +268,42 @@ namespace VulkanTest
             mShaderLibrary = new ShaderLibrary(this);
             mRenderer = context.CreateRenderer();
 
-            mPipeline = mShaderLibrary.LoadPipeline<TestShader>(new PipelineDescription
+            mModel = LoadModelResource("Models/sledge-hammer.fbx", new ModelImportContext(context));
+            if (mModel is null)
             {
-                RenderTarget = swapchain.RenderTarget,
-                Type = PipelineType.Graphics,
-                FrameCount = swapchain.FrameCount,
-                Specification = new PipelineSpecification
+                throw new InvalidOperationException("Failed to load model!");
+            }
+
+            mPipelines = new IPipeline[mModel.Materials.Count];
+            string cameraBufferName = nameof(TestShader.u_CameraBuffer);
+
+            for (int i = 0; i < mModel.Materials.Count; i++)
+            {
+                var material = mModel.Materials[i];
+                var pipeline = mShaderLibrary.LoadPipeline<TestShader>(new PipelineDescription
                 {
-                    FrontFace = PipelineFrontFace.CounterClockwise,
-                    BlendMode = PipelineBlendMode.Default,
-                    EnableDepthTesting = true,
-                    DisableCulling = false
+                    RenderTarget = swapchain.RenderTarget,
+                    Type = PipelineType.Graphics,
+                    FrameCount = swapchain.FrameCount,
+                    Specification = material.PipelineSpecification
+                });
+
+                if (mCameraBuffer is null)
+                {
+                    int uniformBufferSize = pipeline.GetBufferSize(cameraBufferName);
+                    if (uniformBufferSize < 0)
+                    {
+                        throw new ArgumentException($"Failed to find buffer \"{cameraBufferName}\"");
+                    }
+
+                    mCameraBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Uniform, uniformBufferSize);
                 }
-            });
 
-            var resourceName = nameof(TestShader.u_CameraBuffer);
-            int uniformBufferSize = mPipeline.GetBufferSize(resourceName);
+                pipeline.Bind(mCameraBuffer, cameraBufferName, 0);
+                material.Bind(pipeline, nameof(TestShader.u_MaterialBuffer), textureType => $"u_{textureType}Map");
 
-            if (uniformBufferSize < 0)
-            {
-                throw new ArgumentException($"Failed to find buffer \"{resourceName}\"");
+                mPipelines[i] = pipeline;
             }
-
-            mUniformBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Uniform, uniformBufferSize);
-            if (!mPipeline.Bind(mUniformBuffer, resourceName, 0))
-            {
-                throw new InvalidOperationException("Failed to bind buffer!");
-            }
-
-            mModel = Model.Load(arguments[0], new ModelImportContext(context));
         }
 
         [EventHandler(nameof(Closing))]
@@ -236,8 +312,15 @@ namespace VulkanTest
             var device = GraphicsContext?.Device;
             device?.ClearQueues();
 
-            mPipeline?.Dispose();
-            mUniformBuffer?.Dispose();
+            if (mPipelines is not null)
+            {
+                for (int i = 0; i < mPipelines.Length; i++)
+                {
+                    mPipelines[i].Dispose();
+                }
+            }
+
+            mCameraBuffer?.Dispose();
             mModel?.Dispose();
 
             mShaderLibrary?.Dispose();
@@ -330,7 +413,7 @@ namespace VulkanTest
             var projection = Perspective(MathF.PI / 4f, aspectRatio, 0.1f, 100f);
             var view = LookAt(new Vector3(x, radius, z), Vector3.Zero, Vector3.UnitY);
 
-            mUniformBuffer!.MapStructure(mPipeline!, nameof(TestShader.u_CameraBuffer), new UniformBufferData
+            mCameraBuffer!.MapStructure(mPipelines![0], nameof(TestShader.u_CameraBuffer), new UniformBufferData
             {
                 ViewProjection = Matrix4x4.Transpose(projection * view)
             });
@@ -347,20 +430,22 @@ namespace VulkanTest
             var clearColor = new Vector4(0f, 0f, 0f, 1f);
             renderInfo.RenderTarget.BeginRender(renderInfo.CommandList, renderInfo.Framebuffer, clearColor, true);
 
-            mPipeline!.Bind(renderInfo.CommandList, renderInfo.CurrentFrame);
             mModel!.VertexBuffer.BindVertices(renderInfo.CommandList, 0);
             mModel!.IndexBuffer.BindIndices(renderInfo.CommandList, DeviceBufferIndexType.UInt32);
 
+            var model = Matrix4x4.CreateScale(0.1f);
             var submeshes = mModel!.Submeshes;
             for (int i = 0; i < submeshes.Count; i++)
             {
                 var submesh = submeshes[i];
-                mPipeline!.PushConstants(renderInfo.CommandList, mapped =>
+                var pipeline = mPipelines![submesh.MaterialIndex];
+
+                pipeline.Bind(renderInfo.CommandList, renderInfo.CurrentFrame);
+                pipeline!.PushConstants(renderInfo.CommandList, mapped =>
                 {
-                    mPipeline!.MapStructure(mapped, nameof(TestShader.u_PushConstants), new PushConstantData
+                    pipeline!.MapStructure(mapped, nameof(TestShader.u_PushConstants), new PushConstantData
                     {
-                        Model = Matrix4x4.CreateRotationX(MathF.PI / 2f) * submesh.Transform,
-                        Color = new Vector4(new Vector3((i + 1) / (float)submeshes.Count), 1f)
+                        Model = Matrix4x4.Transpose(model * submesh.Transform)
                     });
                 });
 
@@ -371,8 +456,8 @@ namespace VulkanTest
         }
 
         private ShaderLibrary? mShaderLibrary;
-        private IPipeline? mPipeline;
-        private IDeviceBuffer? mUniformBuffer;
+        private IPipeline[]? mPipelines;
+        private IDeviceBuffer? mCameraBuffer;
         private Model? mModel;
         private IRenderer? mRenderer;
         private float mTime;

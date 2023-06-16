@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace CodePlayground.Graphics
 {
@@ -16,16 +17,23 @@ namespace CodePlayground.Graphics
 
     public interface IModelImportContext
     {
-        public bool ShouldCopyPostLoad { get; }
+        public IGraphicsContext GraphicsContext { get; }
 
+        public bool ShouldCopyPostLoad { get; }
         public bool FlipUVs { get; }
         public bool LeftHanded { get; }
 
         public IDeviceBuffer CreateStaticVertexBuffer(IReadOnlyList<StaticModelVertex> vertices);
         public IDeviceBuffer CreateIndexBuffer(IReadOnlyList<uint> indices);
         public ITexture CreateTexture(ReadOnlySpan<byte> data, int width, int height, DeviceImageFormat format);
-        public ITexture LoadTexture(string texturePath, string modelPath, bool loadedFromFile);
+        public ITexture LoadTexture(string texturePath, string modelPath, bool loadedFromFile, ISamplerSettings samplerSettings);
         public void CopyBuffers();
+    }
+
+    internal struct ModelSamplerSettings : ISamplerSettings
+    {
+        public AddressMode AddressMode { get; set; }
+        public SamplerFilter Filter { get; set; }
     }
 
     public struct Submesh
@@ -34,12 +42,14 @@ namespace CodePlayground.Graphics
         public int VertexCount { get; set; }
         public int IndexOffset { get; set; }
         public int IndexCount { get; set; }
+
+        public int MaterialIndex { get; set; }
         public Matrix4x4 Transform { get; set; }
     }
 
     public abstract class Model : IDisposable
     {
-        private static readonly Assimp sAPI;
+        protected static readonly Assimp sAPI;
         static Model()
         {
             sAPI = Assimp.GetApi();
@@ -119,7 +129,10 @@ namespace CodePlayground.Graphics
             mPath = path;
             mLoadedFromFile = loadedFromFile;
             mImportContext = importContext;
+
             mSubmeshes = new List<Submesh>();
+            mTextures = new Dictionary<string, ITexture>();
+            mMaterials = new List<Material>();
         }
 
         private unsafe void Load()
@@ -130,6 +143,13 @@ namespace CodePlayground.Graphics
             }
 
             ProcessNode(mScene->MRootNode, inverseRootTransform);
+            for (uint i = 0; i < mScene->MNumMaterials; i++)
+            {
+                var assimpMaterial = mScene->MMaterials[i];
+
+                var material = ProcessMaterial(assimpMaterial);
+                mMaterials.Add(material);
+            }
 
             mVertexBuffer = CreateVertexBuffer();
             mIndexBuffer = CreateIndexBuffer();
@@ -166,6 +186,17 @@ namespace CodePlayground.Graphics
             {
                 mVertexBuffer?.Dispose();
                 mIndexBuffer?.Dispose();
+                mWhiteTexture?.Dispose();
+
+                foreach (var texture in mTextures.Values)
+                {
+                    texture.Dispose();
+                }
+
+                foreach (var material in mMaterials)
+                {
+                    material.Dispose();
+                }
             }
 
             sAPI.FreeScene(mScene);
@@ -193,7 +224,121 @@ namespace CodePlayground.Graphics
             }
         }
 
+        private unsafe void ProcessMaterialTextures(Silk.NET.Assimp.Material* assimpMaterial, Material material)
+        {
+            var textureTypes = Enum.GetValues<MaterialTexture>();
+            foreach (var textureType in textureTypes)
+            {
+                var assimpTextureType = textureType switch
+                {
+                    MaterialTexture.Normal => TextureType.Normals,
+                    _ => Enum.Parse<TextureType>(textureType.ToString())
+                };
+
+                if (sAPI.GetMaterialTextureCount(assimpMaterial, assimpTextureType) == 0)
+                {
+                    continue;
+                }
+
+                AssimpString path;
+                TextureMapMode mapMode;
+                if (sAPI.GetMaterialTexture(assimpMaterial, assimpTextureType, 0, &path, null, null, null, null, &mapMode, null) != Return.Success)
+                {
+                    continue;
+                }
+
+                var pathString = Marshal.PtrToStringAnsi((nint)path.Data, (int)path.Length);
+                if (!mTextures.TryGetValue(pathString, out ITexture? texture))
+                {
+                    texture = mImportContext.LoadTexture(pathString, mPath, mLoadedFromFile, new ModelSamplerSettings
+                    {
+                        AddressMode = mapMode switch
+                        {
+                            TextureMapMode.Mirror => AddressMode.MirroredRepeat,
+                            TextureMapMode.Wrap => AddressMode.Repeat,
+                            TextureMapMode.Clamp => AddressMode.ClampToEdge,
+                            _ => throw new InvalidOperationException("Unsupported map mode!")
+                        },
+                        Filter = SamplerFilter.Linear
+                    });
+
+                    mTextures.Add(pathString, texture);
+                }
+
+                material.Set(textureType, texture);
+            }
+        }
+
+        private unsafe Material ProcessMaterial(Silk.NET.Assimp.Material* assimpMaterial)
+        {
+            int blendMode;
+            if (sAPI.GetMaterialIntegerArray(assimpMaterial, "$mat.blend", 0, 0, &blendMode, null) != Return.Success)
+            {
+                blendMode = 0;
+            }
+
+            Vector4 tempColor;
+            Vector3 diffuseColor, specularColor, ambientColor;
+
+            if (sAPI.GetMaterialColor(assimpMaterial, "$clr.diffuse", 0, 0, &tempColor) == Return.Success)
+            {
+                diffuseColor = new Vector3(tempColor.X, tempColor.Y, tempColor.Z);
+            }
+            else
+            {
+                diffuseColor = new Vector3(1f);
+            }
+
+            if (sAPI.GetMaterialColor(assimpMaterial, "$clr.specular", 0, 0, &tempColor) == Return.Success)
+            {
+                specularColor = new Vector3(tempColor.X, tempColor.Y, tempColor.Z);
+            }
+            else
+            {
+                specularColor = new Vector3(1f);
+            }
+
+            if (sAPI.GetMaterialColor(assimpMaterial, "$clr.ambient", 0, 0, &tempColor) == Return.Success)
+            {
+                ambientColor = new Vector3(tempColor.X, tempColor.Y, tempColor.Z);
+            }
+            else
+            {
+                ambientColor = new Vector3(1f);
+            }
+
+            float shininess, opacity;
+            if (sAPI.GetMaterialFloatArray(assimpMaterial, "$mat.shininess", 0, 0, &shininess, null) != Return.Success)
+            {
+                shininess = 32f;
+            }
+
+            if (sAPI.GetMaterialFloatArray(assimpMaterial, "$mat.opacity", 0, 0, &opacity, null) != Return.Success)
+            {
+                opacity = 1f;
+            }
+
+            var data = new byte[] { 255, 255, 255, 255 };
+            mWhiteTexture ??= mImportContext.CreateTexture(data, 1, 1, DeviceImageFormat.RGBA8_UNORM);
+            var material = new Material(mWhiteTexture, mImportContext.GraphicsContext);
+
+            material.Set("DiffuseColor", diffuseColor);
+            material.Set("SpecularColor", specularColor);
+            material.Set("AmbientColor", ambientColor);
+            material.Set("Shininess", shininess);
+            material.Set("Opacity", opacity);
+
+            material.PipelineSpecification.BlendMode = (PipelineBlendMode)(blendMode + 1);
+            material.PipelineSpecification.FrontFace = PipelineFrontFace.CounterClockwise;
+            material.PipelineSpecification.EnableDepthTesting = true;
+            material.PipelineSpecification.DisableCulling = false;
+
+            ProcessMaterialTextures(assimpMaterial, material);
+            return material;
+        }
+
         public IReadOnlyList<Submesh> Submeshes => mSubmeshes;
+        public IReadOnlyList<Material> Materials => mMaterials;
         public IDeviceBuffer VertexBuffer => mVertexBuffer!;
         public IDeviceBuffer IndexBuffer => mIndexBuffer!;
         public abstract bool IsStatic { get; }
@@ -207,7 +352,11 @@ namespace CodePlayground.Graphics
         protected readonly IModelImportContext mImportContext;
 
         private readonly List<Submesh> mSubmeshes;
+        private readonly Dictionary<string, ITexture> mTextures;
+        private readonly List<Material> mMaterials;
+
         private IDeviceBuffer? mVertexBuffer, mIndexBuffer;
+        private ITexture? mWhiteTexture;
 
         private bool mDisposed;
     }
@@ -226,6 +375,8 @@ namespace CodePlayground.Graphics
             {
                 VertexOffset = mVertices.Count,
                 IndexOffset = mIndices.Count,
+
+                MaterialIndex = (int)mesh->MMaterialIndex,
                 Transform = transform
             };
 
