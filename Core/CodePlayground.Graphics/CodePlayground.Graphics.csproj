@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <PackageReference Include="shaderc.net" Version="$(shadercnetVersion)" />
+    <PackageReference Include="Silk.NET.Assimp" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Input" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="$(SilkNETVersion)" />

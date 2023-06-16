@@ -88,6 +88,7 @@ namespace CodePlayground.Graphics
 
             mWindow = null;
             mInputContext = null;
+            mArgs = Array.Empty<string>();
         }
 
         public override bool IsRunning => mIsRunning;
@@ -113,6 +114,7 @@ namespace CodePlayground.Graphics
 
         protected override int Run(string[] args)
         {
+            mArgs = args;
             mOptions = WindowOptions.Default with
             {
                 Size = mInitialSize,
@@ -257,6 +259,7 @@ namespace CodePlayground.Graphics
 
         public IInputContext? InputContext => mInputContext;
         public IGraphicsContext? GraphicsContext => mGraphicsContext;
+        public string[] CommandLineArguments => mArgs;
         internal IVkSurface? VulkanSurfaceFactory => mWindow?.VkSurface;
 
         private int mExitCode;
@@ -268,5 +271,6 @@ namespace CodePlayground.Graphics
         private WindowOptions? mOptions;
         private IInputContext? mInputContext;
         private IGraphicsContext? mGraphicsContext;
+        private string[] mArgs;
     }
 }

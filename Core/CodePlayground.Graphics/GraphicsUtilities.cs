@@ -18,6 +18,19 @@ namespace CodePlayground.Graphics
             }
         }
 
+        public static unsafe void CopyFromCPU<T>(this IDeviceBuffer buffer, ReadOnlySpan<T> data) where T : unmanaged
+        {
+            fixed (T* ptr = data)
+            {
+                buffer.CopyFromCPU(ptr, data.Length * sizeof(T));
+            }
+        }
+
+        public static unsafe void CopyFromCPU<T>(this IDeviceBuffer buffer, T data) where T : unmanaged
+        {
+            buffer.CopyFromCPU(&data, sizeof(T));
+        }
+
         public static unsafe void CopyToCPU<T>(this IDeviceBuffer buffer, T[] data) where T : unmanaged
         {
             fixed (T* ptr = data)
@@ -26,9 +39,12 @@ namespace CodePlayground.Graphics
             }
         }
 
-        public static unsafe void CopyFromCPU<T>(this IDeviceBuffer buffer, T data) where T : unmanaged
+        public static unsafe void CopyToCPU<T>(this IDeviceBuffer buffer, ReadOnlySpan<T> data) where T : unmanaged
         {
-            buffer.CopyFromCPU(&data, sizeof(T));
+            fixed (T* ptr = data)
+            {
+                buffer.CopyToCPU(ptr, data.Length * sizeof(T));
+            }
         }
 
         public static unsafe void CopyToCPU<T>(this IDeviceBuffer buffer, out T data) where T : unmanaged

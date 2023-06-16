@@ -142,7 +142,8 @@ namespace CodePlayground.Graphics
     public enum PipelineBlendMode
     {
         None,
-        SourceAlphaOneMinusSourceAlpha,
+        Default,
+        Additive,
         OneZero,
         ZeroSourceColor
     }
@@ -403,6 +404,6 @@ namespace CodePlayground.Graphics
 
     public interface IRenderer
     {
-        public void RenderIndexed(ICommandList commandBuffer, int indexCount);
+        public void RenderIndexed(ICommandList commandList, int indexOffset, int indexCount);
     }
 }

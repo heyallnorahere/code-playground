@@ -5,7 +5,7 @@ using System.Runtime.CompilerServices;
 
 namespace VulkanTest.Shaders
 {
-    // temporary type
+    // temporary types
     [PrimitiveShaderType("mat4")]
     public sealed class Matrix4x4<T> where T : unmanaged
     {
@@ -22,10 +22,33 @@ namespace VulkanTest.Shaders
         {
             throw new NotImplementedException();
         }
+    }
+
+    [PrimitiveShaderType("mat3")]
+    public sealed class Matrix3x3<T> where T : unmanaged
+    {
+        public Matrix3x3(Matrix4x4<T> matrix)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Multiply)]
+        public static Vector3<T> operator *(Matrix3x3<T> lhs, Vector3<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("inverse")]
+        public Matrix3x3<T> Inverse()
+        {
+            throw new NotImplementedException();
+        }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         [BuiltinShaderFunction("transpose")]
-        public Matrix4x4<T> Transpose()
+        public Matrix3x3<T> Transpose()
         {
             throw new NotImplementedException();
         }
@@ -73,9 +96,6 @@ namespace VulkanTest.Shaders
         [Layout(Set = 0, Binding = 0)]
         public static CameraBufferData u_CameraBuffer;
 
-        [Layout(Set = 0, Binding = 1)]
-        public static Sampler2D<float>? u_Texture;
-
         [Layout(PushConstants = true)]
         public static PushConstantData u_PushConstants;
 
@@ -83,12 +103,14 @@ namespace VulkanTest.Shaders
         public static VertexOut VertexMain(VertexIn input)
         {
             var vertexPosition = new Vector4<float>(input.Position, 1f);
+            var worldPosition = u_PushConstants.Model * vertexPosition;
+
             return new VertexOut
             {
-                Position = u_CameraBuffer.ViewProjection * u_PushConstants.Model * vertexPosition,
+                Position = u_CameraBuffer.ViewProjection * worldPosition,
                 Data = new FragmentIn
                 {
-                    Normal = input.Normal,
+                    Normal = (new Matrix3x3<float>(u_PushConstants.Model).Inverse().Transpose() * input.Normal).Normalize(),
                     UV = input.UV
                 },
             };
@@ -98,8 +120,7 @@ namespace VulkanTest.Shaders
         [return: Layout(Location = 0)]
         public static Vector4<float> FragmentMain(FragmentIn input)
         {
-            var sampled = u_Texture!.Sample(input.UV);
-            return sampled * u_PushConstants.Color;
+            return u_PushConstants.Color;
         }
     }
 }

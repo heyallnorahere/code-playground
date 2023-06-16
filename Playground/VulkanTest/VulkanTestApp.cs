@@ -1,6 +1,7 @@
 ﻿using CodePlayground;
 using CodePlayground.Graphics;
 using CodePlayground.Graphics.Vulkan;
+using Silk.NET.Assimp;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
@@ -48,70 +49,133 @@ namespace VulkanTest
         public Vector3[] OtherDirections { get; set; }
     }
 
+    internal sealed class ModelImportContext : IModelImportContext
+    {
+        public ModelImportContext(IGraphicsContext context)
+        {
+            mContext = context;
+            mStagingBuffers = new List<IDeviceBuffer>();
+            mCommandList = null;
+        }
+
+        public bool ShouldCopyPostLoad => true;
+
+        public bool FlipUVs => true;
+        public bool LeftHanded => true;
+
+        [MemberNotNull(nameof(mCommandList))]
+        private void BeginCommandList()
+        {
+            if (mCommandList is not null)
+            {
+                return;
+            }
+
+            var queue = mContext.Device.GetQueue(CommandQueueFlags.Transfer);
+            mCommandList = queue.Release();
+            mCommandList.Begin();
+        }
+
+        public IDeviceBuffer CreateStaticVertexBuffer(IReadOnlyList<StaticModelVertex> vertices)
+        {
+            BeginCommandList();
+
+            var bufferVertices = new Vertex[vertices.Count];
+            for (int i = 0; i < vertices.Count; i++)
+            {
+                bufferVertices[i] = new Vertex
+                {
+                    Position = vertices[i].Position,
+                    Normal = vertices[i].Normal,
+                    UV = vertices[i].UV
+                };
+            }
+
+            int bufferSize = vertices.Count * Marshal.SizeOf<Vertex>();
+            var stagingBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Staging, bufferSize);
+            var buffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Vertex, bufferSize);
+
+            stagingBuffer.CopyFromCPU(bufferVertices);
+            stagingBuffer.CopyBuffers(mCommandList, buffer, bufferSize);
+
+            mStagingBuffers.Add(stagingBuffer);
+            return buffer;
+        }
+
+        public IDeviceBuffer CreateIndexBuffer(IReadOnlyList<uint> indices)
+        {
+            BeginCommandList();
+
+            var bufferIndices = indices.ToArray();
+            int bufferSize = indices.Count * Marshal.SizeOf<uint>();
+
+            var buffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Index, bufferSize);
+            var stagingBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Staging, bufferSize);
+
+            stagingBuffer.CopyFromCPU(bufferIndices);
+            stagingBuffer.CopyBuffers(mCommandList, buffer, bufferSize);
+
+            mStagingBuffers.Add(stagingBuffer);
+            return buffer;
+        }
+
+        public ITexture CreateTexture(ReadOnlySpan<byte> data, int width, int height, DeviceImageFormat format)
+        {
+            BeginCommandList();
+
+            var image = mContext.CreateDeviceImage(new DeviceImageInfo
+            {
+                Size = new Size(width, height),
+                Usage = DeviceImageUsageFlags.CopySource | DeviceImageUsageFlags.CopyDestination | DeviceImageUsageFlags.Render,
+                Format = format
+            });
+
+            var stagingBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Staging, data.Length);
+            stagingBuffer.CopyFromCPU(data);
+
+            var newLayout = image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
+            image.TransitionLayout(mCommandList, image.Layout, newLayout);
+            image.CopyFromBuffer(mCommandList, stagingBuffer, newLayout);
+            image.Layout = newLayout;
+
+            mStagingBuffers.Add(stagingBuffer);
+            return image.CreateTexture(true);
+        }
+
+        public ITexture LoadTexture(string texturePath, string modelPath, bool loadedFromFile)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void CopyBuffers()
+        {
+            if (mCommandList is null)
+            {
+                return;
+            }
+
+            mCommandList.End();
+
+            var queue = mContext.Device.GetQueue(CommandQueueFlags.Transfer);
+            queue.Submit(mCommandList, true);
+
+            mStagingBuffers.ForEach(buffer => buffer.Dispose());
+            mStagingBuffers.Clear();
+
+            mCommandList = null;
+        }
+
+        private ICommandList? mCommandList;
+        private readonly List<IDeviceBuffer> mStagingBuffers;
+        private readonly IGraphicsContext mContext;
+    }
+
     [ApplicationTitle("Vulkan Test")]
     [ApplicationGraphicsAPI(AppGraphicsAPI.Vulkan)]
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
     [VulkanAPIVersion("1.3")]
     public class VulkanTestApp : GraphicsApplication
     {
-        public const PipelineFrontFace FrontFace = PipelineFrontFace.CounterClockwise;
-
-        private static readonly Vertex[] sVertices;
-        private static readonly uint[] sIndices;
-
-        static VulkanTestApp()
-        {
-
-            var counterClockwiseIndices = new uint[]
-            {
-                0, 3, 1,
-                1, 3, 2
-            };
-
-            var clockwiseIndices = new uint[]
-            {
-                0, 1, 3,
-                1, 2, 3
-            };
-
-            sVertices = new Vertex[]
-            {
-                // quad
-                new Vertex
-                {
-                    Position = new Vector3(0.5f, -0.5f, 0f),
-                    Normal = -Vector3.UnitZ,
-                    UV = new Vector2(1f, 1f),
-                },
-                new Vertex
-                {
-                    Position = new Vector3(-0.5f, -0.5f, 0f),
-                    Normal = -Vector3.UnitZ,
-                    UV = new Vector2(0f, 1f),
-                },
-                new Vertex
-                {
-                    Position = new Vector3(-0.5f, 0.5f, 0f),
-                    Normal = -Vector3.UnitZ,
-                    UV = new Vector2(0f, 0f),
-                },
-                new Vertex
-                {
-                    Position = new Vector3(0.5f, 0.5f, 0f),
-                    Normal = -Vector3.UnitZ,
-                    UV = new Vector2(1f, 0f),
-                }
-            };
-
-            sIndices = FrontFace == PipelineFrontFace.Clockwise ? clockwiseIndices : counterClockwiseIndices;
-        }
-
-        private static Image<T> LoadImage<T>(Assembly assembly, string resourceName) where T : unmanaged, IPixel<T>
-        {
-            var stream = assembly.GetManifestResourceStream(resourceName);
-            return Image.Load<T>(stream ?? throw new FileNotFoundException());
-        }
-
         public VulkanTestApp()
         {
             Utilities.BindHandlers(this, this);
@@ -120,6 +184,12 @@ namespace VulkanTest
         [EventHandler(nameof(Load))]
         private void OnLoad()
         {
+            var arguments = CommandLineArguments;
+            if (arguments.Length == 0)
+            {
+                throw new ArgumentException("No model specified!");
+            }
+
             CreateGraphicsContext<VulkanContext>();
 
             var context = GraphicsContext!;
@@ -136,10 +206,10 @@ namespace VulkanTest
                 FrameCount = swapchain.FrameCount,
                 Specification = new PipelineSpecification
                 {
-                    FrontFace = FrontFace,
-                    BlendMode = PipelineBlendMode.SourceAlphaOneMinusSourceAlpha,
+                    FrontFace = PipelineFrontFace.CounterClockwise,
+                    BlendMode = PipelineBlendMode.Default,
                     EnableDepthTesting = true,
-                    DisableCulling = true
+                    DisableCulling = false
                 }
             });
 
@@ -151,43 +221,13 @@ namespace VulkanTest
                 throw new ArgumentException($"Failed to find buffer \"{resourceName}\"");
             }
 
-            int vertexBufferSize = sVertices.Length * Marshal.SizeOf<Vertex>();
-            int indexBufferSize = sIndices.Length * Marshal.SizeOf<uint>();
-
-            using var vertexStagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, vertexBufferSize);
-            using var indexStagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, indexBufferSize);
-
-            vertexStagingBuffer.CopyFromCPU(sVertices);
-            indexStagingBuffer.CopyFromCPU(sIndices);
-
-            mVertexBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Vertex, vertexBufferSize);
-            mIndexBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Index, indexBufferSize);
             mUniformBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Uniform, uniformBufferSize);
-
-            var transferQueue = context.Device.GetQueue(CommandQueueFlags.Transfer);
-            var commandList = transferQueue.Release();
-            commandList.Begin();
-
-            vertexStagingBuffer.CopyBuffers(commandList, mVertexBuffer, vertexBufferSize);
-            indexStagingBuffer.CopyBuffers(commandList, mIndexBuffer, indexBufferSize);
-
-            var image = LoadImage<Rgba32>(GetType().Assembly, "VulkanTest.Resources.Textures.disaster.png");
-            mTexture = context.LoadTexture(image, DeviceImageFormat.RGBA8_SRGB, commandList, out IDeviceBuffer imageStagingBuffer);
-
-            commandList.End();
-            transferQueue.Submit(commandList, true);
-
-            if (!mPipeline.Bind(mTexture, nameof(TestShader.u_Texture), 0))
-            {
-                throw new InvalidOperationException("Failed to bind texture!");
-            }
-
             if (!mPipeline.Bind(mUniformBuffer, resourceName, 0))
             {
                 throw new InvalidOperationException("Failed to bind buffer!");
             }
 
-            imageStagingBuffer.Dispose();
+            mModel = Model.Load(arguments[0], new ModelImportContext(context));
         }
 
         [EventHandler(nameof(Closing))]
@@ -197,10 +237,8 @@ namespace VulkanTest
             device?.ClearQueues();
 
             mPipeline?.Dispose();
-            mVertexBuffer?.Dispose();
-            mIndexBuffer?.Dispose();
             mUniformBuffer?.Dispose();
-            mTexture?.Dispose();
+            mModel?.Dispose();
 
             mShaderLibrary?.Dispose();
             GraphicsContext?.Dispose();
@@ -276,15 +314,21 @@ namespace VulkanTest
         [EventHandler(nameof(Update))]
         private void OnUpdate(double delta)
         {
+            mTime += (float)delta;
+
             var swapchain = GraphicsContext?.Swapchain;
             if (swapchain is null)
             {
                 return;
             }
 
+            const float radius = 5f;
+            float x = -MathF.Cos(mTime) * radius;
+            float z = MathF.Sin(mTime) * radius;
+
             float aspectRatio = swapchain.Width / (float)swapchain.Height;
             var projection = Perspective(MathF.PI / 4f, aspectRatio, 0.1f, 100f);
-            var view = LookAt(Vector3.UnitZ * -2f, Vector3.Zero, Vector3.UnitY);
+            var view = LookAt(new Vector3(x, radius, z), Vector3.Zero, Vector3.UnitY);
 
             mUniformBuffer!.MapStructure(mPipeline!, nameof(TestShader.u_CameraBuffer), new UniformBufferData
             {
@@ -304,27 +348,23 @@ namespace VulkanTest
             renderInfo.RenderTarget.BeginRender(renderInfo.CommandList, renderInfo.Framebuffer, clearColor, true);
 
             mPipeline!.Bind(renderInfo.CommandList, renderInfo.CurrentFrame);
-            mVertexBuffer!.BindVertices(renderInfo.CommandList, 0);
-            mIndexBuffer!.BindIndices(renderInfo.CommandList, DeviceBufferIndexType.UInt32);
+            mModel!.VertexBuffer.BindVertices(renderInfo.CommandList, 0);
+            mModel!.IndexBuffer.BindIndices(renderInfo.CommandList, DeviceBufferIndexType.UInt32);
 
-            for (int i = 0; i < 3; i++)
+            var submeshes = mModel!.Submeshes;
+            for (int i = 0; i < submeshes.Count; i++)
             {
-                var position = i - 1;
-                var model = Matrix4x4.CreateTranslation((Vector3.UnitX - Vector3.UnitZ) * position / 2f);
-
-                var color = new Vector3(0f);
-                color[i] = 1f;
-
+                var submesh = submeshes[i];
                 mPipeline!.PushConstants(renderInfo.CommandList, mapped =>
                 {
                     mPipeline!.MapStructure(mapped, nameof(TestShader.u_PushConstants), new PushConstantData
                     {
-                        Model = model,
-                        Color = new Vector4(color, 1f)
+                        Model = Matrix4x4.CreateRotationX(MathF.PI / 2f) * submesh.Transform,
+                        Color = new Vector4(new Vector3((i + 1) / (float)submeshes.Count), 1f)
                     });
                 });
 
-                mRenderer!.RenderIndexed(renderInfo.CommandList, sIndices.Length);
+                mRenderer!.RenderIndexed(renderInfo.CommandList, submesh.IndexOffset, submesh.IndexCount);
             }
 
             renderInfo.RenderTarget.EndRender(renderInfo.CommandList);
@@ -332,8 +372,9 @@ namespace VulkanTest
 
         private ShaderLibrary? mShaderLibrary;
         private IPipeline? mPipeline;
-        private IDeviceBuffer? mVertexBuffer, mIndexBuffer, mUniformBuffer;
-        private ITexture? mTexture;
+        private IDeviceBuffer? mUniformBuffer;
+        private Model? mModel;
         private IRenderer? mRenderer;
+        private float mTime;
     }
 }

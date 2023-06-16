@@ -1,9 +1,10 @@
 {
-  "profiles": {
-    "VulkanTest": {
-      "commandName": "Executable",
-      "executablePath": "$(TargetDir)\\CodePlayground.exe",
-      "commandLineArgs": "$(TargetPath)"
+    "profiles": {
+        "VulkanTest": {
+            "commandName": "Executable",
+            "executablePath": "$(TargetDir)\\CodePlayground.exe",
+            "commandLineArgs": "$(TargetPath)",
+            "workingDirectory": "$(TargetDir)"
+        }
     }
-  }
 }

@@ -789,12 +789,19 @@ namespace CodePlayground.Graphics.Vulkan
 
                             switch (blendMode)
                             {
-                                case PipelineBlendMode.SourceAlphaOneMinusSourceAlpha:
+                                case PipelineBlendMode.Default:
                                     colorBlendAttachment.SrcColorBlendFactor = BlendFactor.SrcAlpha;
                                     colorBlendAttachment.DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha;
 
                                     colorBlendAttachment.SrcAlphaBlendFactor = BlendFactor.SrcAlpha;
                                     colorBlendAttachment.DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha;
+                                    break;
+                                case PipelineBlendMode.Additive:
+                                    colorBlendAttachment.SrcColorBlendFactor = BlendFactor.One;
+                                    colorBlendAttachment.DstColorBlendFactor = BlendFactor.One;
+
+                                    colorBlendAttachment.SrcAlphaBlendFactor = BlendFactor.One;
+                                    colorBlendAttachment.DstAlphaBlendFactor = BlendFactor.One;
                                     break;
                                 case PipelineBlendMode.OneZero:
                                     colorBlendAttachment.SrcColorBlendFactor = BlendFactor.One;
