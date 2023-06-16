@@ -1,5 +1,4 @@
 ﻿using Silk.NET.Assimp;
-using Silk.NET.Maths;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -15,6 +14,13 @@ namespace CodePlayground.Graphics
         public Vector2 UV { get; set; }
     }
 
+    public struct AnimatedModelVertex
+    {
+        public StaticModelVertex VertexData { get; set; }
+        public int[] BoneIndices { get; set; }
+        public float[] BoneWeights { get; set; }
+    }
+
     public interface IModelImportContext
     {
         public IGraphicsContext GraphicsContext { get; }
@@ -24,6 +30,7 @@ namespace CodePlayground.Graphics
         public bool LeftHanded { get; }
 
         public IDeviceBuffer CreateStaticVertexBuffer(IReadOnlyList<StaticModelVertex> vertices);
+        public IDeviceBuffer CreateAnimatedVertexBuffer(IReadOnlyList<AnimatedModelVertex> vertices);
         public IDeviceBuffer CreateIndexBuffer(IReadOnlyList<uint> indices);
         public ITexture CreateTexture(ReadOnlySpan<byte> data, int width, int height, DeviceImageFormat format);
         public ITexture LoadTexture(string texturePath, string modelPath, bool loadedFromFile, ISamplerSettings samplerSettings);
@@ -113,7 +120,7 @@ namespace CodePlayground.Graphics
                 }
                 else
                 {
-                    throw new NotImplementedException("Non-static models are not supported!");
+                    result = new AnimatedModel(scene, path, loadedFromFile, importContext);
                 }
 
                 result.Load();
@@ -337,14 +344,14 @@ namespace CodePlayground.Graphics
             return material;
         }
 
+        protected abstract IDeviceBuffer CreateVertexBuffer();
+        protected abstract IDeviceBuffer CreateIndexBuffer();
+
         public IReadOnlyList<Submesh> Submeshes => mSubmeshes;
         public IReadOnlyList<Material> Materials => mMaterials;
         public IDeviceBuffer VertexBuffer => mVertexBuffer!;
         public IDeviceBuffer IndexBuffer => mIndexBuffer!;
         public abstract bool IsStatic { get; }
-
-        protected abstract IDeviceBuffer CreateVertexBuffer();
-        protected abstract IDeviceBuffer CreateIndexBuffer();
 
         protected readonly unsafe Scene* mScene;
         private readonly string mPath;
@@ -414,12 +421,34 @@ namespace CodePlayground.Graphics
             return submesh;
         }
 
-        public override bool IsStatic => true;
-
         protected override IDeviceBuffer CreateVertexBuffer() => mImportContext.CreateStaticVertexBuffer(mVertices);
         protected override IDeviceBuffer CreateIndexBuffer() => mImportContext.CreateIndexBuffer(mIndices);
 
+        public override bool IsStatic => true;
+
         private readonly List<StaticModelVertex> mVertices;
+        private readonly List<uint> mIndices;
+    }
+
+    internal sealed class AnimatedModel : Model
+    {
+        public unsafe AnimatedModel(Scene* scene, string path, bool loadedFromFile, IModelImportContext importContext) : base(scene, path, loadedFromFile, importContext)
+        {
+            mVertices = new List<AnimatedModelVertex>();
+            mIndices = new List<uint>();
+        }
+
+        protected override unsafe Submesh ProcessMesh(Node* node, Mesh* mesh, Matrix4x4 transform)
+        {
+            throw new NotImplementedException();
+        }
+
+        protected override IDeviceBuffer CreateVertexBuffer() => mImportContext.CreateAnimatedVertexBuffer(mVertices);
+        protected override IDeviceBuffer CreateIndexBuffer() => mImportContext.CreateIndexBuffer(mIndices);
+
+        public override bool IsStatic => false;
+
+        private readonly List<AnimatedModelVertex> mVertices;
         private readonly List<uint> mIndices;
     }
 }

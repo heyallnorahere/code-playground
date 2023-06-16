@@ -101,6 +101,11 @@ namespace VulkanTest
             return buffer;
         }
 
+        public IDeviceBuffer CreateAnimatedVertexBuffer(IReadOnlyList<AnimatedModelVertex> vertices)
+        {
+            throw new NotImplementedException();
+        }
+
         public IDeviceBuffer CreateIndexBuffer(IReadOnlyList<uint> indices)
         {
             BeginCommandList();
