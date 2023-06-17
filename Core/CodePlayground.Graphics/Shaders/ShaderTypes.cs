@@ -376,6 +376,13 @@ namespace CodePlayground.Graphics.Shaders
         {
             throw new NotImplementedException();
         }
+
+        public T this[int index]
+        {
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            [ShaderOperator(ShaderOperatorType.Index)]
+            get => throw new NotImplementedException();
+        }
         #endregion
 
         // todo: swizzles

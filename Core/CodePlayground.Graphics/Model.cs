@@ -4,21 +4,30 @@ using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Skeleton = CodePlayground.Graphics.Animation.Skeleton;
 
 namespace CodePlayground.Graphics
 {
-    public struct StaticModelVertex
+    public struct BoneData
+    {
+        public int Index { get; set; }
+        public float Weight { get; set; }
+    }
+
+    internal struct ProcessedBone
+    {
+        public int Parent { get; set; }
+        public string Name { get; set; }
+        public unsafe Node* Node { get; set; }
+        public unsafe Bone* Bone { get; set; }
+    }
+
+    public struct ModelVertex
     {
         public Vector3 Position { get; set; }
         public Vector3 Normal { get; set; }
         public Vector2 UV { get; set; }
-    }
-
-    public struct AnimatedModelVertex
-    {
-        public StaticModelVertex VertexData { get; set; }
-        public int[] BoneIndices { get; set; }
-        public float[] BoneWeights { get; set; }
+        public List<BoneData> Bones { get; set; }
     }
 
     public interface IModelImportContext
@@ -28,9 +37,9 @@ namespace CodePlayground.Graphics
         public bool ShouldCopyPostLoad { get; }
         public bool FlipUVs { get; }
         public bool LeftHanded { get; }
+        public int MaxBonesPerVertex { get; }
 
-        public IDeviceBuffer CreateStaticVertexBuffer(IReadOnlyList<StaticModelVertex> vertices);
-        public IDeviceBuffer CreateAnimatedVertexBuffer(IReadOnlyList<AnimatedModelVertex> vertices);
+        public IDeviceBuffer CreateVertexBuffer(IReadOnlyList<ModelVertex> vertices);
         public IDeviceBuffer CreateIndexBuffer(IReadOnlyList<uint> indices);
         public ITexture CreateTexture(ReadOnlySpan<byte> data, int width, int height, DeviceImageFormat format);
         public ITexture LoadTexture(string texturePath, string modelPath, bool loadedFromFile, ISamplerSettings samplerSettings);
@@ -52,11 +61,12 @@ namespace CodePlayground.Graphics
 
         public int MaterialIndex { get; set; }
         public Matrix4x4 Transform { get; set; }
+        public bool HasBones { get; set; }
     }
 
-    public abstract class Model : IDisposable
+    public sealed class Model : IDisposable
     {
-        protected static readonly Assimp sAPI;
+        private static readonly Assimp sAPI;
         static Model()
         {
             sAPI = Assimp.GetApi();
@@ -97,38 +107,16 @@ namespace CodePlayground.Graphics
             fixed (byte* ptr = data)
             {
                 var scene = sAPI.ImportFileFromMemory(ptr, (uint)data.Length, (uint)flags, string.Empty);
-                if (scene is null || scene->MFlags == Assimp.SceneFlagsIncomplete || scene->MRootNode is null)
+                if (scene is null || (scene->MFlags & Assimp.SceneFlagsIncomplete) != 0 || scene->MRootNode is null)
                 {
                     return null;
                 }
 
-                bool isStatic = true;
-                for (uint i = 0; i < scene->MNumMeshes; i++)
-                {
-                    var mesh = scene->MMeshes[i];
-                    if (mesh->MNumBones > 0)
-                    {
-                        isStatic = false;
-                        break;
-                    }
-                }
-
-                Model result;
-                if (isStatic)
-                {
-                    result = new StaticModel(scene, path, loadedFromFile, importContext);
-                }
-                else
-                {
-                    result = new AnimatedModel(scene, path, loadedFromFile, importContext);
-                }
-
-                result.Load();
-                return result;
+                return new Model(scene, path, loadedFromFile, importContext);
             }
         }
 
-        protected unsafe Model(Scene* scene, string path, bool loadedFromFile, IModelImportContext importContext)
+        private unsafe Model(Scene* scene, string path, bool loadedFromFile, IModelImportContext importContext)
         {
             mDisposed = false;
 
@@ -137,33 +125,38 @@ namespace CodePlayground.Graphics
             mLoadedFromFile = loadedFromFile;
             mImportContext = importContext;
 
-            mSubmeshes = new List<Submesh>();
+            mSubeshes = new List<Submesh>();
             mTextures = new Dictionary<string, ITexture>();
             mMaterials = new List<Material>();
-        }
+            mVertices = new List<ModelVertex>();
+            mIndices = new List<uint>();
 
-        private unsafe void Load()
-        {
-            if (!Matrix4x4.Invert(mScene->MRootNode->MTransformation, out Matrix4x4 inverseRootTransform))
+            if (!Matrix4x4.Invert(mScene->MRootNode->MTransformation, out mInverseRootTransform))
             {
-                inverseRootTransform = Matrix4x4.Identity;
+                mInverseRootTransform = Matrix4x4.Identity;
             }
 
-            ProcessNode(mScene->MRootNode, inverseRootTransform);
-            for (uint i = 0; i < mScene->MNumMaterials; i++)
-            {
-                var assimpMaterial = mScene->MMaterials[i];
+            // load vertices, materials, bones, etc
+            Load();
 
-                var material = ProcessMaterial(assimpMaterial);
-                mMaterials.Add(material);
-            }
-
-            mVertexBuffer = CreateVertexBuffer();
-            mIndexBuffer = CreateIndexBuffer();
+            mVertexBuffer = mImportContext.CreateVertexBuffer(mVertices);
+            mIndexBuffer = mImportContext.CreateIndexBuffer(mIndices);
 
             if (mImportContext.ShouldCopyPostLoad)
             {
                 mImportContext.CopyBuffers();
+            }
+        }
+
+        private unsafe void Load()
+        {
+            ProcessNode(mScene->MRootNode, mInverseRootTransform);
+            for (uint i = 0; i < mScene->MNumMaterials; i++)
+            {
+                var assimpMaterial = mScene->MMaterials[i];
+                var material = ProcessMaterial(assimpMaterial);
+                
+                mMaterials.Add(material);
             }
         }
 
@@ -187,12 +180,12 @@ namespace CodePlayground.Graphics
             mDisposed = true;
         }
 
-        protected virtual unsafe void Dispose(bool disposing)
+        private unsafe void Dispose(bool disposing)
         {
             if (disposing)
             {
-                mVertexBuffer?.Dispose();
-                mIndexBuffer?.Dispose();
+                mVertexBuffer.Dispose();
+                mIndexBuffer.Dispose();
                 mWhiteTexture?.Dispose();
 
                 foreach (var texture in mTextures.Values)
@@ -209,7 +202,178 @@ namespace CodePlayground.Graphics
             sAPI.FreeScene(mScene);
         }
 
-        protected abstract unsafe Submesh ProcessMesh(Node* node, Mesh* mesh, Matrix4x4 transform);
+        private unsafe Node* FindNode(string name, Node* currentNode = null)
+        {
+            var node = currentNode is null ? mScene->MRootNode : currentNode;
+            for (uint i = 0; i < node->MNumChildren; i++)
+            {
+                var child = node->MChildren[i];
+                if (child->MName.ToString() == name)
+                {
+                    return child;
+                }
+
+                var foundNode = FindNode(name, child);
+                if (foundNode is not null)
+                {
+                    return foundNode;
+                }
+            }
+
+            return null;
+        }
+
+        private static unsafe Matrix4x4 CalculateAbsoluteTransform(Node* node)
+        {
+            var transform = node->MTransformation;
+            var currentParent = node->MParent;
+
+            while (currentParent is not null)
+            {
+                transform = currentParent->MTransformation * transform;
+                currentParent = currentParent->MParent;
+            }
+
+            return transform;
+        }
+
+        private unsafe bool ProcessBones(Mesh* mesh, int vertexOffset)
+        {
+            if (mesh->MNumBones == 0)
+            {
+                return false;
+            }
+
+            var nodeMap = new Dictionary<nint, int>();
+            var processedBones = new List<ProcessedBone>();
+
+            for (uint i = 0; i < mesh->MNumBones; i++)
+            {
+                var bone = mesh->MBones[i];
+                var name = bone->MName.ToString();
+
+                var node = FindNode(name);
+                if (node is null)
+                {
+                    throw new InvalidOperationException($"Failed to find node for bone: {name}");
+                }
+
+                int index = processedBones.Count;
+                processedBones.Add(new ProcessedBone
+                {
+                    Parent = -1,
+                    Name = name,
+                    Node = node,
+                    Bone = bone
+                });
+
+                nodeMap.Add((nint)node, index);
+            }
+
+            for (int i = 0; i < processedBones.Count; i++)
+            {
+                var bone = processedBones[i];
+                var node = bone.Node;
+
+                if (nodeMap.TryGetValue((nint)node->MParent, out int parentIndex))
+                {
+                    bone.Parent = parentIndex;
+                    processedBones[i] = bone;
+                }
+            }
+
+            processedBones.Sort((a, b) => a.Parent.CompareTo(b.Parent));
+            int boneOffset = (mSkeleton ??= new Skeleton()).BoneCount;
+            foreach (var bone in processedBones)
+            {
+                int parent = bone.Parent;
+                Matrix4x4 parentTransform = Matrix4x4.Identity;
+
+                if (parent >= 0)
+                {
+                    parent += boneOffset;
+                }
+                else
+                {
+                    parentTransform = mInverseRootTransform;
+                    if (bone.Node->MParent is not null)
+                    {
+                        parentTransform *= CalculateAbsoluteTransform(bone.Node->MParent);
+                    }
+                }
+
+                int boneId = mSkeleton.AddBone(parent, bone.Name, bone.Node->MTransformation, bone.Bone->MOffsetMatrix, parentTransform);
+                for (uint j = 0; j < bone.Bone->MNumWeights; j++)
+                {
+                    var weight = bone.Bone->MWeights[j];
+                    var vertex = mVertices[(int)weight.MVertexId + vertexOffset];
+
+                    int boneLimit = mImportContext.MaxBonesPerVertex;
+                    if (boneLimit > 0 && vertex.Bones.Count >= boneLimit)
+                    {
+                        throw new InvalidOperationException($"Bone limit per vertex of {boneLimit} exceeded!");
+                    }
+
+                    vertex.Bones.Add(new BoneData
+                    {
+                        Index = boneId,
+                        Weight = weight.MWeight
+                    });
+                }
+            }
+            
+            return true;
+        }
+
+        private unsafe Submesh ProcessMesh(Node* node, Mesh* mesh, Matrix4x4 transform)
+        {
+            var submesh = new Submesh
+            {
+                VertexOffset = mVertices.Count,
+                IndexOffset = mIndices.Count,
+
+                MaterialIndex = (int)mesh->MMaterialIndex,
+                Transform = transform
+            };
+
+            for (uint i = 0; i < mesh->MNumVertices; i++)
+            {
+                var position = mesh->MVertices[i];
+                var normal = mesh->MNormals[i];
+
+                var textureCoords = mesh->MTextureCoords[0];
+                var uv = textureCoords is null ? new Vector3(0f) : textureCoords[i];
+
+                mVertices.Add(new ModelVertex
+                {
+                    Position = position,
+                    Normal = normal,
+                    UV = new Vector2(uv.X, uv.Y),
+                    Bones = new List<BoneData>()
+                });
+            }
+
+            for (uint i = 0; i < mesh->MNumFaces; i++)
+            {
+                var face = mesh->MFaces[i];
+                if (face.MNumIndices != 3)
+                {
+                    throw new ArgumentException("Only triangles are supported!");
+                }
+
+                for (uint j = 0; j < face.MNumIndices; j++)
+                {
+                    mIndices.Add(face.MIndices[j] + (uint)submesh.VertexOffset);
+                }
+            }
+
+            submesh.VertexCount = mVertices.Count - submesh.VertexOffset;
+            submesh.IndexCount = mIndices.Count - submesh.IndexOffset;
+            submesh.HasBones = ProcessBones(mesh, submesh.VertexOffset);
+
+            return submesh;
+        }
+
         private unsafe void ProcessNode(Node* node, Matrix4x4 parentTransform)
         {
             var nodeTransform = node->MTransformation;
@@ -221,7 +385,7 @@ namespace CodePlayground.Graphics
                 var mesh = mScene->MMeshes[meshIndex];
 
                 var submesh = ProcessMesh(node, mesh, transform);
-                mSubmeshes.Add(submesh);
+                mSubeshes.Add(submesh);
             }
 
             for (uint i = 0; i < node->MNumChildren; i++)
@@ -278,6 +442,12 @@ namespace CodePlayground.Graphics
 
         private unsafe Material ProcessMaterial(Silk.NET.Assimp.Material* assimpMaterial)
         {
+            AssimpString name;
+            if (sAPI.GetMaterialString(assimpMaterial, "$mat.name", 0, 0, &name) != Return.Success)
+            {
+                name = "Material";
+            }
+
             int blendMode;
             if (sAPI.GetMaterialIntegerArray(assimpMaterial, "$mat.blend", 0, 0, &blendMode, null) != Return.Success)
             {
@@ -327,7 +497,8 @@ namespace CodePlayground.Graphics
 
             var data = new byte[] { 255, 255, 255, 255 };
             mWhiteTexture ??= mImportContext.CreateTexture(data, 1, 1, DeviceImageFormat.RGBA8_UNORM);
-            var material = new Material(mWhiteTexture, mImportContext.GraphicsContext);
+
+            var material = new Material(name.ToString(), mWhiteTexture, mImportContext.GraphicsContext);
 
             material.Set("DiffuseColor", diffuseColor);
             material.Set("SpecularColor", specularColor);
@@ -344,111 +515,28 @@ namespace CodePlayground.Graphics
             return material;
         }
 
-        protected abstract IDeviceBuffer CreateVertexBuffer();
-        protected abstract IDeviceBuffer CreateIndexBuffer();
-
-        public IReadOnlyList<Submesh> Submeshes => mSubmeshes;
+        public IReadOnlyList<Submesh> Submeshes => mSubeshes;
         public IReadOnlyList<Material> Materials => mMaterials;
         public IDeviceBuffer VertexBuffer => mVertexBuffer!;
         public IDeviceBuffer IndexBuffer => mIndexBuffer!;
-        public abstract bool IsStatic { get; }
+        public Skeleton? Skeleton => mSkeleton;
 
-        protected readonly unsafe Scene* mScene;
+        private readonly unsafe Scene* mScene;
         private readonly string mPath;
         private readonly bool mLoadedFromFile;
-        protected readonly IModelImportContext mImportContext;
+        private readonly IModelImportContext mImportContext;
+        private readonly Matrix4x4 mInverseRootTransform;
 
-        private readonly List<Submesh> mSubmeshes;
+        private readonly List<Submesh> mSubeshes;
         private readonly Dictionary<string, ITexture> mTextures;
         private readonly List<Material> mMaterials;
+        private readonly List<ModelVertex> mVertices;
+        private readonly List<uint> mIndices;
 
-        private IDeviceBuffer? mVertexBuffer, mIndexBuffer;
+        private IDeviceBuffer mVertexBuffer, mIndexBuffer;
         private ITexture? mWhiteTexture;
+        private Skeleton? mSkeleton;
 
         private bool mDisposed;
-    }
-
-    internal sealed class StaticModel : Model
-    {
-        public unsafe StaticModel(Scene* scene, string path, bool loadedFromFile, IModelImportContext importContext) : base(scene, path, loadedFromFile, importContext)
-        {
-            mVertices = new List<StaticModelVertex>();
-            mIndices = new List<uint>();
-        }
-
-        protected override unsafe Submesh ProcessMesh(Node* node, Mesh* mesh, Matrix4x4 transform)
-        {
-            var submesh = new Submesh
-            {
-                VertexOffset = mVertices.Count,
-                IndexOffset = mIndices.Count,
-
-                MaterialIndex = (int)mesh->MMaterialIndex,
-                Transform = transform
-            };
-
-            for (uint i = 0; i < mesh->MNumVertices; i++)
-            {
-                var position = mesh->MVertices[i];
-                var normal = mesh->MNormals[i];
-                var uv = mesh->MTextureCoords[0][i];
-
-                mVertices.Add(new StaticModelVertex
-                {
-                    Position = position,
-                    Normal = normal,
-                    UV = new Vector2(uv.X, uv.Y)
-                });
-            }
-
-            for (uint i = 0; i < mesh->MNumFaces; i++)
-            {
-                var face = mesh->MFaces[i];
-                if (face.MNumIndices != 3)
-                {
-                    throw new ArgumentException("Only triangles are supported!");
-                }
-
-                for (uint j = 0; j < face.MNumIndices; j++)
-                {
-                    mIndices.Add(face.MIndices[j] + (uint)submesh.VertexOffset);
-                }
-            }
-
-            submesh.VertexCount = mVertices.Count - submesh.VertexOffset;
-            submesh.IndexCount = mIndices.Count - submesh.IndexOffset;
-
-            return submesh;
-        }
-
-        protected override IDeviceBuffer CreateVertexBuffer() => mImportContext.CreateStaticVertexBuffer(mVertices);
-        protected override IDeviceBuffer CreateIndexBuffer() => mImportContext.CreateIndexBuffer(mIndices);
-
-        public override bool IsStatic => true;
-
-        private readonly List<StaticModelVertex> mVertices;
-        private readonly List<uint> mIndices;
-    }
-
-    internal sealed class AnimatedModel : Model
-    {
-        public unsafe AnimatedModel(Scene* scene, string path, bool loadedFromFile, IModelImportContext importContext) : base(scene, path, loadedFromFile, importContext)
-        {
-            mVertices = new List<AnimatedModelVertex>();
-            mIndices = new List<uint>();
-        }
-
-        protected override unsafe Submesh ProcessMesh(Node* node, Mesh* mesh, Matrix4x4 transform)
-        {
-            throw new NotImplementedException();
-        }
-
-        protected override IDeviceBuffer CreateVertexBuffer() => mImportContext.CreateAnimatedVertexBuffer(mVertices);
-        protected override IDeviceBuffer CreateIndexBuffer() => mImportContext.CreateIndexBuffer(mIndices);
-
-        public override bool IsStatic => false;
-
-        private readonly List<AnimatedModelVertex> mVertices;
-        private readonly List<uint> mIndices;
     }
 }

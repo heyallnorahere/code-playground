@@ -19,11 +19,17 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         public List<MethodInfo> Dependents { get; set; }
     }
 
+    internal struct StructFieldInfo
+    {
+        public string TypeName { get; set; }
+        public int ArraySize { get; set; }
+    }
+
     internal struct StructDependencyInfo
     {
         public HashSet<Type> Dependencies { get; set; }
         public HashSet<Type> Dependents { get; set; }
-        public Dictionary<string, string> DefinedFields { get; set; }
+        public Dictionary<string, StructFieldInfo> DefinedFields { get; set; }
         public bool Define { get; set; }
     }
 

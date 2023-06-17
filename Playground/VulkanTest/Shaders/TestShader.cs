@@ -9,6 +9,25 @@ namespace VulkanTest.Shaders
     [PrimitiveShaderType("mat4")]
     public sealed class Matrix4x4<T> where T : unmanaged
     {
+        public Matrix4x4(T value)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Add)]
+        public static Matrix4x4<T> operator +(Matrix4x4<T> lhs, Matrix4x4<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Multiply)]
+        public static Matrix4x4<T> operator *(Matrix4x4<T> lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         [ShaderOperator(ShaderOperatorType.Multiply)]
         public static Vector4<T> operator *(Matrix4x4<T> lhs, Vector4<T> rhs)
@@ -57,6 +76,8 @@ namespace VulkanTest.Shaders
     [CompiledShader]
     public sealed class TestShader
     {
+        public const int MaxBones = 100;
+
         public struct VertexIn
         {
             [Layout(Location = 0)]
@@ -65,6 +86,12 @@ namespace VulkanTest.Shaders
             public Vector3<float> Normal;
             [Layout(Location = 2)]
             public Vector2<float> UV;
+            [Layout(Location = 3)]
+            public int BoneCount;
+            [Layout(Location = 4)]
+            public Vector4<int> BoneIDs;
+            [Layout(Location = 5)]
+            public Vector4<float> BoneWeights;
         }
 
         public struct VertexOut
@@ -93,9 +120,16 @@ namespace VulkanTest.Shaders
             public float Shininess, Opacity;
         }
 
+        public struct BoneTransformBufferData
+        {
+            [ArraySize(MaxBones)]
+            public Matrix4x4<float>[] BoneTransforms;
+        }
+
         public struct PushConstantData
         {
             public Matrix4x4<float> Model;
+            public int BoneTransformOffset;
         }
 
         [Layout(Set = 0, Binding = 0)]
@@ -103,6 +137,9 @@ namespace VulkanTest.Shaders
 
         [Layout(Set = 0, Binding = 1)]
         public static MaterialBufferData u_MaterialBuffer;
+
+        [Layout(Set = 0, Binding = 2)]
+        public static BoneTransformBufferData u_BoneTransformBuffer;
 
         [Layout(PushConstants = true)]
         public static PushConstantData u_PushConstants;
@@ -113,15 +150,28 @@ namespace VulkanTest.Shaders
         [ShaderEntrypoint(ShaderStage.Vertex)]
         public static VertexOut VertexMain(VertexIn input)
         {
+            var transform = u_PushConstants.Model;
+            if (input.BoneCount > 0)
+            {
+                var boneTransform = new Matrix4x4<float>(0f);
+                for (int i = 0; i < input.BoneCount; i++)
+                {
+                    int transformIndex = u_PushConstants.BoneTransformOffset + input.BoneIDs[i];
+                    boneTransform += u_BoneTransformBuffer.BoneTransforms[transformIndex] * input.BoneWeights[i];
+                }
+                
+                transform *= boneTransform;
+            }
+
             var vertexPosition = new Vector4<float>(input.Position, 1f);
-            var worldPosition = u_PushConstants.Model * vertexPosition;
+            var worldPosition = transform * vertexPosition;
 
             return new VertexOut
             {
                 Position = u_CameraBuffer.ViewProjection * worldPosition,
                 Data = new FragmentIn
                 {
-                    Normal = (new Matrix3x3<float>(u_PushConstants.Model).Inverse().Transpose() * input.Normal).Normalize(),
+                    Normal = (new Matrix3x3<float>(transform).Inverse().Transpose() * input.Normal).Normalize(),
                     UV = input.UV
                 },
             };

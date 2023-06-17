@@ -43,7 +43,8 @@ namespace CodePlayground.Graphics.Shaders
         Subtract,
         Multiply,
         Divide,
-        Invert
+        Invert,
+        Index
     }
 
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
@@ -97,5 +98,16 @@ namespace CodePlayground.Graphics.Shaders
     public sealed class OutputPositionAttribute : Attribute
     {
         // nothing - literally just a flag
+    }
+
+    [AttributeUsage(AttributeTargets.Field, AllowMultiple = false, Inherited = true)]
+    public sealed class ArraySizeAttribute : Attribute
+    {
+        public ArraySizeAttribute(int length)
+        {
+            Length = length;
+        }
+
+        public int Length { get; }
     }
 }

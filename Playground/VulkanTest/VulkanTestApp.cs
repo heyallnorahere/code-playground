@@ -21,6 +21,9 @@ namespace VulkanTest
         public Vector3 Position;
         public Vector3 Normal;
         public Vector2 UV;
+        public int BoneCount;
+        public unsafe fixed int BoneIDs[ModelImportContext.BoneLimitPerVertex];
+        public unsafe fixed float BoneWeights[ModelImportContext.BoneLimitPerVertex];
     }
 
     internal struct PipelineSpecification : IPipelineSpecification
@@ -31,7 +34,7 @@ namespace VulkanTest
         public bool DisableCulling { get; set; }
     }
 
-    internal struct UniformBufferData
+    internal struct CameraBufferData
     {
         public Matrix4x4 ViewProjection;
     }
@@ -39,6 +42,7 @@ namespace VulkanTest
     internal struct PushConstantData
     {
         public Matrix4x4 Model;
+        public int BoneTransformOffset;
     }
 
     internal struct QuadDirection
@@ -49,6 +53,8 @@ namespace VulkanTest
 
     internal sealed class ModelImportContext : IModelImportContext
     {
+        public const int BoneLimitPerVertex = 4;
+
         public ModelImportContext(IGraphicsContext context)
         {
             mContext = context;
@@ -61,6 +67,7 @@ namespace VulkanTest
         public bool ShouldCopyPostLoad => true;
         public bool FlipUVs => true;
         public bool LeftHanded => true;
+        public int MaxBonesPerVertex => BoneLimitPerVertex;
 
         [MemberNotNull(nameof(mCommandList))]
         private void BeginCommandList()
@@ -75,19 +82,30 @@ namespace VulkanTest
             mCommandList.Begin();
         }
 
-        public IDeviceBuffer CreateStaticVertexBuffer(IReadOnlyList<StaticModelVertex> vertices)
+        public unsafe IDeviceBuffer CreateVertexBuffer(IReadOnlyList<ModelVertex> vertices)
         {
             BeginCommandList();
 
             var bufferVertices = new Vertex[vertices.Count];
             for (int i = 0; i < vertices.Count; i++)
             {
-                bufferVertices[i] = new Vertex
+                var src = vertices[i];
+                var dst = new Vertex
                 {
-                    Position = vertices[i].Position,
-                    Normal = vertices[i].Normal,
-                    UV = vertices[i].UV
+                    Position = src.Position,
+                    Normal = src.Normal,
+                    UV = src.UV,
+                    BoneCount = src.Bones.Count
                 };
+
+                for (int j = 0; j < src.Bones.Count; j++)
+                {
+                    var bone = src.Bones[j];
+                    dst.BoneIDs[j] = bone.Index;
+                    dst.BoneWeights[j] = bone.Weight;
+                }
+
+                bufferVertices[i] = dst;
             }
 
             int bufferSize = vertices.Count * Marshal.SizeOf<Vertex>();
@@ -99,11 +117,6 @@ namespace VulkanTest
 
             mStagingBuffers.Add(stagingBuffer);
             return buffer;
-        }
-
-        public IDeviceBuffer CreateAnimatedVertexBuffer(IReadOnlyList<AnimatedModelVertex> vertices)
-        {
-            throw new NotImplementedException();
         }
 
         public IDeviceBuffer CreateIndexBuffer(IReadOnlyList<uint> indices)
@@ -273,7 +286,7 @@ namespace VulkanTest
             mShaderLibrary = new ShaderLibrary(this);
             mRenderer = context.CreateRenderer();
 
-            mModel = LoadModelResource("Models/sledge-hammer.fbx", new ModelImportContext(context));
+            mModel = LoadModelResource("Models/rigged-character.fbx", new ModelImportContext(context));
             if (mModel is null)
             {
                 throw new InvalidOperationException("Failed to load model!");
@@ -281,6 +294,7 @@ namespace VulkanTest
 
             mPipelines = new IPipeline[mModel.Materials.Count];
             string cameraBufferName = nameof(TestShader.u_CameraBuffer);
+            string boneTransformBufferName = nameof(TestShader.u_BoneTransformBuffer);
 
             for (int i = 0; i < mModel.Materials.Count; i++)
             {
@@ -295,16 +309,28 @@ namespace VulkanTest
 
                 if (mCameraBuffer is null)
                 {
-                    int uniformBufferSize = pipeline.GetBufferSize(cameraBufferName);
-                    if (uniformBufferSize < 0)
+                    int cameraBufferSize = pipeline.GetBufferSize(cameraBufferName);
+                    if (cameraBufferSize < 0)
                     {
                         throw new ArgumentException($"Failed to find buffer \"{cameraBufferName}\"");
                     }
 
-                    mCameraBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Uniform, uniformBufferSize);
+                    mCameraBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Uniform, cameraBufferSize);
+                }
+
+                if (mBoneTransformBuffer is null)
+                {
+                    int boneTransformBufferSize = pipeline.GetBufferSize(boneTransformBufferName);
+                    if (boneTransformBufferSize < 0)
+                    {
+                        throw new ArgumentException($"Failed to find buffer \"{boneTransformBufferName}\"");
+                    }
+
+                    mBoneTransformBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Uniform, boneTransformBufferSize);
                 }
 
                 pipeline.Bind(mCameraBuffer, cameraBufferName, 0);
+                pipeline.Bind(mBoneTransformBuffer, boneTransformBufferName, 0);
                 material.Bind(pipeline, nameof(TestShader.u_MaterialBuffer), textureType => $"u_{textureType}Map");
 
                 mPipelines[i] = pipeline;
@@ -326,6 +352,7 @@ namespace VulkanTest
             }
 
             mCameraBuffer?.Dispose();
+            mBoneTransformBuffer?.Dispose();
             mModel?.Dispose();
 
             mShaderLibrary?.Dispose();
@@ -400,7 +427,7 @@ namespace VulkanTest
         }
 
         [EventHandler(nameof(Update))]
-        private void OnUpdate(double delta)
+        private unsafe void OnUpdate(double delta)
         {
             mTime += (float)delta;
 
@@ -418,10 +445,38 @@ namespace VulkanTest
             var projection = Perspective(MathF.PI / 4f, aspectRatio, 0.1f, 100f);
             var view = LookAt(new Vector3(x, radius, z), Vector3.Zero, Vector3.UnitY);
 
-            mCameraBuffer!.MapStructure(mPipelines![0], nameof(TestShader.u_CameraBuffer), new UniformBufferData
+            mCameraBuffer!.MapStructure(mPipelines![0], nameof(TestShader.u_CameraBuffer), new CameraBufferData
             {
                 ViewProjection = Matrix4x4.Transpose(projection * view)
             });
+
+            // todo: compute via animationcontroller or something
+            var skeleton = mModel?.Skeleton;
+            if (skeleton is not null)
+            {
+                if (skeleton.BoneCount > TestShader.MaxBones)
+                {
+                    throw new InvalidOperationException("Skeleton has more bones than is supported!");
+                }
+
+                var transforms = new List<Matrix4x4>();
+                var result = new Matrix4x4[skeleton.BoneCount];
+
+                for (int i = 0; i < skeleton.BoneCount; i++)
+                {
+                    int parent = skeleton.GetParent(i);
+                    var parentTransform = parent < 0 ? skeleton.GetParentTransform(i) : transforms[parent];
+
+                    var nodeTransform = skeleton.GetTransform(i);
+                    var globalTransform = parentTransform * nodeTransform;
+                    var boneTransform = globalTransform * skeleton.GetOffsetMatrix(i);
+
+                    transforms.Add(globalTransform);
+                    result[i] = Matrix4x4.Transpose(boneTransform);
+                }
+
+                mBoneTransformBuffer!.CopyFromCPU(result);
+            }
         }
 
         [EventHandler(nameof(Render))]
@@ -438,7 +493,7 @@ namespace VulkanTest
             mModel!.VertexBuffer.BindVertices(renderInfo.CommandList, 0);
             mModel!.IndexBuffer.BindIndices(renderInfo.CommandList, DeviceBufferIndexType.UInt32);
 
-            var model = Matrix4x4.CreateScale(0.1f);
+            var model = Matrix4x4.CreateScale(0.001f);
             var submeshes = mModel!.Submeshes;
             for (int i = 0; i < submeshes.Count; i++)
             {
@@ -446,11 +501,12 @@ namespace VulkanTest
                 var pipeline = mPipelines![submesh.MaterialIndex];
 
                 pipeline.Bind(renderInfo.CommandList, renderInfo.CurrentFrame);
-                pipeline!.PushConstants(renderInfo.CommandList, mapped =>
+                pipeline.PushConstants(renderInfo.CommandList, mapped =>
                 {
-                    pipeline!.MapStructure(mapped, nameof(TestShader.u_PushConstants), new PushConstantData
+                    pipeline.MapStructure(mapped, nameof(TestShader.u_PushConstants), new PushConstantData
                     {
-                        Model = Matrix4x4.Transpose(model * submesh.Transform)
+                        Model = Matrix4x4.Transpose(model * submesh.Transform),
+                        BoneTransformOffset = 0
                     });
                 });
 
@@ -462,7 +518,7 @@ namespace VulkanTest
 
         private ShaderLibrary? mShaderLibrary;
         private IPipeline[]? mPipelines;
-        private IDeviceBuffer? mCameraBuffer;
+        private IDeviceBuffer? mCameraBuffer, mBoneTransformBuffer;
         private Model? mModel;
         private IRenderer? mRenderer;
         private float mTime;

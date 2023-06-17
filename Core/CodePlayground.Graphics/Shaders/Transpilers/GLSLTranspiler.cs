@@ -147,7 +147,10 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         throw new InvalidOperationException("Cannot use void as a value!");
                     }
 
-                    primitiveName.Insert(0, sPrimitiveTypeNames[argument][0..1]);
+                    if (argument != typeof(float))
+                    {
+                        primitiveName = primitiveName.Insert(0, sPrimitiveTypeNames[argument][0..1]);
+                    }
                 }
 
                 mDefinedTypeNames.Add(type, primitiveName);
@@ -272,7 +275,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             {
                 Dependencies = new HashSet<Type>(),
                 Dependents = new HashSet<Type>(),
-                DefinedFields = new Dictionary<string, string>(),
+                DefinedFields = new Dictionary<string, StructFieldInfo>(),
                 Define = defineStruct
             };
 
@@ -284,9 +287,38 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             {
                 var fieldName = GetFieldName(field, shaderType);
                 var fieldType = field.FieldType;
-                var fieldTypeName = GetTypeName(fieldType, shaderType, true);
 
-                dependencyInfo.DefinedFields.Add(fieldName, fieldTypeName);
+                Type elementType;
+                int arraySize;
+                if (fieldType.IsArray)
+                {
+                    if (!fieldType.HasElementType)
+                    {
+                        throw new InvalidOperationException("Must define a type for struct arrays!");
+                    }
+
+                    var attribute = field.GetCustomAttribute<ArraySizeAttribute>();
+                    if (attribute is null)
+                    {
+                        throw new InvalidOperationException("Arrays defined in structs must have a set size!");
+                    }
+
+                    elementType = fieldType.GetElementType() ?? throw new InvalidOperationException("Invalid array type!");
+                    arraySize = attribute.Length;
+                }
+                else
+                {
+                    elementType = fieldType;
+                    arraySize = 0;
+                }
+
+                var fieldTypeName = GetTypeName(elementType, shaderType, true);
+                dependencyInfo.DefinedFields.Add(fieldName, new StructFieldInfo
+                {
+                    TypeName = fieldTypeName,
+                    ArraySize = arraySize
+                });
+
                 if (fieldType != type && fieldType.IsValueType && !fieldType.IsPrimitive)
                 {
                     dependencyInfo.Dependencies.Add(fieldType);
@@ -307,6 +339,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 ShaderOperatorType.Multiply => $"({evaluationStack.Pop()} * {rhs})",
                 ShaderOperatorType.Divide => $"({evaluationStack.Pop()} / {rhs})",
                 ShaderOperatorType.Invert => $"(-{rhs})",
+                ShaderOperatorType.Index => $"{evaluationStack.Pop()}[{rhs}]",
                 _ => throw new ArgumentException("Invalid shader operator!")
             });
         }
@@ -461,7 +494,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         {
                             var existingExpressions = expressionString;
                             expressionString = invokedObject;
-                            
+
                             if (existingExpressions.Length > 0)
                             {
                                 expressionString += $", {existingExpressions}";
@@ -1216,6 +1249,17 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             return functionOrder;
         }
 
+        private static string GetFieldDefinition(string fieldName, StructFieldInfo fieldInfo)
+        {
+            string definition = $"{fieldInfo.TypeName} {fieldName}";
+            if (fieldInfo.ArraySize > 0)
+            {
+                definition += $"[{fieldInfo.ArraySize}]";
+            }
+
+            return $"{definition};";
+        }
+
         protected override StageOutput TranspileStage(Type type, MethodInfo entrypoint, ShaderStage stage)
         {
             ProcessMethod(type, entrypoint, true);
@@ -1237,8 +1281,9 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
                 foreach (var fieldName in info.DefinedFields.Keys)
                 {
-                    var fieldType = info.DefinedFields[fieldName];
-                    builder.AppendLine($"{fieldType} {fieldName};");
+                    var fieldInfo = info.DefinedFields[fieldName];
+                    var definition = GetFieldDefinition(fieldName, fieldInfo);
+                    builder.AppendLine(definition);
                 }
 
                 builder.AppendLine("};\n");
@@ -1271,8 +1316,9 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     var info = mStructDependencies[dataType];
                     foreach (var currentFieldName in info.DefinedFields.Keys)
                     {
-                        var fieldType = info.DefinedFields[currentFieldName];
-                        builder.AppendLine($"{fieldType} {currentFieldName};");
+                        var fieldInfo = info.DefinedFields[currentFieldName];
+                        var definition = GetFieldDefinition(currentFieldName, fieldInfo);
+                        builder.AppendLine(definition);
                     }
 
                     builder.Append("} ");

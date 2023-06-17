@@ -31,7 +31,7 @@ namespace CodePlayground.Graphics
 
     public sealed class Material : IDisposable
     {
-        public Material(ITexture whiteTexture, IGraphicsContext context)
+        public Material(string name, ITexture whiteTexture, IGraphicsContext context)
         {
             PipelineSpecification = new MaterialPipelineSpecification();
 
@@ -39,6 +39,7 @@ namespace CodePlayground.Graphics
             mTextures = new Dictionary<MaterialTexture, ITexture>();
             mFields = new Dictionary<string, byte[]>();
 
+            mName = name;
             mWhiteTexture = whiteTexture;
             mContext = context;
 
@@ -135,12 +136,14 @@ namespace CodePlayground.Graphics
             }
         }
 
+        public string Name => mName;
         public MaterialPipelineSpecification PipelineSpecification { get; }
 
         private readonly Dictionary<ulong, IDeviceBuffer> mUniformBuffers;
         private readonly Dictionary<MaterialTexture, ITexture> mTextures;
         private readonly Dictionary<string, byte[]> mFields;
 
+        private readonly string mName;
         private readonly ITexture mWhiteTexture;
         private readonly IGraphicsContext mContext;
 

@@ -10,48 +10,48 @@ namespace CodePlayground.Graphics
 {
     public static class GraphicsUtilities
     {
-        public static unsafe void CopyFromCPU<T>(this IDeviceBuffer buffer, T[] data) where T : unmanaged
+        public static unsafe void CopyFromCPU<T>(this IDeviceBuffer buffer, T[] data, int offset = 0) where T : unmanaged
         {
             fixed (T* ptr = data)
             {
-                buffer.CopyFromCPU(ptr, data.Length * sizeof(T));
+                buffer.CopyFromCPU(ptr, data.Length * sizeof(T), offset);
             }
         }
 
-        public static unsafe void CopyFromCPU<T>(this IDeviceBuffer buffer, ReadOnlySpan<T> data) where T : unmanaged
+        public static unsafe void CopyFromCPU<T>(this IDeviceBuffer buffer, ReadOnlySpan<T> data, int offset = 0) where T : unmanaged
         {
             fixed (T* ptr = data)
             {
-                buffer.CopyFromCPU(ptr, data.Length * sizeof(T));
+                buffer.CopyFromCPU(ptr, data.Length * sizeof(T), offset);
             }
         }
 
-        public static unsafe void CopyFromCPU<T>(this IDeviceBuffer buffer, T data) where T : unmanaged
+        public static unsafe void CopyFromCPU<T>(this IDeviceBuffer buffer, T data, int offset = 0) where T : unmanaged
         {
-            buffer.CopyFromCPU(&data, sizeof(T));
+            buffer.CopyFromCPU(&data, sizeof(T), offset);
         }
 
-        public static unsafe void CopyToCPU<T>(this IDeviceBuffer buffer, T[] data) where T : unmanaged
-        {
-            fixed (T* ptr = data)
-            {
-                buffer.CopyToCPU(ptr, data.Length * sizeof(T));
-            }
-        }
-
-        public static unsafe void CopyToCPU<T>(this IDeviceBuffer buffer, ReadOnlySpan<T> data) where T : unmanaged
+        public static unsafe void CopyToCPU<T>(this IDeviceBuffer buffer, T[] data, int offset = 0) where T : unmanaged
         {
             fixed (T* ptr = data)
             {
-                buffer.CopyToCPU(ptr, data.Length * sizeof(T));
+                buffer.CopyToCPU(ptr, data.Length * sizeof(T), offset);
             }
         }
 
-        public static unsafe void CopyToCPU<T>(this IDeviceBuffer buffer, out T data) where T : unmanaged
+        public static unsafe void CopyToCPU<T>(this IDeviceBuffer buffer, ReadOnlySpan<T> data, int offset = 0) where T : unmanaged
+        {
+            fixed (T* ptr = data)
+            {
+                buffer.CopyToCPU(ptr, data.Length * sizeof(T), offset);
+            }
+        }
+
+        public static unsafe void CopyToCPU<T>(this IDeviceBuffer buffer, out T data, int offset = 0) where T : unmanaged
         {
             fixed (T* ptr = &data)
             {
-                buffer.CopyToCPU(ptr, sizeof(T));
+                buffer.CopyToCPU(ptr, sizeof(T), offset);
             }
         }
 
