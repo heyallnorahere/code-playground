@@ -16,6 +16,7 @@ namespace CodePlayground.Graphics
 
     internal struct ProcessedBone
     {
+        public int InitialIndex { get; set; }
         public int Parent { get; set; }
         public string Name { get; set; }
         public unsafe Node* Node { get; set; }
@@ -205,15 +206,14 @@ namespace CodePlayground.Graphics
         private unsafe Node* FindNode(string name, Node* currentNode = null)
         {
             var node = currentNode is null ? mScene->MRootNode : currentNode;
+            if (node->MName == name)
+            {
+                return node;
+            }
+
             for (uint i = 0; i < node->MNumChildren; i++)
             {
-                var child = node->MChildren[i];
-                if (child->MName.ToString() == name)
-                {
-                    return child;
-                }
-
-                var foundNode = FindNode(name, child);
+                var foundNode = FindNode(name, node->MChildren[i]);
                 if (foundNode is not null)
                 {
                     return foundNode;
@@ -252,7 +252,7 @@ namespace CodePlayground.Graphics
                 var bone = mesh->MBones[i];
                 var name = bone->MName.ToString();
 
-                var node = FindNode(name);
+                var node = FindNode(name, bone->MArmature);
                 if (node is null)
                 {
                     throw new InvalidOperationException($"Failed to find node for bone: {name}");
@@ -261,6 +261,7 @@ namespace CodePlayground.Graphics
                 int index = processedBones.Count;
                 processedBones.Add(new ProcessedBone
                 {
+                    InitialIndex = index,
                     Parent = -1,
                     Name = name,
                     Node = node,
@@ -283,6 +284,13 @@ namespace CodePlayground.Graphics
             }
 
             processedBones.Sort((a, b) => a.Parent.CompareTo(b.Parent));
+            var idMap = new Dictionary<int, int>();
+            for (int i = 0; i < processedBones.Count; i++)
+            {
+                var bone = processedBones[i];
+                idMap.Add(bone.InitialIndex, i);
+            }
+
             int boneOffset = (mSkeleton ??= new Skeleton()).BoneCount;
             foreach (var bone in processedBones)
             {
@@ -291,7 +299,7 @@ namespace CodePlayground.Graphics
 
                 if (parent >= 0)
                 {
-                    parent += boneOffset;
+                    parent = idMap[parent] + boneOffset;
                 }
                 else
                 {

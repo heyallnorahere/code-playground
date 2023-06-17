@@ -439,11 +439,12 @@ namespace VulkanTest
 
             const float radius = 5f;
             float x = -MathF.Cos(mTime) * radius;
+            float y = MathF.Pow(radius, 1.75f);
             float z = MathF.Sin(mTime) * radius;
 
             float aspectRatio = swapchain.Width / (float)swapchain.Height;
             var projection = Perspective(MathF.PI / 4f, aspectRatio, 0.1f, 100f);
-            var view = LookAt(new Vector3(x, radius, z), Vector3.Zero, Vector3.UnitY);
+            var view = LookAt(new Vector3(x, y, z), Vector3.UnitY * (y - radius), Vector3.UnitY);
 
             mCameraBuffer!.MapStructure(mPipelines![0], nameof(TestShader.u_CameraBuffer), new CameraBufferData
             {
@@ -459,19 +460,27 @@ namespace VulkanTest
                     throw new InvalidOperationException("Skeleton has more bones than is supported!");
                 }
 
-                var transforms = new List<Matrix4x4>();
+                var globalTransforms = new List<Matrix4x4>();
                 var result = new Matrix4x4[skeleton.BoneCount];
 
                 for (int i = 0; i < skeleton.BoneCount; i++)
                 {
                     int parent = skeleton.GetParent(i);
-                    var parentTransform = parent < 0 ? skeleton.GetParentTransform(i) : transforms[parent];
+                    var parentTransform = parent < 0 ? skeleton.GetParentTransform(i) : globalTransforms[parent];
 
                     var nodeTransform = skeleton.GetTransform(i);
                     var globalTransform = parentTransform * nodeTransform;
-                    var boneTransform = globalTransform * skeleton.GetOffsetMatrix(i);
 
-                    transforms.Add(globalTransform);
+                    if (skeleton.GetName(i) == "Head")
+                    {
+                        float rotation = (MathF.Sin(mTime * 2f) + 1f) * MathF.PI / 8f;
+                        globalTransform *= Matrix4x4.CreateRotationX(-rotation);
+                    }
+
+                    var offsetMatrix = skeleton.GetOffsetMatrix(i);
+                    var boneTransform = globalTransform * offsetMatrix;
+
+                    globalTransforms.Add(globalTransform);
                     result[i] = Matrix4x4.Transpose(boneTransform);
                 }
 
@@ -493,7 +502,7 @@ namespace VulkanTest
             mModel!.VertexBuffer.BindVertices(renderInfo.CommandList, 0);
             mModel!.IndexBuffer.BindIndices(renderInfo.CommandList, DeviceBufferIndexType.UInt32);
 
-            var model = Matrix4x4.CreateScale(0.001f);
+            var model = Matrix4x4.CreateScale(0.01f);
             var submeshes = mModel!.Submeshes;
             for (int i = 0; i < submeshes.Count; i++)
             {
