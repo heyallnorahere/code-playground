@@ -239,6 +239,32 @@ namespace VulkanTest
         private readonly IGraphicsContext mContext;
     }
 
+    internal struct Transform
+    {
+        public Transform()
+        {
+            Translation = new Vector3(0f);
+            Rotation = new Vector3(0f);
+            Scale = new Vector3(1f);
+        }
+
+        public Vector3 Translation;
+        public Vector3 Rotation;
+        public Vector3 Scale;
+
+        public static implicit operator Matrix4x4(Transform transform)
+        {
+            var rotation = transform.Rotation * MathF.PI / 180f;
+            var rotationMatrix = Matrix4x4.CreateRotationX(rotation.X) *
+                                 Matrix4x4.CreateRotationY(rotation.Y) *
+                                 Matrix4x4.CreateRotationZ(rotation.Z);
+
+            return Matrix4x4.CreateTranslation(transform.Translation) *
+                   rotationMatrix *
+                   Matrix4x4.CreateScale(transform.Scale);
+        }
+    }
+
     [ApplicationTitle("Vulkan Test")]
     [ApplicationGraphicsAPI(AppGraphicsAPI.Vulkan)]
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
@@ -248,6 +274,9 @@ namespace VulkanTest
         public VulkanTestApp()
         {
             Utilities.BindHandlers(this, this);
+
+            mBoneTransformations = null;
+            mSelectedBone = -1;
         }
 
         public static Stream? GetResourceStream(string path)
@@ -494,22 +523,57 @@ namespace VulkanTest
                     throw new InvalidOperationException("Skeleton has more bones than is supported!");
                 }
 
+                if (mBoneTransformations is null)
+                {
+                    mBoneTransformations = new Transform[skeleton.BoneCount];
+                    Array.Fill(mBoneTransformations, new Transform());
+                }
+
+                ImGui.Begin("Skeleton");
+                if (ImGui.BeginCombo("Bone", mSelectedBone < 0 ? "--None--" : skeleton.GetName(mSelectedBone)))
+                {
+                    for (int i = 0; i < skeleton.BoneCount; i++)
+                    {
+                        bool isSelected = mSelectedBone == i;
+
+                        var name = skeleton.GetName(i);
+                        if (ImGui.Selectable(name, isSelected))
+                        {
+                            mSelectedBone = i;
+                        }
+
+                        if (isSelected)
+                        {
+                            ImGui.SetItemDefaultFocus();
+                        }
+                    }
+
+                    ImGui.EndCombo();
+                }
+
                 var globalTransforms = new List<Matrix4x4>();
                 var result = new Matrix4x4[skeleton.BoneCount];
-
                 for (int i = 0; i < skeleton.BoneCount; i++)
                 {
+                    var manualTransform = mBoneTransformations[i];
+                    if (mSelectedBone == i)
+                    {
+                        bool update = false;
+                        update |= ImGui.DragFloat3("Translation", ref manualTransform.Translation);
+                        update |= ImGui.DragFloat3("Rotation", ref manualTransform.Rotation);
+                        update |= ImGui.DragFloat3("Scale", ref manualTransform.Scale);
+
+                        if (update)
+                        {
+                            mBoneTransformations[i] = manualTransform;
+                        }
+                    }
+
                     int parent = skeleton.GetParent(i);
                     var parentTransform = parent < 0 ? skeleton.GetParentTransform(i) : globalTransforms[parent];
 
-                    var nodeTransform = skeleton.GetTransform(i);
+                    var nodeTransform = skeleton.GetTransform(i) * manualTransform;
                     var globalTransform = parentTransform * nodeTransform;
-
-                    if (skeleton.GetName(i) == "Head")
-                    {
-                        float rotation = (MathF.Sin(mTime * 2f) + 1f) * MathF.PI / 8f;
-                        globalTransform *= Matrix4x4.CreateRotationX(-rotation);
-                    }
 
                     var offsetMatrix = skeleton.GetOffsetMatrix(i);
                     var boneTransform = globalTransform * offsetMatrix;
@@ -518,11 +582,9 @@ namespace VulkanTest
                     result[i] = Matrix4x4.Transpose(boneTransform);
                 }
 
+                ImGui.End();
                 mBoneTransformBuffer!.CopyFromCPU(result);
             }
-
-            // todo: some kind of control
-            ImGui.ShowDemoWindow();
         }
 
         [EventHandler(nameof(Render))]
@@ -568,6 +630,8 @@ namespace VulkanTest
         private IPipeline[]? mPipelines;
         private IDeviceBuffer? mCameraBuffer, mBoneTransformBuffer;
         private Model? mModel;
+        private Transform[]? mBoneTransformations;
+        private int mSelectedBone;
         private IRenderer? mRenderer;
         private float mTime;
     }

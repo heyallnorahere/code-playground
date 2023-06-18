@@ -177,7 +177,7 @@ namespace CodePlayground.Graphics
             mKeyEvents = new List<ImGuiKeyEvent>();
             mTypedCharacters = new List<char>();
             mNewMousePosition = null;
-            mWheelDelta = mWheelPosition = 0f;
+            mWheelDelta = new Vector2(0f);
             mMouseButtonValues = new Dictionary<int, bool>();
             RegisterInputCallbacks();
 
@@ -507,7 +507,7 @@ namespace CodePlayground.Graphics
         private void UpdateInput()
         {
             var io = ImGui.GetIO();
-            io.AddMouseWheelEvent(0f, mWheelDelta);
+            io.AddMouseWheelEvent(mWheelDelta.X, mWheelDelta.Y);
 
             if (mNewMousePosition is not null)
             {
@@ -556,8 +556,7 @@ namespace CodePlayground.Graphics
             mKeyEvents.Clear();
             mTypedCharacters.Clear();
             mNewMousePosition = null;
-            mWheelPosition += mWheelDelta;
-            mWheelDelta = 0f;
+            mWheelDelta = new Vector2(0f);
             mMouseButtonValues.Clear();
         }
 
@@ -568,7 +567,7 @@ namespace CodePlayground.Graphics
                 mouse.MouseMove += (mouse, delta) => mNewMousePosition = mouse.Position;
                 mouse.MouseDown += (mouse, button) => mMouseButtonValues[(int)button] = true;
                 mouse.MouseUp += (mouse, button) => mMouseButtonValues[(int)button] = false;
-                mouse.Scroll += (mouse, wheel) => mWheelDelta = wheel.Y - mWheelPosition;
+                mouse.Scroll += (mouse, wheel) => mWheelDelta += new Vector2(wheel.X, wheel.Y);
             }
 
             foreach (var keyboard in mInputContext.Keyboards)
@@ -606,7 +605,7 @@ namespace CodePlayground.Graphics
         private readonly List<ImGuiKeyEvent> mKeyEvents;
         private readonly List<char> mTypedCharacters;
         private Vector2? mNewMousePosition;
-        private float mWheelDelta, mWheelPosition;
+        private Vector2 mWheelDelta;
         private readonly Dictionary<int, bool> mMouseButtonValues;
     }
 }
