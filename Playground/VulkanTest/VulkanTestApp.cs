@@ -266,7 +266,6 @@ namespace VulkanTest
 
     [ApplicationTitle("Vulkan Test")]
     [ApplicationGraphicsAPI(AppGraphicsAPI.Vulkan)]
-    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
     public class VulkanTestApp : GraphicsApplication
     {
         public VulkanTestApp()
@@ -525,7 +524,7 @@ namespace VulkanTest
             }
 
             var clearColor = new Vector4(0f, 0f, 0f, 1f);
-            renderInfo.RenderTarget.BeginRender(renderInfo.CommandList, renderInfo.Framebuffer, clearColor, true);
+            renderInfo.RenderTarget.BeginRender(renderInfo.CommandList, renderInfo.Framebuffer, clearColor);
 
             mModel!.VertexBuffer.BindVertices(renderInfo.CommandList, 0);
             mModel!.IndexBuffer.BindIndices(renderInfo.CommandList, DeviceBufferIndexType.UInt32);
@@ -537,7 +536,7 @@ namespace VulkanTest
                 var submesh = submeshes[i];
                 var pipeline = mPipelines![submesh.MaterialIndex];
 
-                pipeline.Bind(renderInfo.CommandList, renderInfo.CurrentFrame);
+                pipeline.Bind(renderInfo.CommandList, renderInfo.CurrentImage);
                 pipeline.PushConstants(renderInfo.CommandList, mapped =>
                 {
                     pipeline.MapStructure(mapped, nameof(TestShader.u_PushConstants), new PushConstantData
@@ -550,7 +549,7 @@ namespace VulkanTest
                 mRenderer!.RenderIndexed(renderInfo.CommandList, submesh.IndexOffset, submesh.IndexCount);
             }
 
-            mImGuiController!.Render(renderInfo.CommandList, mRenderer!, renderInfo.CurrentFrame);
+            mImGuiController!.Render(renderInfo.CommandList, mRenderer!, renderInfo.CurrentImage);
             renderInfo.RenderTarget.EndRender(renderInfo.CommandList);
         }
 

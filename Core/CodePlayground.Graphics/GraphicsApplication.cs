@@ -61,7 +61,7 @@ namespace CodePlayground.Graphics
         public ICommandList? CommandList { get; set; }
         public IRenderTarget? RenderTarget { get; set; }
         public IFramebuffer? Framebuffer { get; set; }
-        public int CurrentFrame { get; set; }
+        public int CurrentImage { get; set; }
     }
 
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
@@ -202,7 +202,7 @@ namespace CodePlayground.Graphics
                     CommandList = null,
                     RenderTarget = null,
                     Framebuffer = null,
-                    CurrentFrame = -1
+                    CurrentImage = -1
                 });
             }
             else
@@ -222,7 +222,7 @@ namespace CodePlayground.Graphics
                     CommandList = commandList,
                     RenderTarget = swapchain.RenderTarget,
                     Framebuffer = swapchain.CurrentFramebuffer,
-                    CurrentFrame = swapchain.CurrentFrame
+                    CurrentImage = swapchain.CurrentFrame
                 });
 
                 commandList.End();

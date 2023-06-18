@@ -1,0 +1,10 @@
+{
+    "profiles": {
+        "Ragdoll": {
+            "commandName": "Executable",
+            "executablePath": "$(TargetDir)\\CodePlayground.exe",
+            "commandLineArgs": "$(TargetPath)",
+            "workingDirectory": "$(TargetDir)"
+        }
+    }
+}

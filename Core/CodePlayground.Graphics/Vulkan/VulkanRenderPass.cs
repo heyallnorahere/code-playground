@@ -164,17 +164,17 @@ namespace CodePlayground.Graphics.Vulkan
             api.DestroyRenderPass(mDevice.Device, mRenderPass, null);
         }
 
-        void IRenderTarget.BeginRender(ICommandList commandList, IFramebuffer framebuffer, Vector4 clearColor, bool flipViewport)
+        void IRenderTarget.BeginRender(ICommandList commandList, IFramebuffer framebuffer, Vector4 clearColor)
         {
             if (commandList is not VulkanCommandBuffer || framebuffer is not VulkanFramebuffer)
             {
                 throw new ArgumentException("Must pass Vulkan objects!");
             }
 
-            BeginRender((VulkanCommandBuffer)commandList, (VulkanFramebuffer)framebuffer, clearColor, flipViewport);
+            BeginRender((VulkanCommandBuffer)commandList, (VulkanFramebuffer)framebuffer, clearColor, true);
         }
 
-        public unsafe void BeginRender(VulkanCommandBuffer commandBuffer, VulkanFramebuffer framebuffer, Vector4 clearColor, bool flipViewport = false)
+        public unsafe void BeginRender(VulkanCommandBuffer commandBuffer, VulkanFramebuffer framebuffer, Vector4 clearColor, bool flipViewport = true)
         {
             var clearValues = new ClearValue[mAttachmentTypes.Count];
             for (int i = 0; i < clearValues.Length; i++)

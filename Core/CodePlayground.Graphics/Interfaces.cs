@@ -304,7 +304,7 @@ namespace CodePlayground.Graphics
     {
         public IReadOnlyList<AttachmentType> AttachmentTypes { get; }
 
-        public void BeginRender(ICommandList commandList, IFramebuffer framebuffer, Vector4 clearColor, bool flipViewport = false);
+        public void BeginRender(ICommandList commandList, IFramebuffer framebuffer, Vector4 clearColor);
         public void EndRender(ICommandList commandList);
     }
 
