@@ -48,13 +48,7 @@ namespace CodePlayground.Graphics
         {
             if (application is GraphicsApplication graphicsApp)
             {
-                graphicsApp.mAPI = mAPI switch
-                {
-                    AppGraphicsAPI.OpenGL => GraphicsAPI.Default,
-                    AppGraphicsAPI.Vulkan => GraphicsAPI.DefaultVulkan,
-                    AppGraphicsAPI.Other => GraphicsAPI.None,
-                    _ => throw new ArgumentException("Invalid graphics API!")
-                };
+                graphicsApp.mAPI = mAPI;
             }
         }
 
@@ -83,7 +77,7 @@ namespace CodePlayground.Graphics
 
             mExitCode = 0;
             mIsRunning = false;
-            mAPI = GraphicsAPI.Default;
+            mAPI = AppGraphicsAPI.Vulkan;
             mInitialSize = new Vector2D<int>(800, 600);
 
             mWindow = null;
@@ -119,7 +113,12 @@ namespace CodePlayground.Graphics
             {
                 Size = mInitialSize,
                 Title = Title,
-                API = mAPI
+                API = mAPI switch
+                {
+                    AppGraphicsAPI.OpenGL => GraphicsAPI.Default,
+                    AppGraphicsAPI.Vulkan => GraphicsAPI.DefaultVulkan,
+                    _ => GraphicsAPI.None
+                }
             };
 
             mWindow = Window.Create(mOptions.Value);
@@ -231,6 +230,16 @@ namespace CodePlayground.Graphics
             }
         }
 
+        public IGraphicsContext CreateGraphicsContext()
+        {
+            return mAPI switch
+            {
+                AppGraphicsAPI.Vulkan => CreateGraphicsContext<VulkanContext>(),
+                AppGraphicsAPI.Other => throw new InvalidOperationException(),
+                _ => throw new NotImplementedException()
+            };
+        }
+
         protected virtual void OnContextCreation(IGraphicsContext context) { }
         public T CreateGraphicsContext<T>(params object[] args) where T : IGraphicsContext
         {
@@ -265,7 +274,7 @@ namespace CodePlayground.Graphics
 
         private int mExitCode;
         private bool mIsRunning;
-        internal GraphicsAPI mAPI;
+        internal AppGraphicsAPI mAPI;
         internal Vector2D<int> mInitialSize;
 
         private IWindow? mWindow;

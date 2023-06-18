@@ -160,6 +160,12 @@ namespace CodePlayground.Graphics
         CounterClockwise
     }
 
+    public enum MinimumDepth
+    {
+        Zero,
+        NegativeOne
+    }
+
     public struct DeviceImageInfo
     {
         public Size Size { get; set; }
@@ -233,6 +239,7 @@ namespace CodePlayground.Graphics
 
         public bool FlipUVs { get; }
         public bool LeftHanded { get; }
+        public MinimumDepth MinDepth { get; }
 
         public bool IsApplicable(WindowOptions options);
         public void Initialize(IWindow window, GraphicsApplication application);

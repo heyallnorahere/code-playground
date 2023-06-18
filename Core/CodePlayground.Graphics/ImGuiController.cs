@@ -499,20 +499,11 @@ namespace CodePlayground.Graphics
             io.DeltaTime = (float)delta;
         }
 
-        // https://github.com/g-truc/glm/blob/efec5db081e3aad807d0731e172ac597f6a39447/glm/ext/matrix_clip_space.inl#L16
-        // left-handed, 0-1 depth
-        // hardcoded for now
-        private static Matrix4x4 Orthographic(float left, float right, float bottom, float top, float nearPlane, float farPlane)
-        {
-            return new Matrix4x4(2f / (right - left), 0f, 0f, -(right + left) / (right - left),
-                                 0f, 2f / (top - bottom), 0f, -(top + bottom) / (top - bottom),
-                                 0f, 0f, 1f / (farPlane - nearPlane), -nearPlane / (farPlane - nearPlane),
-                                 0f, 0f, 0f, 1f);
-        }
-
         private void UpdateProjectionBuffer()
         {
-            var projection = Orthographic(0f, mWindowWidth, mWindowHeight, 0f, -1f, 1f);
+            var math = new MatrixMath(mGraphicsContext);
+            var projection = math.Orthographic(0f, mWindowWidth, mWindowHeight, 0f, -1f, 1f);
+
             mProjectionBuffer.CopyFromCPU(Matrix4x4.Transpose(projection));
         }
 
