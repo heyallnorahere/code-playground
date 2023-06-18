@@ -7,6 +7,7 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -106,6 +107,9 @@ namespace CodePlayground.Graphics
         public bool Down { get; set; }
     }
 
+    internal delegate string GetClipboardTextFn(nint userData);
+    internal delegate void SetClipboardTextFn(nint userData, string text);
+
     public sealed class ImGuiController : IDisposable
     {
         private static bool sImGuiInitialized;
@@ -129,6 +133,21 @@ namespace CodePlayground.Graphics
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
             io.ConfigFlags |= ImGuiConfigFlags.DockingEnable | ImGuiConfigFlags.NavEnableKeyboard;
             io.Fonts.Flags |= ImFontAtlasFlags.NoBakedLines;
+
+            // todo: clean up
+            {
+                GetClipboardTextFn getClipboardText = GetClipboardText;
+                SetClipboardTextFn setClipboardText = SetClipboardText;
+
+                mCallbackHandles = new List<GCHandle>
+                {
+                    GCHandle.Alloc(getClipboardText),
+                    GCHandle.Alloc(setClipboardText)
+                };
+
+                io.GetClipboardTextFn = Marshal.GetFunctionPointerForDelegate(setClipboardText);
+                io.SetClipboardTextFn = Marshal.GetFunctionPointerForDelegate(setClipboardText);
+            }
 
             mGraphicsContext = graphicsContext;
             mInputContext = inputContext;
@@ -214,7 +233,30 @@ namespace CodePlayground.Graphics
                 mWindow.FramebufferResize -= OnResize;
             }
 
+            foreach (var handle in mCallbackHandles)
+            {
+                handle.Free();
+            }
+
             sImGuiInitialized = false;
+        }
+
+        [return: MarshalAs(UnmanagedType.LPStr)]
+        private string GetClipboardText(nint userData)
+        {
+            var keyboards = mInputContext.Keyboards;
+            return keyboards.FirstOrDefault()?.ClipboardText ?? string.Empty;
+        }
+
+        private void SetClipboardText(nint userData, [MarshalAs(UnmanagedType.LPStr)] string text)
+        {
+            var keyboards = mInputContext.Keyboards;
+            var keyboard = keyboards.FirstOrDefault();
+
+            if (keyboard is not null)
+            {
+                keyboard.ClipboardText = text;
+            }
         }
 
         private void OnResize(Vector2D<int> newSize)
@@ -557,6 +599,7 @@ namespace CodePlayground.Graphics
         private readonly IDeviceBuffer mProjectionBuffer;
         private ITexture? mFontAtlas;
 
+        private readonly List<GCHandle> mCallbackHandles;
         private bool mDisposed, mFrameStarted;
         private int mWindowWidth, mWindowHeight;
 
