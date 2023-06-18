@@ -109,6 +109,8 @@ namespace CodePlayground.Graphics
 
     internal delegate string GetClipboardTextFn(nint userData);
     internal delegate void SetClipboardTextFn(nint userData, string text);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    internal delegate void ImDrawCallback(nint parentList, nint cmd);
 
     public sealed class ImGuiController : IDisposable
     {
@@ -181,7 +183,7 @@ namespace CodePlayground.Graphics
             mMouseButtonValues = new Dictionary<int, bool>();
             RegisterInputCallbacks();
 
-            var windowSize = mWindow.Size;
+            var windowSize = mWindow.FramebufferSize;
             mWindowWidth = windowSize.X;
             mWindowHeight = windowSize.Y;
 
@@ -469,8 +471,18 @@ namespace CodePlayground.Graphics
                 for (int j = 0; j < cmdList.CmdBuffer.Size; j++)
                 {
                     var command = cmdList.CmdBuffer[j];
-                    mPipeline.Bind(commandList, command.TextureId);
+                    if (command.UserCallback != 0)
+                    {
+                        var callback = Marshal.GetDelegateForFunctionPointer<ImDrawCallback>(command.UserCallback);
+                        callback.Invoke((nint)cmdList.NativePtr, (nint)command.NativePtr);
 
+                        continue;
+                    }
+
+                    var clip = command.ClipRect;
+                    renderer.SetScissor(commandList, 0, (int)clip.X, (int)clip.Y, (int)(clip.Z - clip.X), (int)(clip.W - clip.Y));
+
+                    mPipeline.Bind(commandList, command.TextureId);
                     renderer.RenderIndexed(commandList, (int)command.IdxOffset + indexOffset, (int)command.ElemCount);
                 }
 

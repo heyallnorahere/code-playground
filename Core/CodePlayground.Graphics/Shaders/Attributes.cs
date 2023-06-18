@@ -2,6 +2,17 @@ using System;
 
 namespace CodePlayground.Graphics.Shaders
 {
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    public sealed class CompiledShaderAttribute : Attribute
+    {
+        public CompiledShaderAttribute()
+        {
+            ID = string.Empty;
+        }
+
+        public string ID { get; set; }
+    }
+
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
     public sealed class ShaderEntrypointAttribute : Attribute
     {

@@ -313,7 +313,7 @@ namespace VulkanTest
             var swapchain = context.Swapchain;
             swapchain.VSync = true; // enable vsync
 
-            mShaderLibrary = new ShaderLibrary(this);
+            mShaderLibrary = new ShaderLibrary(context, GetType().Assembly);
             mRenderer = context.CreateRenderer();
 
             mModel = LoadModelResource("Models/rigged-character.fbx", new ModelImportContext(context));

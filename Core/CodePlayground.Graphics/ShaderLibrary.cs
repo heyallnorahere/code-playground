@@ -1,32 +1,20 @@
-﻿using CodePlayground.Graphics;
 using CodePlayground.Graphics.Shaders;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 
-namespace VulkanTest
+namespace CodePlayground.Graphics
 {
-    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-    public sealed class CompiledShaderAttribute : Attribute
-    {
-        public CompiledShaderAttribute()
-        {
-            ID = string.Empty;
-        }
-
-        public string ID { get; set; }
-    }
-
     public sealed class ShaderLibrary : IDisposable
     {
-        public ShaderLibrary(GraphicsApplication application)
+        public ShaderLibrary(IGraphicsContext context, Assembly assembly)
         {
             mShaders = new Dictionary<string, IShader>();
-            mContext = application.GraphicsContext!;
+            mContext = context;
             mDisposed = false;
 
-            Load(application.GetType().Assembly);
+            Load(assembly);
         }
 
         public void Dispose()

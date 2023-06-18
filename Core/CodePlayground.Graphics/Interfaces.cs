@@ -426,6 +426,7 @@ namespace CodePlayground.Graphics
 
     public interface IRenderer
     {
+        public void SetScissor(ICommandList commandList, int index, int x, int y, int width, int height);
         public void RenderIndexed(ICommandList commandList, int indexOffset, int indexCount);
     }
 }
