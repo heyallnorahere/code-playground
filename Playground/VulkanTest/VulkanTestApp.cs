@@ -1,6 +1,7 @@
 ﻿using CodePlayground;
 using CodePlayground.Graphics;
 using CodePlayground.Graphics.Vulkan;
+using ImGuiNET;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
@@ -196,7 +197,7 @@ namespace VulkanTest
             {
                 Size = image.Size,
                 Usage = DeviceImageUsageFlags.CopySource | DeviceImageUsageFlags.CopyDestination | DeviceImageUsageFlags.Render,
-                Format = DeviceImageFormat.RGBA8_SRGB
+                Format = DeviceImageFormat.RGBA8_UNORM
             });
 
             var pixelData = new Rgba32[image.Width * image.Height];
@@ -335,6 +336,37 @@ namespace VulkanTest
 
                 mPipelines[i] = pipeline;
             }
+
+            InitializeImGui();
+        }
+
+        [EventHandler(nameof(InputReady))]
+        private void OnInputReady() => InitializeImGui();
+
+        private void InitializeImGui()
+        {
+            var graphicsContext = GraphicsContext;
+            var inputContext = InputContext;
+            var window = RootWindow;
+
+            if (graphicsContext is null || inputContext is null || window is null || mImGuiController is not null)
+            {
+                return;
+            }
+
+            var swapchain = graphicsContext.Swapchain;
+            mImGuiController = new ImGuiController(graphicsContext, inputContext, window, swapchain.RenderTarget, swapchain.FrameCount);
+            ImGui.StyleColorsDark();
+
+            var device = graphicsContext.Device;
+            var queue = device.GetQueue(CommandQueueFlags.Transfer);
+            var commandList = queue.Release();
+
+            commandList.Begin();
+            mImGuiController.LoadFontAtlas(commandList);
+            commandList.End();
+
+            queue.Submit(commandList, true);
         }
 
         [EventHandler(nameof(Closing))]
@@ -351,6 +383,7 @@ namespace VulkanTest
                 }
             }
 
+            mImGuiController?.Dispose();
             mCameraBuffer?.Dispose();
             mBoneTransformBuffer?.Dispose();
             mModel?.Dispose();
@@ -427,8 +460,9 @@ namespace VulkanTest
         }
 
         [EventHandler(nameof(Update))]
-        private unsafe void OnUpdate(double delta)
+        private void OnUpdate(double delta)
         {
+            mImGuiController!.NewFrame(delta);
             mTime += (float)delta;
 
             var swapchain = GraphicsContext?.Swapchain;
@@ -486,6 +520,9 @@ namespace VulkanTest
 
                 mBoneTransformBuffer!.CopyFromCPU(result);
             }
+
+            // todo: some kind of control
+            ImGui.ShowDemoWindow();
         }
 
         [EventHandler(nameof(Render))]
@@ -522,10 +559,12 @@ namespace VulkanTest
                 mRenderer!.RenderIndexed(renderInfo.CommandList, submesh.IndexOffset, submesh.IndexCount);
             }
 
+            mImGuiController!.Render(renderInfo.CommandList, mRenderer!, renderInfo.CurrentFrame);
             renderInfo.RenderTarget.EndRender(renderInfo.CommandList);
         }
 
         private ShaderLibrary? mShaderLibrary;
+        private ImGuiController? mImGuiController;
         private IPipeline[]? mPipelines;
         private IDeviceBuffer? mCameraBuffer, mBoneTransformBuffer;
         private Model? mModel;

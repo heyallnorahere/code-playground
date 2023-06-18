@@ -61,14 +61,14 @@ namespace CodePlayground.Graphics
             var commandList = queue.Release();
 
             commandList.Begin();
-            var texture = context.LoadTexture(image, format, commandList, out IDeviceBuffer buffer);
+            var texture = context.LoadTexture(image, format, commandList);
             commandList.End();
 
             queue.Submit(commandList, true);
             return texture;
         }
 
-        public static ITexture LoadTexture<T>(this IGraphicsContext context, Image<T> image, DeviceImageFormat format, ICommandList commandList, out IDeviceBuffer buffer) where T : unmanaged, IPixel<T>
+        public static ITexture LoadTexture<T>(this IGraphicsContext context, Image<T> image, DeviceImageFormat format, ICommandList commandList) where T : unmanaged, IPixel<T>
         {
             var deviceImage = context.CreateDeviceImage(new DeviceImageInfo
             {
@@ -82,12 +82,13 @@ namespace CodePlayground.Graphics
             image.CopyPixelDataTo(pixelBuffer);
 
             int bufferSize = pixelCount * Marshal.SizeOf<T>();
-            buffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, bufferSize);
+            var buffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, bufferSize);
             buffer.CopyFromCPU(pixelBuffer);
 
             var renderLayout = deviceImage.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
             deviceImage.TransitionLayout(commandList, deviceImage.Layout, renderLayout);
             deviceImage.CopyFromBuffer(commandList, buffer, renderLayout);
+            commandList.PushStagingObject(buffer);
 
             deviceImage.Layout = renderLayout;
             return deviceImage.CreateTexture(true);

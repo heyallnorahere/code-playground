@@ -12,6 +12,16 @@ namespace CodePlayground.Graphics.Vulkan
         public DescriptorSet[] Sets;
     }
 
+    internal struct DynamicID
+    {
+        public IBindableVulkanResource Resource { get; set; }
+        public int Set { get; set; }
+        public int Binding { get; set; }
+        public int Index { get; set; }
+        public DescriptorSet DescriptorSet { get; set; }
+        public string Name { get; set; }
+    }
+
     internal struct DescriptorSetPipelineResources
     {
         public Dictionary<int, BindingPipelineResources> Bindings { get; set; }
@@ -26,8 +36,8 @@ namespace CodePlayground.Graphics.Vulkan
     {
         public ulong ID { get; }
 
-        public void Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline);
-        public void Unbind(int set, int binding, int index, VulkanPipeline pipeline);
+        public void Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId);
+        public void Unbind(int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId);
     }
 
     public sealed class VulkanPipeline : IPipeline
@@ -85,7 +95,9 @@ namespace CodePlayground.Graphics.Vulkan
             mPushConstantBufferOffsets = new Dictionary<string, int>();
             mBoundResources = new Dictionary<int, DescriptorSetPipelineResources>();
             mID = GenerateID();
+            mCurrentDynamicID = 0;
 
+            mDynamicIDs = new Dictionary<nint, DynamicID>();
             mDescriptorSets = new Dictionary<int, VulkanPipelineDescriptorSet>();
             mDevice = context.Device;
             mCompiler = context.CreateCompiler();
@@ -157,9 +169,15 @@ namespace CodePlayground.Graphics.Vulkan
                         foreach (int index in bindingData.BoundResources.Keys)
                         {
                             var resource = bindingData.BoundResources[index];
-                            resource.Unbind(set, binding, index, this);
+                            resource.Unbind(set, binding, index, this, -1);
                         }
                     }
+                }
+
+                foreach (var id in mDynamicIDs.Keys)
+                {
+                    var data = mDynamicIDs[id];
+                    data.Resource.Unbind(data.Set, data.Binding, data.Index, this, id);
                 }
             }
 
@@ -179,6 +197,11 @@ namespace CodePlayground.Graphics.Vulkan
             var api = VulkanContext.API;
             api.DestroyPipeline(mDevice.Device, mPipeline, null);
             api.DestroyPipelineLayout(mDevice.Device, mLayout, null);
+
+            foreach (var dynamicIdData in mDynamicIDs.Values)
+            {
+                api.FreeDescriptorSets(mDevice.Device, mDescriptorPool, 1, dynamicIdData.DescriptorSet).Assert();
+            }
 
             foreach (int set in mDescriptorSets.Keys)
             {
@@ -226,9 +249,42 @@ namespace CodePlayground.Graphics.Vulkan
             api.CmdBindPipeline(buffer, bindPoint, mPipeline);
             foreach (int set in mDescriptorSets.Keys)
             {
+                if (!mBoundResources.ContainsKey(set))
+                {
+                    continue;
+                }
+
                 var setData = mDescriptorSets[set];
                 api.CmdBindDescriptorSets(buffer, bindPoint, mLayout, (uint)set, 1, setData.Sets[frame], 0, 0);
             }
+        }
+
+        void IPipeline.Bind(ICommandList commandList, nint id)
+        {
+            if (commandList is not VulkanCommandBuffer)
+            {
+                throw new ArgumentException("Must pass a Vulkan command buffer to bind to!");
+            }
+
+            Bind((VulkanCommandBuffer)commandList, id);
+        }
+
+        public void Bind(VulkanCommandBuffer commandBuffer, nint id)
+        {
+            if (!mDynamicIDs.TryGetValue(id, out DynamicID data))
+            {
+                throw new ArgumentException($"Invalid ID: 0x{id:X}");
+            }
+
+            var bindPoint = mDesc.Type switch
+            {
+                PipelineType.Graphics => PipelineBindPoint.Graphics,
+                PipelineType.Compute => PipelineBindPoint.Compute,
+                _ => throw new InvalidOperationException($"Invalid pipeline type: {mDesc.Type}")
+            };
+
+            var api = VulkanContext.API;
+            api.CmdBindDescriptorSets(commandBuffer.Buffer, bindPoint, mLayout, (uint)data.Set, 1, data.DescriptorSet, 0, 0);
         }
 
         void IPipeline.PushConstants(ICommandList commandList, BufferMapCallback callback)
@@ -281,14 +337,14 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        bool IPipeline.Bind(IDeviceBuffer buffer, string name, int index) => BindObject(buffer, name, index);
-        bool IPipeline.Bind(ITexture texture, string name, int index) => BindObject(texture, name, index);
+        bool IPipeline.Bind(IDeviceBuffer buffer, string name, int index) => BindObject(buffer, name, index, Bind);
+        bool IPipeline.Bind(ITexture texture, string name, int index) => BindObject(texture, name, index, Bind);
 
-        private bool BindObject(object passedObject, string name, int index)
+        private T BindObject<T>(object passedObject, string name, int index, Func<IBindableVulkanResource, string, int, T> callback)
         {
             if (passedObject is IBindableVulkanResource resource)
             {
-                return Bind(resource, name, index);
+                return callback.Invoke(resource, name, index);
             }
             else
             {
@@ -308,38 +364,151 @@ namespace CodePlayground.Graphics.Vulkan
             return true;
         }
 
-        private void UnbindResource(int set, int binding, int index, ulong? newId)
+        private void BindResource(int set, int binding, int index, IBindableVulkanResource resource)
         {
             if (!mBoundResources.TryGetValue(set, out DescriptorSetPipelineResources setData))
             {
-                return;
+                mBoundResources.Add(set, setData = new DescriptorSetPipelineResources
+                {
+                    Bindings = new Dictionary<int, BindingPipelineResources>()
+                });
             }
 
             if (!setData.Bindings.TryGetValue(binding, out BindingPipelineResources bindingData))
             {
-                return;
+                setData.Bindings.Add(binding, bindingData = new BindingPipelineResources
+                {
+                    BoundResources = new Dictionary<int, IBindableVulkanResource>()
+                });
             }
 
-            if (!bindingData.BoundResources.TryGetValue(index, out IBindableVulkanResource? resource) || resource is null)
+            if (bindingData.BoundResources.TryGetValue(index, out IBindableVulkanResource? existing) && existing is not null)
             {
-                return;
+                if (existing.ID == resource.ID)
+                {
+                    return;
+                }
+
+                existing.Unbind(set, binding, index, this, -1);
             }
 
-            if (resource.ID == newId)
-            {
-                return;
-            }
-
-            resource.Unbind(set, binding, index, this);
+            bindingData.BoundResources[index] = resource;
         }
 
         public void Bind(IBindableVulkanResource resource, int set, int binding, int index)
         {
             AssertLoaded();
-            UnbindResource(set, binding, index, resource.ID);
+            BindResource(set, binding, index, resource);
 
             var sets = mDescriptorSets[set].Sets;
-            resource.Bind(sets, set, binding, index, this);
+            resource.Bind(sets, set, binding, index, this, -1);
+        }
+
+        nint IPipeline.CreateDynamicID(IDeviceBuffer buffer, string name, int index) => BindObject(buffer, name, index, CreateDynamicID);
+        nint IPipeline.CreateDynamicID(ITexture texture, string name, int index) => BindObject(texture, name, index, CreateDynamicID);
+
+        private unsafe DescriptorSet AllocateDescriptorSet(int set)
+        {
+            if (!mDescriptorSets.TryGetValue(set, out VulkanPipelineDescriptorSet setData))
+            {
+                return default;
+            }
+
+            var allocInfo = VulkanUtilities.Init<DescriptorSetAllocateInfo>() with
+            {
+                DescriptorPool = mDescriptorPool,
+                DescriptorSetCount = 1,
+                PSetLayouts = &setData.Layout
+            };
+
+            var api = VulkanContext.API;
+            api.AllocateDescriptorSets(mDevice.Device, allocInfo, out DescriptorSet result).Assert();
+
+            return result;
+        }
+
+        public nint CreateDynamicID(IBindableVulkanResource resource, string name, int index)
+        {
+            foreach (nint existingId in mDynamicIDs.Keys)
+            {
+                var existingData = mDynamicIDs[existingId];
+                if (existingData.Name == name)
+                {
+                    if (existingData.Resource.ID == resource.ID)
+                    {
+                        return existingId;
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"ID already exists for resource \"{name}:\" 0x{existingId:X}");
+                    }
+                }
+            }
+
+            if (!FindResource(name, out _, out int set, out int binding))
+            {
+                throw new ArgumentException($"Failed to find resource: {resource}");
+            }
+
+            int setBindingCount = 0;
+            foreach (var stage in mReflectionData.Keys)
+            {
+                var data = mReflectionData[stage];
+                if (data.Resources.TryGetValue(set, out Dictionary<int, ReflectedShaderResource>? bindings))
+                {
+                    setBindingCount += bindings.Count;
+                }
+            }
+
+            if (setBindingCount > 1)
+            {
+                throw new InvalidOperationException("Cannot create a dynamic ID on a set with more than 1 binding!");
+            }
+
+            var descriptorSet = AllocateDescriptorSet(set);
+            var id = mCurrentDynamicID++;
+            resource.Bind(new DescriptorSet[] { descriptorSet }, set, binding, index, this, id);
+
+            mDynamicIDs.Add(id, new DynamicID
+            {
+                Resource = resource,
+                Set = set,
+                Binding = binding,
+                Index = index,
+                DescriptorSet = descriptorSet
+            });
+
+            return id;
+        }
+
+        public void UpdateDynamicID(nint id)
+        {
+            if (!mDynamicIDs.ContainsKey(id))
+            {
+                throw new ArgumentException($"No such ID: 0x{id:X}");
+            }
+
+            var data = mDynamicIDs[id];
+            data.Resource.Bind(new DescriptorSet[] { data.DescriptorSet }, data.Set, data.Binding, data.Index, this, id);
+        }
+
+        public void DestroyDynamicID(nint id)
+        {
+            if (!mDynamicIDs.ContainsKey(id))
+            {
+                return;
+            }
+
+            var data = mDynamicIDs[id];
+            data.Resource.Unbind(data.Set, data.Binding, data.Index, this, id);
+
+            if (data.DescriptorSet.Handle != 0)
+            {
+                var api = VulkanContext.API;
+                api.FreeDescriptorSets(mDevice.Device, mDescriptorPool, 1, data.DescriptorSet).Assert();
+            }
+
+            mDynamicIDs.Remove(id);
         }
 
         public bool FindResource(string name, out ShaderStage stage, out int set, out int binding)
@@ -495,12 +664,12 @@ namespace CodePlayground.Graphics.Vulkan
             mDescriptorSets.Clear();
             foreach (int set in layoutBindings.Keys)
             {
-                var api = VulkanContext.API;
                 var setData = new VulkanPipelineDescriptorSet
                 {
                     Sets = new DescriptorSet[mDesc.FrameCount]
                 };
 
+                var api = VulkanContext.API;
                 var bindings = layoutBindings[set].ToArray();
                 fixed (DescriptorSetLayoutBinding* bindingPtr = bindings)
                 {
@@ -533,6 +702,31 @@ namespace CodePlayground.Graphics.Vulkan
                 }
 
                 mDescriptorSets.Add(set, setData);
+            }
+
+            var destroyedIds = new HashSet<nint>();
+            foreach (nint id in mDynamicIDs.Keys)
+            {
+                var data = mDynamicIDs[id];
+
+                var set = AllocateDescriptorSet(data.Set);
+                if (set.Handle == 0)
+                {
+                    // just destroy the ID and move on
+                    destroyedIds.Add(id);
+                    data.DescriptorSet = default;
+                }
+                else
+                {
+                    data.DescriptorSet = set;
+                }
+
+                mDynamicIDs[id] = data;
+            }
+
+            foreach (nint id in destroyedIds)
+            {
+                DestroyDynamicID(id);
             }
         }
 
@@ -1078,6 +1272,7 @@ namespace CodePlayground.Graphics.Vulkan
         private Pipeline mPipeline;
         private PipelineLayout mLayout;
 
+        private readonly Dictionary<nint, DynamicID> mDynamicIDs;
         private readonly Dictionary<int, DescriptorSetPipelineResources> mBoundResources;
         private readonly Dictionary<int, VulkanPipelineDescriptorSet> mDescriptorSets;
         private readonly DescriptorPool mDescriptorPool;
@@ -1085,6 +1280,7 @@ namespace CodePlayground.Graphics.Vulkan
         private readonly VulkanDevice mDevice;
         private readonly IShaderCompiler mCompiler;
         private readonly ulong mID;
+        private nint mCurrentDynamicID;
         private bool mLoaded, mDisposed;
     }
 }

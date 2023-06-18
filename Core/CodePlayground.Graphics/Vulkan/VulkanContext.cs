@@ -132,6 +132,51 @@ namespace CodePlayground.Graphics.Vulkan
         public int Score { get; set; }
     }
 
+    public sealed class VulkanSemaphore : IDisposable
+    {
+        public unsafe VulkanSemaphore(VulkanDevice device)
+        {
+            mDevice = device;
+            mDisposed = false;
+
+            var createInfo = VulkanUtilities.Init<SemaphoreCreateInfo>();
+            var api = VulkanContext.API;
+            api.CreateSemaphore(mDevice.Device, createInfo, null, out mSemaphore).Assert();
+        }
+
+        ~VulkanSemaphore()
+        {
+            if (!mDisposed)
+            {
+                Dispose(false);
+                mDisposed = true;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (mDisposed)
+            {
+                return;
+            }
+
+            Dispose(true);
+            mDisposed = true;
+        }
+
+        private unsafe void Dispose(bool disposing)
+        {
+            var api = VulkanContext.API;
+            api.DestroySemaphore(mDevice.Device, mSemaphore, null);
+        }
+
+        public Semaphore Semaphore => mSemaphore;
+
+        private readonly Semaphore mSemaphore;
+        private readonly VulkanDevice mDevice;
+        private bool mDisposed;
+    }
+
     public sealed class VulkanContext : IGraphicsContext
     {
         public static Vk API { get; }
@@ -576,6 +621,8 @@ namespace CodePlayground.Graphics.Vulkan
             return new VulkanPipeline(this, description);
         }
 
+        IDisposable IGraphicsContext.CreateSemaphore() => new VulkanSemaphore(mDevice!);
+
         public void Dispose()
         {
             if (!mInitialized)
@@ -625,6 +672,9 @@ namespace CodePlayground.Graphics.Vulkan
         public VulkanDevice Device => mDevice!;
         public VulkanSwapchain Swapchain => mSwapchain!;
         public VulkanMemoryAllocator Allocator => mAllocator!;
+
+        public bool FlipUVs => true;
+        public bool LeftHanded => true;
 
         IGraphicsDevice IGraphicsContext.Device => mDevice!;
         ISwapchain IGraphicsContext.Swapchain => mSwapchain!;

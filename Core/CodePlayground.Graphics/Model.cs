@@ -36,8 +36,6 @@ namespace CodePlayground.Graphics
         public IGraphicsContext GraphicsContext { get; }
 
         public bool ShouldCopyPostLoad { get; }
-        public bool FlipUVs { get; }
-        public bool LeftHanded { get; }
         public int MaxBonesPerVertex { get; }
 
         public IDeviceBuffer CreateVertexBuffer(IReadOnlyList<ModelVertex> vertices);
@@ -95,12 +93,14 @@ namespace CodePlayground.Graphics
         private static unsafe Model? Load(ReadOnlySpan<byte> data, string path, bool loadedFromFile, IModelImportContext importContext)
         {
             var flags = PostProcessSteps.Triangulate | PostProcessSteps.GenerateNormals | PostProcessSteps.GenerateUVCoords | PostProcessSteps.JoinIdenticalVertices | PostProcessSteps.LimitBoneWeights;
-            if (importContext.FlipUVs)
+            
+            var graphicsContext = importContext.GraphicsContext;
+            if (graphicsContext.FlipUVs)
             {
                 flags |= PostProcessSteps.FlipUVs;
             }
 
-            if (importContext.LeftHanded)
+            if (graphicsContext.LeftHanded)
             {
                 flags |= PostProcessSteps.MakeLeftHanded;
             }

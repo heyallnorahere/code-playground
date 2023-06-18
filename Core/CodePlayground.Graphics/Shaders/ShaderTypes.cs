@@ -388,13 +388,8 @@ namespace CodePlayground.Graphics.Shaders
         // todo: swizzles
     }
 
-    public abstract class __SamplerBase
-    {
-        // no properties, simply a type for polymorphism
-    }
-
-    [PrimitiveShaderType("sampler2D", Instantiable = false)]
-    public sealed class Sampler2D<T> : __SamplerBase where T : unmanaged
+    [PrimitiveShaderType("sampler2D", Instantiable = false, IsSampler = true)]
+    public sealed class Sampler2D<T> where T : unmanaged
     {
         [BuiltinShaderFunction("texture")]
         public Vector4<T> Sample(Vector2<T> uv)
@@ -404,6 +399,75 @@ namespace CodePlayground.Graphics.Shaders
 
         [BuiltinShaderFunction("texture")]
         public Vector4<T> Sample(Vector2<T> uv, float bias)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    // INCOMPLETE
+    [PrimitiveShaderType("mat4")]
+    public sealed class Matrix4x4<T> where T : unmanaged
+    {
+        public Matrix4x4(T value)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Add)]
+        public static Matrix4x4<T> operator +(Matrix4x4<T> lhs, Matrix4x4<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Multiply)]
+        public static Matrix4x4<T> operator *(Matrix4x4<T> lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Multiply)]
+        public static Vector4<T> operator *(Matrix4x4<T> lhs, Vector4<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Multiply)]
+        public static Matrix4x4<T> operator *(Matrix4x4<T> lhs, Matrix4x4<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    // INCOMPLETE
+    [PrimitiveShaderType("mat3")]
+    public sealed class Matrix3x3<T> where T : unmanaged
+    {
+        public Matrix3x3(Matrix4x4<T> matrix)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [ShaderOperator(ShaderOperatorType.Multiply)]
+        public static Vector3<T> operator *(Matrix3x3<T> lhs, Vector3<T> rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("inverse")]
+        public Matrix3x3<T> Inverse()
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("transpose")]
+        public Matrix3x3<T> Transpose()
         {
             throw new NotImplementedException();
         }

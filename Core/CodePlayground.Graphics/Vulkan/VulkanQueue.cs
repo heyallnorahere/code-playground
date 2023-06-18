@@ -5,15 +5,25 @@ using System.Linq;
 
 namespace CodePlayground.Graphics.Vulkan
 {
+    internal struct VulkanSemaphoreInfo
+    {
+        public VulkanSemaphore Semaphore { get; set; }
+        public SemaphoreUsage Usage { get; set; }
+    }
+
     public sealed class VulkanCommandBuffer : ICommandList, IDisposable
     {
-        public VulkanCommandBuffer(CommandPool pool, Device device)
+        public VulkanCommandBuffer(CommandPool pool, Device device, CommandQueueFlags queueUsage)
         {
             mDisposed = false;
             mRecording = false;
 
             mPool = pool;
             mDevice = device;
+            mQueueUsage = queueUsage;
+
+            mStagingObjects = new List<IDisposable>();
+            mSemaphores = new List<VulkanSemaphoreInfo>();
 
             var allocInfo = VulkanUtilities.Init<CommandBufferAllocateInfo>() with
             {
@@ -48,6 +58,11 @@ namespace CodePlayground.Graphics.Vulkan
 
         private void Dispose(bool disposing)
         {
+            if (disposing)
+            {
+                Clean();
+            }
+
             var api = VulkanContext.API;
             api.FreeCommandBuffers(mDevice, mPool, 1, mBuffer);
         }
@@ -65,13 +80,66 @@ namespace CodePlayground.Graphics.Vulkan
             api.EndCommandBuffer(mBuffer).Assert();
         }
 
+        void ICommandList.AddSemaphore(IDisposable semaphore, SemaphoreUsage usage)
+        {
+            if (semaphore is not VulkanSemaphore)
+            {
+                throw new ArgumentException("Must pass a Vulkan semaphore!");
+            }
+
+            AddSemaphore((VulkanSemaphore)semaphore, usage);
+        }
+
+        public void AddSemaphore(VulkanSemaphore semaphore, SemaphoreUsage usage)
+        {
+            mSemaphores.Add(new VulkanSemaphoreInfo
+            {
+                Semaphore = semaphore,
+                Usage = usage
+            });
+        }
+
+        public void PushStagingObject(IDisposable stagingObject)
+        {
+            mStagingObjects.Add(stagingObject);
+        }
+
+        internal void Reset()
+        {
+            var api = VulkanContext.API;
+            api.ResetCommandBuffer(mBuffer, CommandBufferResetFlags.None);
+
+            mSemaphores.Clear();
+            Clean();
+        }
+
+        private void Clean()
+        {
+            if (!mStagingObjects.Any())
+            {
+                return;
+            }
+
+            foreach (var stagingObject in mStagingObjects)
+            {
+                stagingObject.Dispose();
+            }
+
+            mStagingObjects.Clear();
+        }
+
         public bool IsRecording => mRecording;
+        public CommandQueueFlags QueueUsage => mQueueUsage;
         public CommandBuffer Buffer => mBuffer;
 
         private bool mDisposed, mRecording;
         private readonly Device mDevice;
         private readonly CommandPool mPool;
         private readonly CommandBuffer mBuffer;
+        private readonly CommandQueueFlags mQueueUsage;
+
+        private readonly List<IDisposable> mStagingObjects;
+        internal readonly List<VulkanSemaphoreInfo> mSemaphores;
     }
 
     internal struct StoredCommandBuffer
@@ -180,14 +248,14 @@ namespace CodePlayground.Graphics.Vulkan
                         mFences.Enqueue(fence);
                     }
 
-                    api.ResetCommandBuffer(commandBuffer.Buffer, CommandBufferResetFlags.None);
+                    commandBuffer.Reset();
                     mStoredBuffers.Dequeue();
 
                     return buffer.CommandBuffer;
                 }
             }
 
-            return new VulkanCommandBuffer(mPool, mDevice);
+            return new VulkanCommandBuffer(mPool, mDevice, mUsage);
         }
 
         void ICommandQueue.Submit(ICommandList commandList, bool wait)
@@ -229,29 +297,46 @@ namespace CodePlayground.Graphics.Vulkan
                 commandBuffer.End();
             }
 
-            var waitSemaphores = info.WaitSemaphores?.Select(dependency => dependency.Semaphore).ToArray();
-            var waitStages = info.WaitSemaphores?.Select(dependency => dependency.DestinationStageMask).ToArray();
-            var signalSemaphores = info.SignalSemaphores?.ToArray();
+            var semaphores = commandBuffer.mSemaphores;
+            var waitSemaphores = semaphores.Where(info => info.Usage == SemaphoreUsage.Wait).Select(info => info.Semaphore.Semaphore);
+            var signalSemaphores = semaphores.Where(info => info.Usage == SemaphoreUsage.Signal).Select(info => info.Semaphore.Semaphore);
+
+            var waitStageArray = new PipelineStageFlags[waitSemaphores.Count()];
+            Array.Fill(waitStageArray, PipelineStageFlags.AllCommandsBit);
+
+            if (info.WaitSemaphores is not null)
+            {
+                waitSemaphores = waitSemaphores.Concat(info.WaitSemaphores.Select(dependency => dependency.Semaphore));
+                waitStageArray = waitStageArray.Concat(info.WaitSemaphores.Select(dependency => dependency.DestinationStageMask)).ToArray();
+            }
+
+            if (info.SignalSemaphores is not null)
+            {
+                signalSemaphores = signalSemaphores.Concat(info.SignalSemaphores);
+            }
 
             var buffer = commandBuffer.Buffer;
             var fence = info.Fence ?? GetFence();
 
+            var waitSemaphoreArray = waitSemaphores.ToArray();
+            var signalSemaphoreArray = signalSemaphores.ToArray();
+
             var api = VulkanContext.API;
-            fixed (Semaphore* waitSemaphorePtr = waitSemaphores)
+            fixed (Semaphore* waitSemaphorePtr = waitSemaphoreArray)
             {
-                fixed (PipelineStageFlags* waitStagePtr = waitStages)
+                fixed (PipelineStageFlags* waitStagePtr = waitStageArray)
                 {
-                    fixed (Semaphore* signalSemaphorePtr = signalSemaphores)
+                    fixed (Semaphore* signalSemaphorePtr = signalSemaphoreArray)
                     {
                         var submitInfo = VulkanUtilities.Init<SubmitInfo>() with
                         {
-                            WaitSemaphoreCount = (uint)(info.WaitSemaphores?.Count ?? 0),
+                            WaitSemaphoreCount = (uint)waitSemaphoreArray.Length,
                             PWaitSemaphores = waitSemaphorePtr,
                             PWaitDstStageMask = waitStagePtr,
                             CommandBufferCount = 1,
                             PCommandBuffers = &buffer,
-                            SignalSemaphoreCount = (uint)(info.SignalSemaphores?.Count ?? 0),
-                            PSignalSemaphores = signalSemaphorePtr,
+                            SignalSemaphoreCount = (uint)signalSemaphoreArray.Length,
+                            PSignalSemaphores = signalSemaphorePtr
                         };
 
                         api.QueueSubmit(mQueue, 1, submitInfo, fence).Assert();

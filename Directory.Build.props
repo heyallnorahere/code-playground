@@ -5,6 +5,7 @@
 
         <!-- package versions -->
         <GLFWVersion>3.3.3.1</GLFWVersion>
+        <ImGuiNETVersion>1.89.5.2</ImGuiNETVersion>
         <MicrosoftNETCorePlatformsVersion>8.0.0-preview.2.23128.3</MicrosoftNETCorePlatformsVersion>
         <NewtonsoftJsonVersion>13.0.3</NewtonsoftJsonVersion>
         <shadercnetVersion>0.1.0</shadercnetVersion>

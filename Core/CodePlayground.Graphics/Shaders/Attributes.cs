@@ -20,10 +20,12 @@ namespace CodePlayground.Graphics.Shaders
         {
             Name = name;
             Instantiable = true;
+            IsSampler = false;
         }
 
         public string Name { get; }
         public bool Instantiable { get; set; }
+        public bool IsSampler { get; set; }
     }
 
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]

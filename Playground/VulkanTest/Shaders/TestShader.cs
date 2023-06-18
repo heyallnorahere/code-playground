@@ -1,78 +1,9 @@
 using CodePlayground.Graphics;
 using CodePlayground.Graphics.Shaders;
 using System;
-using System.Runtime.CompilerServices;
 
 namespace VulkanTest.Shaders
 {
-    // temporary types
-    [PrimitiveShaderType("mat4")]
-    public sealed class Matrix4x4<T> where T : unmanaged
-    {
-        public Matrix4x4(T value)
-        {
-            throw new NotImplementedException();
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        [ShaderOperator(ShaderOperatorType.Add)]
-        public static Matrix4x4<T> operator +(Matrix4x4<T> lhs, Matrix4x4<T> rhs)
-        {
-            throw new NotImplementedException();
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        [ShaderOperator(ShaderOperatorType.Multiply)]
-        public static Matrix4x4<T> operator *(Matrix4x4<T> lhs, T rhs)
-        {
-            throw new NotImplementedException();
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        [ShaderOperator(ShaderOperatorType.Multiply)]
-        public static Vector4<T> operator *(Matrix4x4<T> lhs, Vector4<T> rhs)
-        {
-            throw new NotImplementedException();
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        [ShaderOperator(ShaderOperatorType.Multiply)]
-        public static Matrix4x4<T> operator *(Matrix4x4<T> lhs, Matrix4x4<T> rhs)
-        {
-            throw new NotImplementedException();
-        }
-    }
-
-    [PrimitiveShaderType("mat3")]
-    public sealed class Matrix3x3<T> where T : unmanaged
-    {
-        public Matrix3x3(Matrix4x4<T> matrix)
-        {
-            throw new NotImplementedException();
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        [ShaderOperator(ShaderOperatorType.Multiply)]
-        public static Vector3<T> operator *(Matrix3x3<T> lhs, Vector3<T> rhs)
-        {
-            throw new NotImplementedException();
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("inverse")]
-        public Matrix3x3<T> Inverse()
-        {
-            throw new NotImplementedException();
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("transpose")]
-        public Matrix3x3<T> Transpose()
-        {
-            throw new NotImplementedException();
-        }
-    }
-
     [CompiledShader]
     public sealed class TestShader
     {

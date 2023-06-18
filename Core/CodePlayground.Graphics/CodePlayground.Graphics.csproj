@@ -11,6 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="ImGui.NET" Version="$(ImGuiNETVersion)" />
     <PackageReference Include="shaderc.net" Version="$(shadercnetVersion)" />
     <PackageReference Include="Silk.NET.Assimp" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Input" Version="$(SilkNETVersion)" />

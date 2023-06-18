@@ -257,6 +257,7 @@ namespace CodePlayground.Graphics
             return context;
         }
 
+        public IWindow? RootWindow => mWindow;
         public IInputContext? InputContext => mInputContext;
         public IGraphicsContext? GraphicsContext => mGraphicsContext;
         public string[] CommandLineArguments => mArgs;

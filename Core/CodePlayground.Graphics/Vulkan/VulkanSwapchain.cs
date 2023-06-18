@@ -184,7 +184,7 @@ namespace CodePlayground.Graphics.Vulkan
             var formats = QuerySurfaceFormats(mSurfaceExtension, mDevice.PhysicalDevice, mSurface);
             foreach (var format in formats)
             {
-                if (format.Format == Format.B8G8R8A8Srgb && format.ColorSpace == ColorSpaceKHR.SpaceSrgbNonlinearKhr)
+                if (format.Format == Format.B8G8R8A8Unorm && format.ColorSpace == ColorSpaceKHR.SpaceSrgbNonlinearKhr)
                 {
                     return format;
                 }

@@ -193,7 +193,7 @@ namespace CodePlayground.Graphics.Vulkan
             });
         }
 
-        public unsafe void Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline)
+        public unsafe void Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
         {
             var bufferInfo = VulkanUtilities.Init<DescriptorBufferInfo>() with
             {
@@ -224,7 +224,7 @@ namespace CodePlayground.Graphics.Vulkan
             api.UpdateDescriptorSets(mDevice.Device, writes, 0, null);
         }
 
-        public void Unbind(int set, int binding, int index, VulkanPipeline pipeline)
+        public void Unbind(int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
         {
             // nothing, we don't have to do any rebinding
         }

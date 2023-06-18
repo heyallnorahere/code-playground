@@ -543,7 +543,9 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 else
                                 {
                                     layoutString = $"set = {layoutAttribute.Set}, binding = {layoutAttribute.Binding}";
-                                    if (!fieldType.Extends<__SamplerBase>())
+
+                                    var primitiveTypeAttribute = fieldType.GetCustomAttribute<PrimitiveShaderTypeAttribute>();
+                                    if (primitiveTypeAttribute is null || !primitiveTypeAttribute.IsSampler)
                                     {
                                         layoutString = "std140, " + layoutString;
                                     }

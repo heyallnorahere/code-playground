@@ -8,6 +8,7 @@ namespace CodePlayground.Graphics.Vulkan
     {
         public Dictionary<int, BoundPipelineDescriptorSet> Sets { get; set; }
         public VulkanPipeline Pipeline { get; set; }
+        public HashSet<nint> DynamicIDs { get; set; }
     }
 
     internal struct BoundPipelineDescriptorSet
@@ -100,6 +101,11 @@ namespace CodePlayground.Graphics.Vulkan
                         }
                     }
                 }
+
+                foreach (nint dynamicId in pipelineData.DynamicIDs)
+                {
+                    pipeline.UpdateDynamicID(dynamicId);
+                }
             }
         }
 
@@ -166,7 +172,7 @@ namespace CodePlayground.Graphics.Vulkan
             Rebind();
         }
 
-        private void AddBindingIndex(int set, int binding, int index, VulkanPipeline pipeline)
+        private void AddBindingIndex(int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
         {
             ulong id = pipeline.ID;
             if (!mBoundPipelines.TryGetValue(id, out BoundPipelineData pipelineData))
@@ -174,8 +180,15 @@ namespace CodePlayground.Graphics.Vulkan
                 mBoundPipelines.Add(id, pipelineData = new BoundPipelineData
                 {
                     Sets = new Dictionary<int, BoundPipelineDescriptorSet>(),
-                    Pipeline = pipeline
+                    Pipeline = pipeline,
+                    DynamicIDs = new HashSet<nint>()
                 });
+            }
+
+            if (dynamicId >= 0)
+            {
+                pipelineData.DynamicIDs.Add(dynamicId);
+                return;
             }
 
             if (!pipelineData.Sets.TryGetValue(set, out BoundPipelineDescriptorSet setData))
@@ -197,9 +210,9 @@ namespace CodePlayground.Graphics.Vulkan
             bindingData.BoundIndices.Add(index);
         }
 
-        public unsafe void Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline)
+        public unsafe void Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
         {
-            AddBindingIndex(set, binding, index, pipeline);
+            AddBindingIndex(set, binding, index, pipeline, dynamicId);
 
             fixed (DescriptorImageInfo* imageInfo = &mImageInfo)
             {
@@ -222,11 +235,23 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        public void Unbind(int set, int binding, int index, VulkanPipeline pipeline)
+        public void Unbind(int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
         {
             ulong id = pipeline.ID;
             if (!mBoundPipelines.TryGetValue(id, out BoundPipelineData pipelineData))
             {
+                return;
+            }
+
+            if (dynamicId >= 0)
+            {
+                if (pipelineData.Sets.Count == 0 && pipelineData.DynamicIDs.Count == 1 && pipelineData.DynamicIDs.Contains(dynamicId))
+                {
+                    mBoundPipelines.Remove(id);
+                    return;
+                }
+
+                pipelineData.DynamicIDs.Remove(dynamicId);
                 return;
             }
 
@@ -240,11 +265,11 @@ namespace CodePlayground.Graphics.Vulkan
                 return;
             }
 
-            if (bindingData.BoundIndices.Count == 1)
+            if (bindingData.BoundIndices.Count == 1 && bindingData.BoundIndices.Contains(index))
             {
-                if (setData.Bindings.Count == 1)
+                if (setData.Bindings.Count == 1 && setData.Bindings.ContainsKey(binding))
                 {
-                    if (pipelineData.Sets.Count == 1)
+                    if (pipelineData.Sets.Count == 1 && pipelineData.Sets.ContainsKey(set) && pipelineData.DynamicIDs.Count == 0)
                     {
                         mBoundPipelines.Remove(id);
                         return;

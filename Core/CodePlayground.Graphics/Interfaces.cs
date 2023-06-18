@@ -24,6 +24,12 @@ namespace CodePlayground.Graphics
         Transfer = 0x4
     }
 
+    public enum SemaphoreUsage
+    {
+        Signal,
+        Wait
+    }
+
     public enum AttachmentType
     {
         Color,
@@ -225,6 +231,9 @@ namespace CodePlayground.Graphics
         public IGraphicsDevice Device { get; }
         public ISwapchain Swapchain { get; }
 
+        public bool FlipUVs { get; }
+        public bool LeftHanded { get; }
+
         public bool IsApplicable(WindowOptions options);
         public void Initialize(IWindow window, GraphicsApplication application);
 
@@ -236,6 +245,8 @@ namespace CodePlayground.Graphics
 
         public IShader LoadShader(IReadOnlyList<byte> data, ShaderStage stage, string entrypoint);
         public IPipeline CreatePipeline(PipelineDescription description);
+
+        public IDisposable CreateSemaphore();
     }
 
     public interface IGraphicsDeviceInfo
@@ -261,9 +272,13 @@ namespace CodePlayground.Graphics
     public interface ICommandList
     {
         public bool IsRecording { get; }
+        public CommandQueueFlags QueueUsage { get; }
 
         public void Begin();
         public void End();
+
+        public void AddSemaphore(IDisposable semaphore, SemaphoreUsage usage);
+        public void PushStagingObject(IDisposable stagingObject);
     }
 
     public interface ICommandQueue
@@ -383,10 +398,16 @@ namespace CodePlayground.Graphics
         public ulong ID { get; }
 
         public void Bind(ICommandList commandList, int frame);
+        public void Bind(ICommandList commandList, nint id);
         public void PushConstants(ICommandList commandList, BufferMapCallback callback);
 
         public bool Bind(IDeviceBuffer buffer, string name, int index = 0);
         public bool Bind(ITexture texture, string name, int index = 0);
+
+        public nint CreateDynamicID(IDeviceBuffer buffer, string name, int index = 0);
+        public nint CreateDynamicID(ITexture texture, string name, int index = 0);
+        public void UpdateDynamicID(nint id);
+        public void DestroyDynamicID(nint id);
 
         public void Load(IReadOnlyDictionary<ShaderStage, IShader> shaders);
 
