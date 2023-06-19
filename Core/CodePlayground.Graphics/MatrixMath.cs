@@ -59,6 +59,7 @@ namespace CodePlayground.Graphics
         #endregion
         #region Orthographic
 
+        // https://github.com/g-truc/glm/blob/efec5db081e3aad807d0731e172ac597f6a39447/glm/ext/matrix_clip_space.inl#L16
         public static Matrix4x4 Orthographic_LH_Z0(float left, float right, float bottom, float top, float nearPlane, float farPlane)
         {
             return new Matrix4x4(2f / (right - left), 0f, 0f, -(right + left) / (right - left),

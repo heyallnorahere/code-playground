@@ -8,6 +8,15 @@ namespace Ragdoll
     [ApplicationTitle("Ragdoll")]
     internal sealed class App : GraphicsApplication
     {
+        public static ILayerView Layers
+        {
+            get
+            {
+                var app = (App)Application.Instance;
+                return app.mLayerStack;
+            }
+        }
+
         public App()
         {
             mLayerStack = new LayerStack();
@@ -25,6 +34,7 @@ namespace Ragdoll
             var context = CreateGraphicsContext();
             mRenderer = new Renderer(context);
 
+            mLayerStack.PushLayer<SceneLayer>(LayerType.Layer);
             InitializeImGui();
         }
 
