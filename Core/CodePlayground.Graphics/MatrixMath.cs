@@ -22,7 +22,7 @@ namespace CodePlayground.Graphics
         }
 
         // https://github.com/StudioCherno/Hazel/blob/master/Hazel/src/Hazel/Math/Math.cpp#L15
-        public bool Decompose(Matrix4x4 matrix, out Vector3 translation, out Quaternion rotation, out Vector3 scale)
+        public static bool Decompose(Matrix4x4 matrix, out Vector3 translation, out Quaternion rotation, out Vector3 scale)
         {
             translation = matrix.Translation;
             rotation = new Quaternion(0f, 0f, 0f, 1f);
@@ -78,10 +78,10 @@ namespace CodePlayground.Graphics
             }
             else
             {
-                int i = 0;
-                for (int l = 1; l < 3; l++)
+                int i = -1;
+                for (int l = 0; l < 3; l++)
                 {
-                    if (matrix[l, l] > matrix[i, i])
+                    if (i < 0 || matrix[l, l] > matrix[i, i])
                     {
                         i = l;
                     }
@@ -102,7 +102,7 @@ namespace CodePlayground.Graphics
             return true;
         }
 
-        public Vector3 EulerAngles(Quaternion quat)
+        public static Vector3 EulerAngles(Quaternion quat)
         {
             return new Vector3
             {
@@ -113,7 +113,7 @@ namespace CodePlayground.Graphics
         }
 
         // https://github.com/g-truc/glm/blob/5c46b9c07008ae65cb81ab79cd677ecc1934b903/glm/gtc/quaternion.inl#L28
-        public float Pitch(Quaternion quat)
+        public static float Pitch(Quaternion quat)
         {
             float opposite = 2f * (quat.Y * quat.Z + quat.W * quat.X);
             float adjacent = MathF.Pow(quat.W, 2f) + MathF.Pow(quat.Z, 2f) - MathF.Pow(quat.X, 2f) - MathF.Pow(quat.Y, 2f);
@@ -126,13 +126,13 @@ namespace CodePlayground.Graphics
             return MathF.Atan2(opposite, adjacent);
         }
 
-        public float Yaw(Quaternion quat)
+        public static float Yaw(Quaternion quat)
         {
             float sin = float.Clamp(-2f * (quat.X * quat.Z - quat.W * quat.Y), -1f, 1f);
             return MathF.Asin(sin);
         }
 
-        public float Roll(Quaternion quat)
+        public static float Roll(Quaternion quat)
         {
 		    float opposite = 2f * (quat.X * quat.Y + quat.W * quat.Z);
 		    float adjacent = MathF.Pow(quat.W, 2f) + MathF.Pow(quat.X, 2f) - MathF.Pow(quat.Y, 2f) - MathF.Pow(quat.Z, 2f);

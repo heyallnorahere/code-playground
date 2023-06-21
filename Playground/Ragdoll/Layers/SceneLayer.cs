@@ -133,8 +133,7 @@ namespace Ragdoll.Layers
 
             for (int i = 0; i < 5; i++)
             {
-                ulong id = mRegistry.New();
-                mRegistry.Add<TagComponent>(id, $"Entity {i + 1}");
+                NewEntity($"Entity {i + 1}");
             }
         }
 
@@ -242,7 +241,7 @@ namespace Ragdoll.Layers
 
             foreach (ulong id in mRegistry)
             {
-                string tag = mRegistry.TryGet(id, out TagComponent? component) ? component.Tag : $"<no tag:{id}>";
+                string tag = TryGetComponent(id, out TagComponent? component) ? component.Tag : $"<no tag:{id}>";
 
                 ImGui.PushID($"entity-{id}");
                 if (ImGui.Selectable(tag, mSelectedEntity == id))
@@ -289,8 +288,7 @@ namespace Ragdoll.Layers
             {
                 if (ImGui.MenuItem("New entity"))
                 {
-                    mSelectedEntity = mRegistry.New();
-                    mRegistry.Add<TagComponent>(mSelectedEntity);
+                    mSelectedEntity = NewEntity();
                 }
 
                 ImGui.EndPopup();
@@ -318,7 +316,7 @@ namespace Ragdoll.Layers
                 {
                     if (ImGui.MenuItem(componentType.DisplayName) && !mRegistry.Has(mSelectedEntity, componentType.Type))
                     {
-                        mRegistry.Add(mSelectedEntity, componentType.Type);
+                        AddComponent(mSelectedEntity, componentType.Type);
                     }
                 }
 
@@ -329,7 +327,7 @@ namespace Ragdoll.Layers
             var font = ImGui.GetFont();
 
             var removedComponents = new List<Type>();
-            foreach (var component in mRegistry.View(mSelectedEntity))
+            foreach (var component in ViewComponents(mSelectedEntity))
             {
                 var type = component.GetType();
                 var fullName = type.FullName ?? type.Name;
@@ -374,7 +372,7 @@ namespace Ragdoll.Layers
 
                 if (open)
                 {
-                    if (!InvokeComponentEvent(component, "OnEdit", Array.Empty<Type>(), null))
+                    if (!InvokeComponentEvent(component, mSelectedEntity, "OnEdit"))
                     {
                         ImGui.Text("This component is not editable");
                     }
@@ -387,63 +385,37 @@ namespace Ragdoll.Layers
 
             foreach (var type in removedComponents)
             {
-                mRegistry.Remove(mSelectedEntity, type);
+                RemoveComponent(mSelectedEntity, type);
             }
         }
 
         #endregion
         #region ECS
 
-        private void OnComponentAdded(object component, ulong id)
-        {
-            var parameters = new Type[]
-            {
-                typeof(ulong),
-                typeof(Registry)
-            };
-
-            var arguments = new object[]
-            {
-                id,
-                mRegistry
-            };
-
-            using var registryLock = mRegistry.Lock();
-            InvokeComponentEvent(component, "OnAdded", parameters, arguments);
-        }
-
-        private void OnComponentRemoved(object component, ulong id)
-        {
-            var parameters = new Type[]
-            {
-                typeof(ulong),
-                typeof(Registry)
-            };
-
-            var arguments = new object[]
-            {
-                id,
-                mRegistry
-            };
-
-            using var registryLock = mRegistry.Lock();
-            InvokeComponentEvent(component, "OnRemoved", parameters, arguments);
-        }
-
-        private bool InvokeComponentEvent(object component, string name, Type[] parameters, object?[]? arguments)
+        private bool InvokeComponentEvent(object component, ulong id, string name)
         {
             var type = component.GetType();
-            var method = type.GetMethod(name, BindingFlags.Public | BindingFlags.Instance, parameters);
+            var method = type.GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, new Type[]
+            {
+                typeof(ulong),
+                typeof(SceneLayer)
+            });
 
             if (method is null)
             {
                 return false;
             }
 
-            method.Invoke(component, arguments);
+            method.Invoke(component, new object[]
+            {
+                id,
+                this
+            });
+
             return true;
         }
 
+        public IDisposable LockRegistry() => mRegistry.Lock();
         public ulong NewEntity(string tag = "Entity")
         {
             ulong id = mRegistry.New();
@@ -452,18 +424,37 @@ namespace Ragdoll.Layers
             return id;
         }
 
+        public void DestroyEntity(ulong id)
+        {
+            var types = ViewComponents(id).Select(component => component.GetType());
+            foreach (var type in types)
+            {
+                RemoveComponent(id, type);
+            }
+
+            mRegistry.Destroy(id);
+        }
+
         public IEnumerable<ulong> Entities => mRegistry;
-        public IEnumerable<object> ViewComponent(ulong id) => mRegistry.View(id);
+        public IEnumerable<object> ViewComponents(ulong id) => mRegistry.View(id);
         public IEnumerable<ulong> ViewEntities(params Type[] types) => mRegistry.View(types);
 
         public bool HasComponent<T>(ulong id) where T : class => mRegistry.Has<T>(id);
         public bool HasComponent(ulong id, Type type) => mRegistry.Has(id, type);
 
+        public T GetComponent<T>(ulong id) where T : class => mRegistry.Get<T>(id);
+        public object GetComponent(ulong id, Type type) => mRegistry.Get(id, type);
+
+        public bool TryGetComponent<T>(ulong id, [NotNullWhen(true)] out T? component) where T : class => mRegistry.TryGet(id, out component);
+        public bool TryGetComponent(ulong id, Type type, [NotNullWhen(true)] out object? component) => mRegistry.TryGet(id, type, out component);
+
         public T AddComponent<T>(ulong id, params object?[] args) where T : class => (T)AddComponent(id, typeof(T), args);
         public object AddComponent(ulong id, Type type, params object?[] args)
         {
             var component = mRegistry.Add(id, type, args);
-            OnComponentAdded(component, id);
+
+            using var registryLock = LockRegistry();
+            InvokeComponentEvent(component, id, "OnComponentAdded");
 
             return component;
         }
@@ -471,12 +462,16 @@ namespace Ragdoll.Layers
         public void RemoveComponent<T>(ulong id) where T : class => RemoveComponent(id, typeof(T));
         public void RemoveComponent(ulong id, Type type)
         {
-            if (!mRegistry.TryGet(id, type, out object? component))
+            if (!TryGetComponent(id, type, out object? component))
             {
                 return;
             }
 
-            OnComponentRemoved(component, id);
+            using (var registryLock = LockRegistry())
+            {
+                InvokeComponentEvent(component, id, "OnComponentRemoved");
+            }
+
             mRegistry.Remove(id, type);
         }
 

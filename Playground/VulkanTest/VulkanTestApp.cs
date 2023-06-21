@@ -65,8 +65,6 @@ namespace VulkanTest
         public IGraphicsContext GraphicsContext => mContext;
 
         public bool ShouldCopyPostLoad => true;
-        public bool FlipUVs => true;
-        public bool LeftHanded => true;
         public int MaxBonesPerVertex => BoneLimitPerVertex;
 
         [MemberNotNull(nameof(mCommandList))]

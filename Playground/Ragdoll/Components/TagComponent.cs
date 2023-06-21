@@ -13,7 +13,7 @@ namespace Ragdoll.Components
 
         public string Tag;
 
-        public void Edit()
+        internal void OnEdit(ulong id, SceneLayer scene)
         {
             ImGui.InputText("Tag", ref Tag, 256);
         }

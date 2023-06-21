@@ -43,6 +43,9 @@ namespace Ragdoll
             mLayers = new List<Layer>();
         }
 
+        public bool HasLayer<T>() where T : Layer => FindLayer<T>() is not null;
+        public bool HasLayer(Type layerType) => FindLayer(layerType) is not null;
+
         public T? FindLayer<T>() where T : Layer => (T?)FindLayer(typeof(T));
         public Layer? FindLayer(Type layerType)
         {

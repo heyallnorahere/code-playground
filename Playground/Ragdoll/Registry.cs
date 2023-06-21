@@ -15,48 +15,48 @@ namespace Ragdoll
         public Dictionary<Type, int> ComponentIndices { get; set; }
     }
 
-    public sealed class RegistryLock : IDisposable
-    {
-        internal RegistryLock(Registry registry)
-        {
-            mRegistry = registry;
-            mDisposed = false;
-
-            mRegistry.mLockCount++;
-        }
-
-        ~RegistryLock()
-        {
-            if (!mDisposed)
-            {
-                Dispose(false);
-                mDisposed = true;
-            }
-        }
-
-        public void Dispose()
-        {
-            if (mDisposed)
-            {
-                return;
-            }
-
-            Dispose(true);
-            mDisposed = true;
-        }
-
-        private void Dispose(bool disposing)
-        {
-
-        }
-
-        private readonly Registry mRegistry;
-        private bool mDisposed;
-    }
-
     public sealed class Registry : IEnumerable<ulong>
     {
         public const ulong Null = 0;
+
+        private sealed class RegistryLock : IDisposable
+        {
+            internal RegistryLock(Registry registry)
+            {
+                mRegistry = registry;
+                mDisposed = false;
+
+                mRegistry.mLockCount++;
+            }
+
+            ~RegistryLock()
+            {
+                if (!mDisposed)
+                {
+                    Dispose(false);
+                    mDisposed = true;
+                }
+            }
+
+            public void Dispose()
+            {
+                if (mDisposed)
+                {
+                    return;
+                }
+
+                Dispose(true);
+                mDisposed = true;
+            }
+
+            private void Dispose(bool disposing)
+            {
+                mRegistry.mLockCount--;
+            }
+
+            private readonly Registry mRegistry;
+            private bool mDisposed;
+        }
 
         public Registry()
         {
@@ -66,7 +66,7 @@ namespace Ragdoll
             mComponents = new List<object>();
         }
 
-        public RegistryLock Lock() => new RegistryLock(this);
+        public IDisposable Lock() => new RegistryLock(this);
         private void VerifyUnlocked()
         {
             if (mLockCount <= 0)
@@ -327,7 +327,7 @@ namespace Ragdoll
         public int Count => mEntities.Count;
 
         private ulong mCurrentID;
-        internal int mLockCount;
+        private int mLockCount;
         private readonly Dictionary<ulong, EntityData> mEntities;
         private readonly List<object> mComponents;
     }

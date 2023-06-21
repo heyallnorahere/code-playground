@@ -8,12 +8,12 @@ namespace Ragdoll
     [ApplicationTitle("Ragdoll")]
     internal sealed class App : GraphicsApplication
     {
-        public static ILayerView Layers
+        public static new App Instance
         {
             get
             {
-                var app = (App)Application.Instance;
-                return app.mLayerStack;
+                var application = Application.Instance;
+                return (App)application;
             }
         }
 
@@ -21,6 +21,7 @@ namespace Ragdoll
         {
             mLayerStack = new LayerStack();
             mRenderer = null;
+            mModelRegistry = null;
 
             Load += OnLoad;
             InputReady += OnInputReady;
@@ -33,6 +34,7 @@ namespace Ragdoll
         {
             var context = CreateGraphicsContext();
             mRenderer = new Renderer(context);
+            mModelRegistry = new ModelRegistry(context);
 
             mLayerStack.PushLayer<SceneLayer>(LayerType.Layer);
             InitializeImGui();
@@ -48,7 +50,7 @@ namespace Ragdoll
             if (graphicsContext is null ||
                 inputContext is null ||
                 window is null ||
-                mLayerStack.FindLayer<ImGuiLayer>() is not null)
+                mLayerStack.HasLayer<ImGuiLayer>())
             {
                 return;
             }
@@ -60,18 +62,14 @@ namespace Ragdoll
         private void OnClose()
         {
             mLayerStack.Clear();
-            if (mRenderer is not null)
-            {
-                var context = mRenderer.Context;
-                mRenderer.Dispose();
-                context.Dispose(); // renderer doesn't own context
-            }
+            mModelRegistry?.Dispose();
+            mRenderer?.Dispose();
         }
 
         private void OnUpdate(double delta)
         {
             mLayerStack.EnumerateLayers(layer => layer.OnUpdate(delta));
-            if (mLayerStack.FindLayer<ImGuiLayer>() is not null)
+            if (mLayerStack.HasLayer<ImGuiLayer>())
             {
                 mLayerStack.EnumerateLayers(layer => layer.OnImGuiRender());
             }
@@ -95,7 +93,11 @@ namespace Ragdoll
             mRenderer.EndRender();
         }
 
+        public ILayerView LayerView => mLayerStack;
+        public ModelRegistry? ModelRegistry => mModelRegistry;
+
         private Renderer? mRenderer;
+        private ModelRegistry? mModelRegistry;
         private readonly LayerStack mLayerStack;
     }
 }
