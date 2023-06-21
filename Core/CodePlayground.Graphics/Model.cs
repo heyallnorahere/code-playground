@@ -93,7 +93,7 @@ namespace CodePlayground.Graphics
         private static unsafe Model? Load(ReadOnlySpan<byte> data, string path, bool loadedFromFile, IModelImportContext importContext)
         {
             var flags = PostProcessSteps.Triangulate | PostProcessSteps.GenerateNormals | PostProcessSteps.GenerateUVCoords | PostProcessSteps.JoinIdenticalVertices | PostProcessSteps.LimitBoneWeights;
-            
+
             var graphicsContext = importContext.GraphicsContext;
             if (graphicsContext.FlipUVs)
             {

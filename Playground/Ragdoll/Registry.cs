@@ -15,6 +15,45 @@ namespace Ragdoll
         public Dictionary<Type, int> ComponentIndices { get; set; }
     }
 
+    public sealed class RegistryLock : IDisposable
+    {
+        internal RegistryLock(Registry registry)
+        {
+            mRegistry = registry;
+            mDisposed = false;
+
+            mRegistry.mLockCount++;
+        }
+
+        ~RegistryLock()
+        {
+            if (!mDisposed)
+            {
+                Dispose(false);
+                mDisposed = true;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (mDisposed)
+            {
+                return;
+            }
+
+            Dispose(true);
+            mDisposed = true;
+        }
+
+        private void Dispose(bool disposing)
+        {
+
+        }
+
+        private readonly Registry mRegistry;
+        private bool mDisposed;
+    }
+
     public sealed class Registry : IEnumerable<ulong>
     {
         public const ulong Null = 0;
@@ -22,12 +61,25 @@ namespace Ragdoll
         public Registry()
         {
             mCurrentID = Null;
+            mLockCount = 0;
             mEntities = new Dictionary<ulong, EntityData>();
             mComponents = new List<object>();
         }
 
+        public RegistryLock Lock() => new RegistryLock(this);
+        private void VerifyUnlocked()
+        {
+            if (mLockCount <= 0)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException("The registry is currently locked!");
+        }
+
         public ulong New()
         {
+            VerifyUnlocked();
             ulong id = ++mCurrentID;
 
             // expensive operation - though tbf so is creating an entity
@@ -69,6 +121,7 @@ namespace Ragdoll
         public bool Exists(ulong id) => mEntities.ContainsKey(id);
         public void Destroy(ulong id)
         {
+            VerifyUnlocked();
             if (!mEntities.TryGetValue(id, out EntityData data))
             {
                 throw new ArgumentException("Invalid entity ID!");
@@ -189,20 +242,18 @@ namespace Ragdoll
             throw new ArgumentException($"No component of type {type} exists on this entity!");
         }
 
-        public void Add<T>(ulong id, params object?[] args) where T : class
-        {
-            var component = Utilities.CreateDynamicInstance<T>(args);
-            Add(id, component);
-        }
-
-        public void Add(ulong id, Type type, params object?[] args)
+        public T Add<T>(ulong id, params object?[] args) where T : class => (T)Add(id, typeof(T), args);
+        public object Add(ulong id, Type type, params object?[] args)
         {
             var component = Utilities.CreateDynamicInstance(type, args);
+
             Add(id, component);
+            return component;
         }
 
         public void Add(ulong id, object component)
         {
+            VerifyUnlocked();
             if (!mEntities.TryGetValue(id, out EntityData data))
             {
                 throw new ArgumentException("Invalid entity ID!");
@@ -236,6 +287,7 @@ namespace Ragdoll
 
         public void Remove(ulong id, Type type)
         {
+            VerifyUnlocked();
             if (!mEntities.TryGetValue(id, out EntityData data))
             {
                 throw new ArgumentException("Invalid entity ID!");
@@ -271,7 +323,11 @@ namespace Ragdoll
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
         public IEnumerator<ulong> GetEnumerator() => mEntities.Keys.GetEnumerator();
 
+        public bool Locked => mLockCount > 0;
+        public int Count => mEntities.Count;
+
         private ulong mCurrentID;
+        internal int mLockCount;
         private readonly Dictionary<ulong, EntityData> mEntities;
         private readonly List<object> mComponents;
     }

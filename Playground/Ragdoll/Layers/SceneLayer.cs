@@ -3,6 +3,7 @@ using Ragdoll.Components;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Numerics;
 using System.Reflection;
 
@@ -137,7 +138,7 @@ namespace Ragdoll.Layers
             }
         }
 
-        #region Menu shit
+        #region Menu loading
 
         private IReadOnlyList<ImGuiMenu> LoadMenus()
         {
@@ -373,12 +374,7 @@ namespace Ragdoll.Layers
 
                 if (open)
                 {
-                    var editMethod = type.GetMethod("Edit", BindingFlags.Public | BindingFlags.Instance, Array.Empty<Type>());
-                    if (editMethod is not null)
-                    {
-                        editMethod.Invoke(component, null);
-                    }
-                    else
+                    if (!InvokeComponentEvent(component, "OnEdit", Array.Empty<Type>(), null))
                     {
                         ImGui.Text("This component is not editable");
                     }
@@ -393,6 +389,95 @@ namespace Ragdoll.Layers
             {
                 mRegistry.Remove(mSelectedEntity, type);
             }
+        }
+
+        #endregion
+        #region ECS
+
+        private void OnComponentAdded(object component, ulong id)
+        {
+            var parameters = new Type[]
+            {
+                typeof(ulong),
+                typeof(Registry)
+            };
+
+            var arguments = new object[]
+            {
+                id,
+                mRegistry
+            };
+
+            using var registryLock = mRegistry.Lock();
+            InvokeComponentEvent(component, "OnAdded", parameters, arguments);
+        }
+
+        private void OnComponentRemoved(object component, ulong id)
+        {
+            var parameters = new Type[]
+            {
+                typeof(ulong),
+                typeof(Registry)
+            };
+
+            var arguments = new object[]
+            {
+                id,
+                mRegistry
+            };
+
+            using var registryLock = mRegistry.Lock();
+            InvokeComponentEvent(component, "OnRemoved", parameters, arguments);
+        }
+
+        private bool InvokeComponentEvent(object component, string name, Type[] parameters, object?[]? arguments)
+        {
+            var type = component.GetType();
+            var method = type.GetMethod(name, BindingFlags.Public | BindingFlags.Instance, parameters);
+
+            if (method is null)
+            {
+                return false;
+            }
+
+            method.Invoke(component, arguments);
+            return true;
+        }
+
+        public ulong NewEntity(string tag = "Entity")
+        {
+            ulong id = mRegistry.New();
+            AddComponent<TagComponent>(id, tag);
+
+            return id;
+        }
+
+        public IEnumerable<ulong> Entities => mRegistry;
+        public IEnumerable<object> ViewComponent(ulong id) => mRegistry.View(id);
+        public IEnumerable<ulong> ViewEntities(params Type[] types) => mRegistry.View(types);
+
+        public bool HasComponent<T>(ulong id) where T : class => mRegistry.Has<T>(id);
+        public bool HasComponent(ulong id, Type type) => mRegistry.Has(id, type);
+
+        public T AddComponent<T>(ulong id, params object?[] args) where T : class => (T)AddComponent(id, typeof(T), args);
+        public object AddComponent(ulong id, Type type, params object?[] args)
+        {
+            var component = mRegistry.Add(id, type, args);
+            OnComponentAdded(component, id);
+
+            return component;
+        }
+
+        public void RemoveComponent<T>(ulong id) where T : class => RemoveComponent(id, typeof(T));
+        public void RemoveComponent(ulong id, Type type)
+        {
+            if (!mRegistry.TryGet(id, type, out object? component))
+            {
+                return;
+            }
+
+            OnComponentRemoved(component, id);
+            mRegistry.Remove(id, type);
         }
 
         #endregion

@@ -8,20 +8,14 @@ namespace Ragdoll.Components
     {
         public TagComponent(string tag = "Entity")
         {
-            mTag = tag;
+            Tag = tag;
         }
 
-        public string Tag
-        {
-            get => mTag;
-            set => mTag = value;
-        }
+        public string Tag;
 
         public void Edit()
         {
-            ImGui.InputText("Tag", ref mTag, 256);
+            ImGui.InputText("Tag", ref Tag, 256);
         }
-
-        private string mTag;
     }
 }

@@ -21,6 +21,130 @@ namespace CodePlayground.Graphics
             mMinDepth = minDepth;
         }
 
+        // https://github.com/StudioCherno/Hazel/blob/master/Hazel/src/Hazel/Math/Math.cpp#L15
+        public bool Decompose(Matrix4x4 matrix, out Vector3 translation, out Quaternion rotation, out Vector3 scale)
+        {
+            translation = matrix.Translation;
+            rotation = new Quaternion(0f, 0f, 0f, 1f);
+            scale = new Vector3(1f);
+
+            if (MathF.Abs(matrix[3, 3]) < float.Epsilon)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < 3; i++)
+            {
+                if (MathF.Abs(matrix[3, i]) < float.Epsilon)
+                {
+                    return false;
+                }
+            }
+
+            for (int i = 0; i < 3; i++)
+            {
+                float length2 = 0f;
+                for (int j = 0; j < 3; j++)
+                {
+                    float value = matrix[j, i];
+                    length2 += MathF.Pow(value, 2f);
+                }
+
+                scale[i] = MathF.Sqrt(length2);
+                for (int j = 0; j < 3; j++)
+                {
+                    matrix[j, i] /= scale[i];
+                }
+            }
+
+            float trace = 0f;
+            for (int i = 0; i < 3; i++)
+            {
+                trace += matrix[i, 0];
+            }
+
+            if (trace > 0f)
+            {
+                float root = MathF.Sqrt(trace + 1f);
+                rotation.W = root / 2f;
+
+                for (int i = 0; i < 3; i++)
+                {
+                    int j = (i + 1) % 3;
+                    int k = (j + 1) % 3;
+
+                    rotation[i] = (matrix[k, j] - matrix[j, k]) / (root * 2f);
+                }
+            }
+            else
+            {
+                int i = 0;
+                for (int l = 1; l < 3; l++)
+                {
+                    if (matrix[l, l] > matrix[i, i])
+                    {
+                        i = l;
+                    }
+                }
+
+                int j = (i + 1) % 3;
+                int k = (j + 1) % 3;
+
+                float root = MathF.Sqrt(1f + matrix[i, i] - matrix[j, j] - matrix[k, k]);
+                rotation[i] = root / 2f;
+
+                float f = 1f / (root * 2f);
+                rotation[j] = f * (matrix[j, i] + matrix[i, j]);
+                rotation[k] = f * (matrix[k, i] + matrix[i, k]);
+                rotation.W = f * (matrix[k, j] - matrix[j, k]);
+            }
+
+            return true;
+        }
+
+        public Vector3 EulerAngles(Quaternion quat)
+        {
+            return new Vector3
+            {
+                X = Pitch(quat),
+                Y = Yaw(quat),
+                Z = Roll(quat)
+            };
+        }
+
+        // https://github.com/g-truc/glm/blob/5c46b9c07008ae65cb81ab79cd677ecc1934b903/glm/gtc/quaternion.inl#L28
+        public float Pitch(Quaternion quat)
+        {
+            float opposite = 2f * (quat.Y * quat.Z + quat.W * quat.X);
+            float adjacent = MathF.Pow(quat.W, 2f) + MathF.Pow(quat.Z, 2f) - MathF.Pow(quat.X, 2f) - MathF.Pow(quat.Y, 2f);
+
+            if (MathF.Abs(opposite) < float.Epsilon && MathF.Abs(adjacent) < float.Epsilon)
+            {
+                return 2f * MathF.Atan2(quat.X, quat.W);
+            }
+
+            return MathF.Atan2(opposite, adjacent);
+        }
+
+        public float Yaw(Quaternion quat)
+        {
+            float sin = float.Clamp(-2f * (quat.X * quat.Z - quat.W * quat.Y), -1f, 1f);
+            return MathF.Asin(sin);
+        }
+
+        public float Roll(Quaternion quat)
+        {
+		    float opposite = 2f * (quat.X * quat.Y + quat.W * quat.Z);
+		    float adjacent = MathF.Pow(quat.W, 2f) + MathF.Pow(quat.X, 2f) - MathF.Pow(quat.Y, 2f) - MathF.Pow(quat.Z, 2f);
+
+            if (MathF.Abs(opposite) < float.Epsilon && MathF.Abs(adjacent) < float.Epsilon)
+            {
+                return 0f;
+            }
+
+            return MathF.Atan2(opposite, adjacent);
+        }
+
         #region Perspective
 
         // https://github.com/g-truc/glm/blob/efec5db081e3aad807d0731e172ac597f6a39447/glm/ext/matrix_clip_space.inl#L265

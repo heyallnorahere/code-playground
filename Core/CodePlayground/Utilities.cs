@@ -17,11 +17,7 @@ namespace CodePlayground
             return true;
         }
 
-        public static T CreateDynamicInstance<T>(params object?[] args)
-        {
-            return (T)CreateDynamicInstance(typeof(T), args);
-        }
-
+        public static T CreateDynamicInstance<T>(params object?[] args) => (T)CreateDynamicInstance(typeof(T), args);
         public static object CreateDynamicInstance(Type type, params object?[] args)
         {
             var constructors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
