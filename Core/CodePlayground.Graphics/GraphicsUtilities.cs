@@ -94,17 +94,17 @@ namespace CodePlayground.Graphics
             return deviceImage.CreateTexture(true);
         }
 
-        public static void MapStructure<T>(this IDeviceBuffer buffer, IPipeline pipeline, string resourceName, T data) where T : unmanaged
+        public static void MapStructure<T>(this IDeviceBuffer buffer, IReflectionView reflectionView, string resourceName, T data) where T : unmanaged
         {
             buffer.Map(mapped =>
             {
-                pipeline.MapStructure(mapped, resourceName, data);
+                reflectionView.MapStructure(mapped, resourceName, data);
             });
         }
 
-        public static unsafe void MapStructure<T>(this IPipeline pipeline, Span<byte> destination, string resourceName, T data) where T : unmanaged
+        public static unsafe void MapStructure<T>(this IReflectionView reflectionView, Span<byte> destination, string resourceName, T data) where T : unmanaged
         {
-            int count = MapFields(pipeline, destination, resourceName, string.Empty, &data, typeof(T));
+            int count = MapFields(reflectionView, destination, resourceName, string.Empty, &data, typeof(T));
             if (count == 0)
             {
                 fixed (byte* spanPointer = destination)
@@ -114,7 +114,7 @@ namespace CodePlayground.Graphics
             }
         }
 
-        private static unsafe int MapFields(IPipeline pipeline, Span<byte> destination, string resourceName, string baseExpression, void* data, Type type)
+        private static unsafe int MapFields(IReflectionView reflectionView, Span<byte> destination, string resourceName, string baseExpression, void* data, Type type)
         {
             if (type.IsPrimitive)
             {
@@ -159,10 +159,10 @@ namespace CodePlayground.Graphics
                     nint cpuOffset = Marshal.OffsetOf(type, field.Name) + (i * fieldSize);
                     void* cpuPointer = (void*)((nint)data + cpuOffset);
 
-                    int count = MapFields(pipeline, destination, resourceName, expression, cpuPointer, field.FieldType);
+                    int count = MapFields(reflectionView, destination, resourceName, expression, cpuPointer, field.FieldType);
                     if (count == 0)
                     {
-                        int gpuOffset = pipeline.GetBufferOffset(resourceName, expression);
+                        int gpuOffset = reflectionView.GetBufferOffset(resourceName, expression);
                         if (gpuOffset < 0)
                         {
                             skip = true;

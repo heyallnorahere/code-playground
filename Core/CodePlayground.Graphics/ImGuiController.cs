@@ -303,7 +303,7 @@ namespace CodePlayground.Graphics
 
         private IDeviceBuffer CreateUniformBuffer(string resourceName)
         {
-            int size = mPipeline.GetBufferSize(resourceName);
+            int size = mPipeline.ReflectionView.GetBufferSize(resourceName);
             if (size < 0)
             {
                 throw new ArgumentException($"Could not find buffer \"{resourceName}\"");

@@ -616,6 +616,11 @@ namespace CodePlayground.Graphics.Vulkan
             return new VulkanShader(mDevice!, data, stage, entrypoint);
         }
 
+        IReflectionView IGraphicsContext.CreateReflectionView(IReadOnlyDictionary<ShaderStage, IShader> shaders)
+        {
+            return new VulkanReflectionView(shaders);
+        }
+
         IPipeline IGraphicsContext.CreatePipeline(PipelineDescription description)
         {
             return new VulkanPipeline(this, description);

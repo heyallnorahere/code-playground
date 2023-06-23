@@ -251,6 +251,7 @@ namespace CodePlayground.Graphics
         public IDeviceImage CreateDeviceImage(DeviceImageInfo info);
 
         public IShader LoadShader(IReadOnlyList<byte> data, ShaderStage stage, string entrypoint);
+        public IReflectionView CreateReflectionView(IReadOnlyDictionary<ShaderStage, IShader> shaders);
         public IPipeline CreatePipeline(PipelineDescription description);
 
         public IDisposable CreateSemaphore();
@@ -389,7 +390,6 @@ namespace CodePlayground.Graphics
         public ShaderLanguage PreferredLanguage { get; }
 
         public byte[] Compile(string source, string path, ShaderLanguage language, ShaderStage stage, string entrypoint);
-        public ShaderReflectionResult Reflect(IReadOnlyList<byte> bytecode);
     }
 
     public interface IShader : IDisposable
@@ -397,11 +397,20 @@ namespace CodePlayground.Graphics
         public ShaderStage Stage { get; }
         public string Entrypoint { get; }
         public IReadOnlyList<byte> Bytecode { get; }
+        public ShaderReflectionResult ReflectionData { get; }
+    }
+
+    public interface IReflectionView
+    {
+        public bool ResourceExists(string resource);
+        public int GetBufferSize(string resource);
+        public int GetBufferOffset(string resource, string expression);
     }
 
     public interface IPipeline : IDisposable
     {
         public PipelineDescription Description { get; }
+        public IReflectionView ReflectionView { get; }
         public ulong ID { get; }
 
         public void Bind(ICommandList commandList, int frame);
@@ -417,10 +426,6 @@ namespace CodePlayground.Graphics
         public void DestroyDynamicID(nint id);
 
         public void Load(IReadOnlyDictionary<ShaderStage, IShader> shaders);
-
-        public bool ResourceExists(string resource);
-        public int GetBufferSize(string resource);
-        public int GetBufferOffset(string resource, string expression);
     }
 
     public interface IPipelineSpecification

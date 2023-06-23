@@ -1,11 +1,15 @@
+using CodePlayground.Graphics;
 using ImGuiNET;
 using Ragdoll.Components;
+using Ragdoll.Shaders;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace Ragdoll.Layers
 {
@@ -91,6 +95,23 @@ namespace Ragdoll.Layers
         public string DisplayName { get; set; }
     }
 
+    internal struct LoadedModelInfo
+    {
+        public IPipeline[] Pipelines { get; set; }
+        // not much else...
+    }
+
+    internal struct CameraBufferData
+    {
+        public Matrix4x4 ViewProjection;
+    }
+
+    internal struct PushConstantData
+    {
+        public Matrix4x4 Model;
+        public int BoneOffset;
+    }
+
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
     internal sealed class SceneLayer : Layer
     {
@@ -130,6 +151,10 @@ namespace Ragdoll.Layers
             mSelectedEntity = Registry.Null;
             mRegistry = new Registry();
             mMenus = LoadMenus();
+            mModelPath = mModelName = mModelError = string.Empty;
+            mLoadedModelInfo = new Dictionary<int, LoadedModelInfo>();
+            mCameraBuffer = null;
+            mReflectionView = null;
 
             for (int i = 0; i < 5; i++)
             {
@@ -211,9 +236,139 @@ namespace Ragdoll.Layers
         #endregion
         #region Layer events
 
+        public override void OnPushed()
+        {
+            var app = App.Instance;
+            mReflectionView = app.Renderer!.Library.CreateReflectionView<ModelShader>();
+
+            int bufferSize = mReflectionView.GetBufferSize(nameof(ModelShader.u_CameraBuffer));
+            if (bufferSize < 0)
+            {
+                throw new InvalidOperationException("Failed to find camera buffer!");
+            }
+
+            mCameraBuffer = app.GraphicsContext!.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize);
+        }
+
+        public override void OnPopped()
+        {
+            mCameraBuffer?.Dispose();
+            foreach (var modelData in mLoadedModelInfo.Values)
+            {
+                foreach (var pipeline in modelData.Pipelines)
+                {
+                    pipeline.Dispose();
+                }
+            }
+        }
+
+        private static void ComputeCameraVectors(Vector3 angle, out Vector3 direction, out Vector3 up)
+        {
+            var radians = angle * MathF.PI / 180f;
+
+            float pitch = radians.X;
+            float yaw = radians.Y;
+            float roll = radians.Z + MathF.PI / 2f;
+
+            float directionPitch = MathF.Sin(roll) * pitch - MathF.Cos(roll) * yaw;
+            float directionYaw = MathF.Sin(roll) * yaw - MathF.Cos(roll) * pitch;
+
+            // todo: take roll into account
+            direction = Vector3.Normalize(new Vector3
+            {
+                X = MathF.Cos(directionYaw) * MathF.Cos(directionPitch),
+                Y = MathF.Sin(directionPitch),
+                Z = MathF.Sin(directionYaw) * MathF.Cos(directionPitch)
+            });
+
+            up = Vector3.Normalize(new Vector3
+            {
+                X = MathF.Cos(yaw - MathF.PI / 2f) * MathF.Cos(roll),
+                Y = MathF.Sin(roll),
+                Z = MathF.Sin(yaw - MathF.PI / 2f) * MathF.Cos(roll)
+            });
+        }
+
         public override void OnUpdate(double delta)
         {
             // todo: update scene
+
+            var app = App.Instance;
+            var context = app.GraphicsContext;
+            var registry = app.ModelRegistry;
+
+            if (registry is not null)
+            {
+                foreach (ulong entity in ViewEntities(typeof(RenderedModelComponent)))
+                {
+                    var modelData = GetComponent<RenderedModelComponent>(entity);
+
+                    var skeleton = modelData.Model?.Skeleton;
+                    if (skeleton is null)
+                    {
+                        continue;
+                    }
+
+                    var boneTransforms = new Matrix4x4[skeleton.BoneCount];
+                    var globalTransforms = new List<Matrix4x4>();
+                    for (int i = 0; i < boneTransforms.Length; i++)
+                    {
+                        int parent = skeleton.GetParent(i);
+                        var parentTransform = parent < 0 ? skeleton.GetParentTransform(i) : globalTransforms[parent];
+
+                        var nodeTransform = skeleton.GetTransform(i) * modelData.BoneTransforms![i];
+                        var globalTransform = parentTransform * nodeTransform;
+
+                        var offsetMatrix = skeleton.GetOffsetMatrix(i);
+                        var boneTransform = globalTransform * offsetMatrix;
+
+                        globalTransforms.Add(globalTransform);
+                        boneTransforms[i] = Matrix4x4.Transpose(boneTransform);
+                    }
+
+                    var boneBuffer = registry.Models[modelData.ID].BoneBuffer;
+                    boneBuffer.CopyFromCPU(boneTransforms, modelData.BoneOffset * Marshal.SizeOf<Matrix4x4>());
+                }
+            }
+
+            if (context is not null)
+            {
+                var camera = Registry.Null;
+                var entityView = ViewEntities(typeof(TransformComponent), typeof(CameraComponent));
+
+                foreach (ulong entity in entityView)
+                {
+                    var component = GetComponent<CameraComponent>(entity);
+                    if (component.MainCamera)
+                    {
+                        camera = entity;
+                        break;
+                    }
+                }
+
+                if (camera != Registry.Null)
+                {
+                    // todo: use framebuffer
+                    var swapchain = context.Swapchain;
+                    var transform = GetComponent<TransformComponent>(camera);
+                    var cameraData = GetComponent<CameraComponent>(camera);
+
+                    float aspectRatio = (float)swapchain.Width / swapchain.Height;
+                    float fov = cameraData.FOV * MathF.PI / 180f;
+                    ComputeCameraVectors(transform.Rotation + cameraData.RotationOffset, out Vector3 direction, out Vector3 up);
+
+                    var math = new MatrixMath(context);
+                    var projection = math.Perspective(fov, aspectRatio, 0.1f, 100f);
+                    var view = math.LookAt(transform.Translation, transform.Translation + direction, up);
+
+                    mCameraBuffer?.MapStructure(mReflectionView!, nameof(ModelShader.u_CameraBuffer), new CameraBufferData
+                    {
+                        // GLSL matrices are column-major
+                        // System.Numerics uses row-major
+                        ViewProjection = Matrix4x4.Transpose(projection * view)
+                    });
+                }
+            }
         }
 
         public override void OnImGuiRender()
@@ -227,7 +382,33 @@ namespace Ragdoll.Layers
         // todo: move to prerender with a framebuffer
         public override void OnRender(Renderer renderer)
         {
-            // todo: render scene
+            foreach (ulong id in ViewEntities(typeof(TransformComponent), typeof(RenderedModelComponent)))
+            {
+                var transform = GetComponent<TransformComponent>(id);
+                var renderedModel = GetComponent<RenderedModelComponent>(id);
+
+                var model = renderedModel.Model;
+                if (model is null)
+                {
+                    continue;
+                }
+
+                var info = mLoadedModelInfo[renderedModel.ID];
+                foreach (var mesh in model.Submeshes)
+                {
+                    var pipeline = info.Pipelines[mesh.MaterialIndex];
+                    renderer.RenderMesh(model.VertexBuffer, model.IndexBuffer, pipeline,
+                                        mesh.IndexOffset, mesh.IndexCount, DeviceBufferIndexType.UInt32,
+                                        mapped =>
+                    {
+                        mReflectionView!.MapStructure(mapped, nameof(ModelShader.u_PushConstants), new PushConstantData
+                        {
+                            Model = Matrix4x4.Transpose(transform * mesh.Transform), // see OnUpdate
+                            BoneOffset = renderedModel.BoneOffset
+                        });
+                    });
+                }
+            }
         }
 
         #endregion
@@ -389,6 +570,104 @@ namespace Ragdoll.Layers
             }
         }
 
+        [ImGuiMenu("Model registry")]
+        private unsafe void ModelRegistry(IEnumerable<ImGuiMenu> children)
+        {
+            var registry = App.Instance.ModelRegistry;
+            if (registry is null)
+            {
+                ImGui.Text("The model registry has not been initialized!");
+                return;
+            }
+
+            string hint = Path.GetFileNameWithoutExtension(mModelPath) ?? string.Empty;
+            ImGui.InputText("Model path", ref mModelPath, 256);
+            ImGui.InputTextWithHint("Model name", hint, ref mModelName, 256);
+
+            if (ImGui.Button("Load model"))
+            {
+                if (string.IsNullOrEmpty(mModelPath))
+                {
+                    mModelError = "No path provided!";
+                }
+                else
+                {
+                    try
+                    {
+                        string name = string.IsNullOrEmpty(mModelName) ? hint : mModelName;
+                        int modelId = registry.Load<ModelShader>(mModelPath, name, nameof(ModelShader.u_BoneBuffer));
+
+                        if (modelId < 0)
+                        {
+                            mModelError = "Failed to load model!";
+                        }
+                        else
+                        {
+                            mModelName = mModelPath = mModelError = string.Empty;
+
+                            var app = App.Instance;
+                            var library = App.Instance.Renderer!.Library;
+                            var renderTarget = app.GraphicsContext!.Swapchain.RenderTarget; // todo: framebuffer
+
+                            var modelData = registry.Models[modelId];
+                            var materials = modelData.Model.Materials;
+
+                            var pipelines = new IPipeline[materials.Count];
+                            for (int i = 0; i < materials.Count; i++)
+                            {
+                                var material = materials[i];
+                                var pipeline = library.LoadPipeline<ModelShader>(new PipelineDescription
+                                {
+                                    RenderTarget = renderTarget,
+                                    Type = PipelineType.Graphics,
+                                    FrameCount = Renderer.FrameCount,
+                                    Specification = material.PipelineSpecification
+                                });
+
+                                pipeline.Bind(mCameraBuffer!, nameof(ModelShader.u_CameraBuffer));
+                                pipeline.Bind(modelData.BoneBuffer, nameof(ModelShader.u_BoneBuffer));
+                                material.Bind(pipeline, nameof(ModelShader.u_MaterialBuffer), textureType => $"u_{textureType}Map");
+                            }
+
+                            mLoadedModelInfo.Add(modelId, new LoadedModelInfo
+                            {
+                                Pipelines = pipelines
+                            });
+                        }
+                    }
+                    catch (Exception exc)
+                    {
+                        var type = exc.GetType();
+                        mModelError = $"Exception thrown ({type.FullName ?? type.Name}): {exc.Message}";
+                    }
+                }
+            }
+
+            if (!string.IsNullOrEmpty(mModelError))
+            {
+                ImGui.TextColored(new Vector4(0.8f, 0f, 0f, 1f), mModelError);
+            }
+
+            ImGui.Separator();
+            var models = registry.Models;
+            foreach (var id in models.Keys)
+            {
+                ImGui.PushID($"model-{id}");
+
+                var name = registry.GetFormattedName(id);
+                ImGui.Selectable(name);
+
+                if (ImGui.BeginDragDropSource())
+                {
+                    ImGui.Text(name);
+                    ImGui.SetDragDropPayload(RenderedModelComponent.ModelDragDropID, (nint)(void*)&id, sizeof(int));
+                    ImGui.EndDragDropSource();
+                }
+
+                ImGui.PopID();
+            }
+        }
+
         #endregion
         #region ECS
 
@@ -480,5 +759,9 @@ namespace Ragdoll.Layers
         private ulong mSelectedEntity;
         private readonly Registry mRegistry;
         private readonly IReadOnlyList<ImGuiMenu> mMenus;
+        private string mModelPath, mModelName, mModelError;
+        private readonly Dictionary<int, LoadedModelInfo> mLoadedModelInfo;
+        private IDeviceBuffer? mCameraBuffer;
+        private IReflectionView? mReflectionView;
     }
 }

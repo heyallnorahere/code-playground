@@ -26,6 +26,8 @@ namespace Ragdoll
     {
         public Model Model { get; set; }
         public string Name { get; set; }
+        public IDeviceBuffer BoneBuffer { get; set; }
+        public Dictionary<ulong, int> BoneOffsets { get; set; }
     }
 
     public sealed class ModelRegistry : IModelImportContext, IDisposable
@@ -208,7 +210,8 @@ namespace Ragdoll
 
         public IReadOnlyDictionary<int, LoadedModel> Models => mModels;
         
-        public int Load(string path, string name)
+        public int Load<T>(string path, string name, string bufferName) where T : class => Load(path, name, typeof(T), bufferName);
+        public int Load(string path, string name, Type shader, string bufferName)
         {
             var model = Model.Load(path, this);
             if (model is null)
@@ -216,14 +219,48 @@ namespace Ragdoll
                 return -1;
             }
 
+            var renderer = App.Instance.Renderer!;
+            var reflectionView = renderer.Library.CreateReflectionView(shader);
+            
+            int bufferSize = reflectionView.GetBufferSize(bufferName);
+            if (bufferSize < 0)
+            {
+                throw new ArgumentException($"Failed to find buffer {bufferName} in shader {ShaderLibrary.GetShaderID(shader)}!");
+            }
+
             int id = mCurrentModelID++;
             mModels.Add(id, new LoadedModel
             {
                 Model = model,
-                Name = name
+                Name = name,
+                BoneBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize),
+                BoneOffsets = new Dictionary<ulong, int>()
             });
 
             return id;
+        }
+
+        public int CreateBoneOffset(int model, ulong entity)
+        {
+            var data = mModels[model];
+            int boneCount = data.Model.Skeleton?.BoneCount ?? 0;
+            if (boneCount == 0)
+            {
+                return 0;
+            }
+
+            if (data.BoneOffsets.TryGetValue(entity, out int offset))
+            {
+                return offset;
+            }
+
+            offset = 0;
+            while (data.BoneOffsets.ContainsValue(offset))
+            {
+                offset += boneCount;
+            }
+
+            return offset;
         }
 
         public void Clear()
@@ -234,6 +271,16 @@ namespace Ragdoll
             }
 
             mModels.Clear();
+        }
+
+        public string GetFormattedName(int id)
+        {
+            if (id < 0)
+            {
+                return "--No model--";
+            }
+
+            return $"{mModels[id].Name} (ID: {id})";
         }
 
         #endregion

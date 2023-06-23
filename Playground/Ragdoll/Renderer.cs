@@ -111,6 +111,25 @@ namespace Ragdoll
             mFrameInfo.RenderInfo = null;
         }
 
+        public void RenderMesh(IDeviceBuffer vertices, IDeviceBuffer indices, IPipeline pipeline, int indexOffset, int indexCount, DeviceBufferIndexType indexType, BufferMapCallback? pushConstantCallback = null)
+        {
+            if (mFrameInfo.RenderInfo is null)
+            {
+                throw new InvalidOperationException("Cannot render right now!");
+            }
+
+            vertices.BindVertices(mFrameInfo.CommandList, 0);
+            indices.BindIndices(mFrameInfo.CommandList, indexType);
+
+            pipeline.Bind(mFrameInfo.CommandList, mFrameInfo.CurrentFrame);
+            if (pushConstantCallback is not null)
+            {
+                pipeline.PushConstants(mFrameInfo.CommandList, pushConstantCallback);
+            }
+
+            mRenderer.RenderIndexed(mFrameInfo.CommandList, indexOffset, indexCount);
+        }
+
         public IGraphicsContext Context => mContext;
         public IRenderer API => mRenderer;
         public ShaderLibrary Library => mLibrary;

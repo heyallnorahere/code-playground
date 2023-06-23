@@ -32,7 +32,8 @@ namespace CodePlayground.Graphics
             mDisposed = true;
         }
 
-        private static string GetShaderID(Type type)
+        public static string GetShaderID<T>() where T : class => GetShaderID(typeof(T));
+        public static string GetShaderID(Type type)
         {
             var attribute = type.GetCustomAttribute<CompiledShaderAttribute>();
             if (attribute is null)
@@ -128,6 +129,24 @@ namespace CodePlayground.Graphics
             }
 
             return stages;
+        }
+
+        public IReflectionView CreateReflectionView<T>() where T : class => CreateReflectionView(typeof(T));
+        public IReflectionView CreateReflectionView(Type type)
+        {
+            string id = GetShaderID(type);
+            return CreateReflectionView(id);
+        }
+
+        public IReflectionView CreateReflectionView(string prefix)
+        {
+            var stages = GetStages(prefix);
+            if (stages.Count == 0)
+            {
+                throw new ArgumentException($"Failed to find stages matching prefix \"{prefix}\"");
+            }
+
+            return mContext.CreateReflectionView(stages);
         }
 
         public IPipeline LoadPipeline<T>(PipelineDescription description) where T : class => LoadPipeline(typeof(T), description);

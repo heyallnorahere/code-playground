@@ -94,6 +94,7 @@ namespace Ragdoll
         }
 
         public ILayerView LayerView => mLayerStack;
+        public Renderer? Renderer => mRenderer;
         public ModelRegistry? ModelRegistry => mModelRegistry;
 
         private Renderer? mRenderer;

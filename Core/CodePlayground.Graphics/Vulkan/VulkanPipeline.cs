@@ -91,7 +91,7 @@ namespace CodePlayground.Graphics.Vulkan
         public unsafe VulkanPipeline(VulkanContext context, PipelineDescription description)
         {
             mDesc = description;
-            mReflectionData = new Dictionary<ShaderStage, ShaderReflectionResult>();
+            mReflectionView = null;
             mPushConstantBufferOffsets = new Dictionary<string, int>();
             mBoundResources = new Dictionary<int, DescriptorSetPipelineResources>();
             mID = GenerateID();
@@ -299,32 +299,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void PushConstants(VulkanCommandBuffer commandBuffer, BufferMapCallback callback)
         {
-            int size = 0;
-            var stageFlags = ShaderStageFlags.None;
-
-            var processedBuffers = new HashSet<string>();
-            foreach (var stage in mReflectionData.Keys)
-            {
-                var data = mReflectionData[stage];
-                if (data.PushConstantBuffers.Count == 0)
-                {
-                    continue;
-                }
-
-                stageFlags |= ConvertStage(stage);
-                foreach (var pushConstantBuffer in data.PushConstantBuffers)
-                {
-                    if (processedBuffers.Contains(pushConstantBuffer.Name))
-                    {
-                        continue;
-                    }
-
-                    var typeData = data.Types[pushConstantBuffer.Type];
-                    size += typeData.Size;
-
-                    processedBuffers.Add(pushConstantBuffer.Name);
-                }
-            }
+            mReflectionView!.ProcessPushConstantBuffers(out int size, out ShaderStageFlags stages);
 
             var buffer = new byte[size];
             var span = new Span<byte>(buffer);
@@ -333,7 +308,7 @@ namespace CodePlayground.Graphics.Vulkan
             fixed (byte* data = buffer)
             {
                 var api = VulkanContext.API;
-                api.CmdPushConstants(commandBuffer.Buffer, mLayout, stageFlags, 0, (uint)size, data);
+                api.CmdPushConstants(commandBuffer.Buffer, mLayout, stages, 0, (uint)size, data);
             }
         }
 
@@ -355,7 +330,7 @@ namespace CodePlayground.Graphics.Vulkan
         public bool Bind(IBindableVulkanResource resource, string name, int index)
         {
             AssertLoaded();
-            if (!FindResource(name, out _, out int set, out int binding))
+            if (!mReflectionView!.FindResource(name, out _, out int set, out int binding))
             {
                 return false;
             }
@@ -445,22 +420,12 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             }
 
-            if (!FindResource(name, out _, out int set, out int binding))
+            if (!mReflectionView!.FindResource(name, out _, out int set, out int binding))
             {
                 throw new ArgumentException($"Failed to find resource: {resource}");
             }
 
-            int setBindingCount = 0;
-            foreach (var stage in mReflectionData.Keys)
-            {
-                var data = mReflectionData[stage];
-                if (data.Resources.TryGetValue(set, out Dictionary<int, ReflectedShaderResource>? bindings))
-                {
-                    setBindingCount += bindings.Count;
-                }
-            }
-
-            if (setBindingCount > 1)
+            if (mReflectionView!.GetDescriptorSetBindingCount(set) > 1)
             {
                 throw new InvalidOperationException("Cannot create a dynamic ID on a set with more than 1 binding!");
             }
@@ -511,47 +476,6 @@ namespace CodePlayground.Graphics.Vulkan
             mDynamicIDs.Remove(id);
         }
 
-        public bool FindResource(string name, out ShaderStage stage, out int set, out int binding)
-        {
-            foreach (var currentStage in mReflectionData.Keys)
-            {
-                var data = mReflectionData[currentStage];
-                for (int i = 0; i < data.PushConstantBuffers.Count; i++)
-                {
-                    var buffer = data.PushConstantBuffers[i];
-                    if (buffer.Name == name)
-                    {
-                        stage = currentStage;
-                        set = -1;
-                        binding = i;
-
-                        return true;
-                    }
-                }
-
-                foreach (int currentSet in data.Resources.Keys)
-                {
-                    var setResources = data.Resources[currentSet];
-                    foreach (int currentBinding in setResources.Keys)
-                    {
-                        var currentResource = setResources[currentBinding];
-                        if (currentResource.Name == name)
-                        {
-                            stage = currentStage;
-                            set = currentSet;
-                            binding = currentBinding;
-
-                            return true;
-                        }
-                    }
-                }
-            }
-
-            stage = default;
-            set = binding = -1;
-            return false;
-        }
-
         public void Load(IReadOnlyDictionary<ShaderStage, IShader> shaders)
         {
             Cleanup();
@@ -574,7 +498,7 @@ namespace CodePlayground.Graphics.Vulkan
                 filteredShaders.Add(stage, shaders[stage]);
             }
 
-            Reflect(filteredShaders);
+            mReflectionView = new VulkanReflectionView(filteredShaders);
             CreateDescriptorSets();
             CreatePipelineLayout();
 
@@ -591,23 +515,14 @@ namespace CodePlayground.Graphics.Vulkan
             mLoaded = true;
         }
 
-        private void Reflect(IReadOnlyDictionary<ShaderStage, IShader> shaders)
-        {
-            mReflectionData.Clear();
-            foreach (var stage in shaders.Keys)
-            {
-                var shader = shaders[stage];
-                var data = mCompiler.Reflect(shader.Bytecode);
-                mReflectionData.Add(stage, data);
-            }
-        }
-
         private unsafe void CreateDescriptorSets()
         {
             var layoutBindings = new Dictionary<int, List<DescriptorSetLayoutBinding>>();
-            foreach (var stage in mReflectionData.Keys)
+            var reflectionData = mReflectionView!.ReflectionData;
+
+            foreach (var stage in reflectionData.Keys)
             {
-                var stageReflectionData = mReflectionData[stage];
+                var stageReflectionData = reflectionData[stage];
                 foreach (int set in stageReflectionData.Resources.Keys)
                 {
                     if (!layoutBindings.ContainsKey(set))
@@ -746,9 +661,10 @@ namespace CodePlayground.Graphics.Vulkan
             int currentOffset = 0;
             var pushConstantRanges = new Dictionary<string, PushConstantRange>();
 
-            foreach (var stage in mReflectionData.Keys)
+            var reflectionData = mReflectionView!.ReflectionData;
+            foreach (var stage in reflectionData.Keys)
             {
-                var data = mReflectionData[stage];
+                var data = reflectionData[stage];
                 foreach (var pushConstantBuffer in data.PushConstantBuffers)
                 {
                     var name = pushConstantBuffer.Name;
@@ -864,7 +780,9 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             }
 
-            var vertexReflectionData = mReflectionData[ShaderStage.Vertex];
+            var reflectionData = mReflectionView!.ReflectionData;
+            var vertexReflectionData = reflectionData[ShaderStage.Vertex];
+
             var inputs = vertexReflectionData.StageIO.Where(field => field.Direction == StageIODirection.In).ToList();
             inputs.Sort((a, b) => a.Location.CompareTo(b.Location));
 
@@ -1092,181 +1010,14 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        public bool ResourceExists(string resource)
-        {
-            return FindResource(resource, out _, out _, out _);
-        }
-
-        private int GetBufferTypeID(ShaderStage stage, int set, int binding)
-        {
-            var reflectionData = mReflectionData[stage];
-            int typeId = set < 0 ? reflectionData.PushConstantBuffers[binding].Type : reflectionData.Resources[set][binding].Type;
-
-            var typeData = reflectionData.Types[typeId];
-            return typeData.Class != ShaderTypeClass.Struct ? -1 : typeId;
-        }
-
-        public int GetBufferSize(string resource)
-        {
-            if (!FindResource(resource, out ShaderStage stage, out int set, out int binding))
-            {
-                return -1;
-            }
-
-            return GetBufferSize(stage, set, binding);
-        }
-
-        public int GetBufferSize(ShaderStage stage, int set, int binding)
-        {
-            int typeId = GetBufferTypeID(stage, set, binding);
-            if (typeId < 0)
-            {
-                return -1;
-            }
-
-            var typeData = mReflectionData[stage].Types[typeId];
-            return typeData.Size;
-        }
-
-        public int GetBufferOffset(string resource, string expression)
-        {
-            if (!FindResource(resource, out ShaderStage stage, out int set, out int binding))
-            {
-                return -1;
-            }
-
-            return GetBufferOffset(stage, set, binding, expression);
-        }
-
-        public int GetBufferOffset(ShaderStage stage, int set, int binding, string expression)
-        {
-            int typeId = GetBufferTypeID(stage, set, binding);
-            if (typeId < 0)
-            {
-                return -1;
-            }
-
-            int offset = GetTypeOffset(stage, typeId, expression);
-            if (set < 0)
-            {
-                var name = mReflectionData[stage].PushConstantBuffers[binding].Name;
-                int bufferOffset = mPushConstantBufferOffsets[name];
-
-                if (offset >= 0)
-                {
-                    offset += bufferOffset;
-                }
-            }
-
-            return offset;
-        }
-
-        private int GetTypeOffset(ShaderStage stage, int type, string expression)
-        {
-            const char beginIndexCharacter = '[';
-            const char endIndexCharacter = ']';
-
-            var reflectionData = mReflectionData[stage];
-            var typeData = reflectionData.Types[type];
-            var fields = typeData.Fields!;
-
-            if (typeData.Class != ShaderTypeClass.Struct)
-            {
-                return -1;
-            }
-
-            int memberOperator = expression.IndexOf('.');
-            string fieldExpression = memberOperator < 0 ? expression : expression[0..memberOperator];
-
-            int beginIndexOperator = fieldExpression.IndexOf(beginIndexCharacter);
-            string fieldName = beginIndexOperator < 0 ? fieldExpression : fieldExpression[0..beginIndexOperator];
-
-            if (string.IsNullOrEmpty(fieldName))
-            {
-                throw new ArgumentException("No field name given!");
-            }
-
-            if (!fields.ContainsKey(fieldName))
-            {
-                return -1;
-            }
-
-            var field = fields[fieldName];
-            int offset = field.Offset;
-
-            if (beginIndexOperator >= 0)
-            {
-                var fieldType = reflectionData.Types[field.Type];
-                if (fieldType.ArrayDimensions is null || !fieldType.ArrayDimensions.Any())
-                {
-                    throw new InvalidOperationException("Cannot index a non-array field!");
-                }
-
-                int stride = field.Stride;
-                if (stride <= 0)
-                {
-                    throw new InvalidOperationException("SPIRV-Cross did not provide a stride value!");
-                }
-
-                var indexStrings = new List<string>();
-                for (int i = beginIndexOperator; i < fieldExpression.Length; i++)
-                {
-                    char character = fieldExpression[i];
-                    if (character == beginIndexCharacter)
-                    {
-                        indexStrings.Add(beginIndexCharacter.ToString());
-                    }
-                    else
-                    {
-                        var currentString = indexStrings[^1];
-                        if (currentString[^1] == endIndexCharacter)
-                        {
-                            throw new InvalidOperationException("Malformed index operator!");
-                        }
-
-                        indexStrings[^1] = currentString + character;
-                    }
-                }
-
-                for (int i = 0; i < indexStrings.Count; i++)
-                {
-                    var indexString = indexStrings[i];
-                    if (indexString[^1] != endIndexCharacter)
-                    {
-                        throw new InvalidOperationException("Malformed index operator!");
-                    }
-
-                    int index = int.Parse(indexString[1..^1]);
-                    int dimensionIndex = fieldType.ArrayDimensions.Count - (i + 1);
-                    int dimensionStride = stride;
-
-                    if (index < 0 || index >= fieldType.ArrayDimensions[dimensionIndex])
-                    {
-                        throw new IndexOutOfRangeException();
-                    }
-
-                    for (int j = 0; j < dimensionIndex; j++)
-                    {
-                        dimensionStride *= fieldType.ArrayDimensions[j];
-                    }
-
-                    offset += index * dimensionStride;
-                }
-            }
-
-            if (memberOperator >= 0)
-            {
-                offset += GetTypeOffset(stage, field.Type, expression[(memberOperator + 1)..]);
-            }
-
-            return offset;
-        }
-
         public PipelineDescription Description => mDesc;
         public ulong ID => mID;
+        public VulkanReflectionView ReflectionView => mReflectionView!;
+
+        IReflectionView IPipeline.ReflectionView => ReflectionView;
 
         private readonly PipelineDescription mDesc;
-        private readonly Dictionary<ShaderStage, ShaderReflectionResult> mReflectionData;
+        private VulkanReflectionView? mReflectionView;
         private readonly Dictionary<string, int> mPushConstantBufferOffsets;
 
         private Pipeline mPipeline;

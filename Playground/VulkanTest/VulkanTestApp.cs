@@ -319,8 +319,25 @@ namespace VulkanTest
             }
 
             mPipelines = new IPipeline[mModel.Materials.Count];
+            mReflectionView = mShaderLibrary.CreateReflectionView<TestShader>();
+
             string cameraBufferName = nameof(TestShader.u_CameraBuffer);
             string boneTransformBufferName = nameof(TestShader.u_BoneTransformBuffer);
+
+            int cameraBufferSize = mReflectionView.GetBufferSize(cameraBufferName);
+            if (cameraBufferSize < 0)
+            {
+                throw new ArgumentException($"Failed to find buffer \"{cameraBufferName}\"");
+            }
+
+            int boneTransformBufferSize = mReflectionView.GetBufferSize(boneTransformBufferName);
+            if (boneTransformBufferSize < 0)
+            {
+                throw new ArgumentException($"Failed to find buffer \"{boneTransformBufferName}\"");
+            }
+
+            mCameraBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Uniform, cameraBufferSize);
+            mBoneTransformBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Uniform, boneTransformBufferSize);
 
             for (int i = 0; i < mModel.Materials.Count; i++)
             {
@@ -332,28 +349,6 @@ namespace VulkanTest
                     FrameCount = swapchain.FrameCount,
                     Specification = material.PipelineSpecification
                 });
-
-                if (mCameraBuffer is null)
-                {
-                    int cameraBufferSize = pipeline.GetBufferSize(cameraBufferName);
-                    if (cameraBufferSize < 0)
-                    {
-                        throw new ArgumentException($"Failed to find buffer \"{cameraBufferName}\"");
-                    }
-
-                    mCameraBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Uniform, cameraBufferSize);
-                }
-
-                if (mBoneTransformBuffer is null)
-                {
-                    int boneTransformBufferSize = pipeline.GetBufferSize(boneTransformBufferName);
-                    if (boneTransformBufferSize < 0)
-                    {
-                        throw new ArgumentException($"Failed to find buffer \"{boneTransformBufferName}\"");
-                    }
-
-                    mBoneTransformBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Uniform, boneTransformBufferSize);
-                }
 
                 pipeline.Bind(mCameraBuffer, cameraBufferName, 0);
                 pipeline.Bind(mBoneTransformBuffer, boneTransformBufferName, 0);
@@ -436,7 +431,7 @@ namespace VulkanTest
             var projection = math.Perspective(MathF.PI / 4f, aspectRatio, 0.1f, 100f);
             var view = math.LookAt(new Vector3(x, y, z), Vector3.UnitY * (y - radius), Vector3.UnitY);
 
-            mCameraBuffer!.MapStructure(mPipelines![0], nameof(TestShader.u_CameraBuffer), new CameraBufferData
+            mCameraBuffer!.MapStructure(mReflectionView!, nameof(TestShader.u_CameraBuffer), new CameraBufferData
             {
                 ViewProjection = Matrix4x4.Transpose(projection * view)
             });
@@ -537,7 +532,7 @@ namespace VulkanTest
                 pipeline.Bind(renderInfo.CommandList, renderInfo.CurrentImage);
                 pipeline.PushConstants(renderInfo.CommandList, mapped =>
                 {
-                    pipeline.MapStructure(mapped, nameof(TestShader.u_PushConstants), new PushConstantData
+                    mReflectionView!.MapStructure(mapped, nameof(TestShader.u_PushConstants), new PushConstantData
                     {
                         Model = Matrix4x4.Transpose(model * submesh.Transform),
                         BoneTransformOffset = 0
@@ -554,6 +549,7 @@ namespace VulkanTest
         private ShaderLibrary? mShaderLibrary;
         private ImGuiController? mImGuiController;
         private IPipeline[]? mPipelines;
+        private IReflectionView? mReflectionView;
         private IDeviceBuffer? mCameraBuffer, mBoneTransformBuffer;
         private Model? mModel;
         private Transform[]? mBoneTransformations;

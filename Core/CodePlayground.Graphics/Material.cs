@@ -91,14 +91,15 @@ namespace CodePlayground.Graphics
 
         public void Bind(IPipeline pipeline, string bufferName, Func<MaterialTexture, string> textureNameCallback)
         {
-            if (!pipeline.ResourceExists(bufferName))
+            var reflectionView = pipeline.ReflectionView;
+            if (!reflectionView.ResourceExists(bufferName))
             {
                 throw new ArgumentException($"Buffer \"{bufferName}\" does not exist!");
             }
 
             if (!mUniformBuffers.TryGetValue(pipeline.ID, out IDeviceBuffer? uniformBuffer))
             {
-                int bufferSize = pipeline.GetBufferSize(bufferName);
+                int bufferSize = reflectionView.GetBufferSize(bufferName);
                 uniformBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize);
                 mUniformBuffers.Add(pipeline.ID, uniformBuffer);
             }
@@ -108,7 +109,7 @@ namespace CodePlayground.Graphics
             {
                 foreach (var fieldName in mFields.Keys)
                 {
-                    int gpuOffset = pipeline.GetBufferOffset(bufferName, fieldName);
+                    int gpuOffset = reflectionView.GetBufferOffset(bufferName, fieldName);
                     if (gpuOffset < 0)
                     {
                         continue;
@@ -126,7 +127,7 @@ namespace CodePlayground.Graphics
             foreach (var textureType in textureTypes)
             {
                 string textureName = textureNameCallback.Invoke(textureType);
-                if (!pipeline.ResourceExists(textureName))
+                if (!reflectionView.ResourceExists(textureName))
                 {
                     continue;
                 }
