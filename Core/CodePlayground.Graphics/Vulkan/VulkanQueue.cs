@@ -229,18 +229,11 @@ namespace CodePlayground.Graphics.Vulkan
             if (mStoredBuffers.Count > 0)
             {
                 var buffer = mStoredBuffers.Peek();
-                if (mBufferCap >= 0 && mStoredBuffers.Count > mBufferCap)
-                {
-                    WaitFence(buffer.Fence);
-                }
-
                 var fence = buffer.Fence;
                 var commandBuffer = buffer.CommandBuffer;
 
                 var api = VulkanContext.API;
-                var fenceStatus = api.GetFenceStatus(mDevice, buffer.Fence);
-
-                if (fenceStatus == Result.Success)
+                if (api.GetFenceStatus(mDevice, fence) == Result.Success)
                 {
                     if (buffer.OwnsFence)
                     {
@@ -251,7 +244,11 @@ namespace CodePlayground.Graphics.Vulkan
                     commandBuffer.Reset();
                     mStoredBuffers.Dequeue();
 
-                    return buffer.CommandBuffer;
+                    return commandBuffer;
+                }
+                else if (mBufferCap >= 0 && mStoredBuffers.Count > mBufferCap)
+                {
+                    api.WaitForFences(mDevice, 1, fence, true, ulong.MaxValue).Assert();
                 }
             }
 
@@ -355,12 +352,6 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 api.WaitForFences(mDevice, 1, fence, true, ulong.MaxValue).Assert();
             }
-        }
-
-        private void WaitFence(Fence fence)
-        {
-            var api = VulkanContext.API;
-            api.WaitForFences(mDevice, 1, fence, true, ulong.MaxValue).Assert();
         }
 
         public void Wait()

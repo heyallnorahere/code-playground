@@ -616,7 +616,7 @@ namespace Ragdoll.Layers
                             for (int i = 0; i < materials.Count; i++)
                             {
                                 var material = materials[i];
-                                var pipeline = library.LoadPipeline<ModelShader>(new PipelineDescription
+                                var pipeline = pipelines[i] = library.LoadPipeline<ModelShader>(new PipelineDescription
                                 {
                                     RenderTarget = renderTarget,
                                     Type = PipelineType.Graphics,

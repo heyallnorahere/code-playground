@@ -61,6 +61,9 @@ namespace Ragdoll
 
         private void OnClose()
         {
+            var device = GraphicsContext?.Device;
+            device?.ClearQueues();
+
             mLayerStack.Clear();
             mModelRegistry?.Dispose();
             mRenderer?.Dispose();

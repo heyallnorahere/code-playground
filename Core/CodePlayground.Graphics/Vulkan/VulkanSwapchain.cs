@@ -231,6 +231,7 @@ namespace CodePlayground.Graphics.Vulkan
         [MemberNotNull(nameof(mFramebuffers))]
         [MemberNotNull(nameof(mSyncObjects))]
         [MemberNotNull(nameof(mDepthBuffer))]
+        [MemberNotNull(nameof(mImageFences))]
         private unsafe SwapchainKHR Create(Extent2D extent)
         {
             var queueFamilyIndices = mDevice.PhysicalDevice.FindQueueTypes();
@@ -325,6 +326,9 @@ namespace CodePlayground.Graphics.Vulkan
             mSyncObjects ??= CreateSyncObjects();
             mDepthBuffer = CreateDepthBuffer();
             mFramebuffers = CreateFramebuffers();
+
+            mImageFences = new Fence[mFramebuffers.Length];
+            Array.Fill(mImageFences, default);
 
             return old;
         }
@@ -455,12 +459,14 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void AcquireImage()
         {
+            var api = VulkanContext.API;
+            var currentFrame = mSyncObjects[mCurrentSyncFrame];
+
+            var fence = currentFrame.Fence;
+            api.WaitForFences(mDevice.Device, 1, fence, true, ulong.MaxValue).Assert();
+
             while (true)
             {
-                var api = VulkanContext.API;
-                var currentFrame = mSyncObjects[mCurrentSyncFrame];
-
-                api.WaitForFences(mDevice.Device, 1, currentFrame.Fence, true, ulong.MaxValue).Assert();
                 fixed (uint* currentImage = &mCurrentImage)
                 {
                     var result = mSwapchainExtension.AcquireNextImage(mDevice.Device, mSwapchain,
@@ -478,9 +484,15 @@ namespace CodePlayground.Graphics.Vulkan
                     }
                 }
 
-                api.ResetFences(mDevice.Device, 1, currentFrame.Fence).Assert();
                 break;
             }
+
+            if (mImageFences[mCurrentImage].Handle != 0)
+            {
+                api.WaitForFences(mDevice.Device, 1, mImageFences[mCurrentImage], true, ulong.MaxValue).Assert();
+            }
+
+            mImageFences[mCurrentImage] = fence;
         }
 
         public unsafe void Present(ICommandQueue commandQueue, ICommandList commandList)
@@ -494,9 +506,13 @@ namespace CodePlayground.Graphics.Vulkan
             var commandBuffer = (VulkanCommandBuffer)commandList;
 
             var syncFrame = mSyncObjects[mCurrentSyncFrame];
+            var fence = syncFrame.Fence;
+            var api = VulkanContext.API;
+            api.ResetFences(mDevice.Device, 1, fence).Assert();
+
             queue.Submit(commandBuffer, new VulkanQueueSubmitInfo
             {
-                Fence = syncFrame.Fence,
+                Fence = fence,
                 WaitSemaphores = new VulkanQueueSemaphoreDependency[]
                 {
                     new VulkanQueueSemaphoreDependency
@@ -569,6 +585,7 @@ namespace CodePlayground.Graphics.Vulkan
         private VulkanRenderPass mRenderPass;
 
         private VulkanSwapchainFrameSyncObjects[] mSyncObjects;
+        private Fence[] mImageFences;
         private uint mCurrentImage;
         private int mCurrentSyncFrame;
 

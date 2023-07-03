@@ -209,11 +209,10 @@ namespace CodePlayground.Graphics
             {
                 var device = mGraphicsContext.Device;
                 var swapchain = mGraphicsContext.Swapchain;
+                swapchain.AcquireImage();
 
                 var queue = device.GetQueue(CommandQueueFlags.Graphics);
                 var commandList = queue.Release();
-
-                swapchain.AcquireImage();
                 commandList.Begin();
 
                 Render?.Invoke(new FrameRenderInfo
