@@ -66,7 +66,9 @@ namespace CodePlayground.Graphics
 
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
     [RequestedVulkanExtension(ExtDebugUtils.ExtensionName, VulkanExtensionLevel.Instance, VulkanExtensionType.Extension, Required = false)]
+    [RequestedVulkanExtension(KhrGetPhysicalDeviceProperties2.ExtensionName, VulkanExtensionLevel.Instance, VulkanExtensionType.Extension, Required = false)]
     [RequestedVulkanExtension(KhrSwapchain.ExtensionName, VulkanExtensionLevel.Device, VulkanExtensionType.Extension, Required = true)]
+    [RequestedVulkanExtension("VK_KHR_portability_subset", VulkanExtensionLevel.Device, VulkanExtensionType.Extension, Required = false)]
     [RequestedVulkanExtension("VK_LAYER_KHRONOS_validation", VulkanExtensionLevel.Instance, VulkanExtensionType.Layer, Required = false)]
     [RequestedVulkanExtension("VK_LAYER_KHRONOS_validation", VulkanExtensionLevel.Device, VulkanExtensionType.Layer, Required = false)]
     public abstract class GraphicsApplication : Application
