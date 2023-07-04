@@ -15,4 +15,9 @@
     <EmbeddedResource Include="@(Resources)" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="BepuPhysics" Version="$(BepuPhysicsVersion)" />
+    <PackageReference Include="BepuUtilities" Version="$(BepuPhysicsVersion)" />
+  </ItemGroup>
+
 </Project>

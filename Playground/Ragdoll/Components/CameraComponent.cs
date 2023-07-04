@@ -18,11 +18,18 @@ namespace Ragdoll.Components
         public Vector3 RotationOffset;
         public bool MainCamera;
 
-        internal void OnEdit(ulong id, SceneLayer scene)
+        internal bool OnEvent(ComponentEventInfo eventInfo)
         {
+            if (eventInfo.Event != ComponentEventID.Edited)
+            {
+                return false;
+            }
+
             ImGui.SliderFloat("Vertical FOV", ref FOV, 1f, 89f);
             ImGui.DragFloat3("Rotation offset", ref RotationOffset, 1f);
             ImGui.Checkbox("Main camera", ref MainCamera);
+
+            return true;
         }
     }
 }

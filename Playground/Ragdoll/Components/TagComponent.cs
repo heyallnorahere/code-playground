@@ -13,9 +13,15 @@ namespace Ragdoll.Components
 
         public string Tag;
 
-        internal void OnEdit(ulong id, SceneLayer scene)
+        internal bool OnEvent(ComponentEventInfo eventInfo)
         {
+            if (eventInfo.Event != ComponentEventID.Edited)
+            {
+                return false;
+            }
+
             ImGui.InputText("Tag", ref Tag, 256);
+            return true;
         }
     }
 }

@@ -4,6 +4,7 @@
         <Nullable>enable</Nullable>
 
         <!-- package versions -->
+        <BepuPhysicsVersion>2.5.0-beta.13</BepuPhysicsVersion>
         <GLFWVersion>3.3.3.1</GLFWVersion>
         <ImGuiNETVersion>1.89.5.2</ImGuiNETVersion>
         <MicrosoftNETCorePlatformsVersion>8.0.0-preview.2.23128.3</MicrosoftNETCorePlatformsVersion>

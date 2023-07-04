@@ -1,3 +1,9 @@
+using BepuPhysics;
+using BepuPhysics.Collidables;
+using BepuPhysics.CollisionDetection;
+using BepuPhysics.Constraints;
+using BepuUtilities;
+using BepuUtilities.Memory;
 using CodePlayground.Graphics;
 using ImGuiNET;
 using Ragdoll.Components;
@@ -112,6 +118,106 @@ namespace Ragdoll.Layers
         public int BoneOffset;
     }
 
+    internal enum ComponentEventID
+    {
+        Added,
+        Removed,
+        Edited,
+        Collision
+    }
+
+    internal struct ComponentEventInfo
+    {
+        public SceneLayer Scene { get; set; }
+        public ulong Entity { get; set; }
+        public ComponentEventID Event { get; set; }
+        public object? Context { get; set; }
+    }
+
+    internal struct VelocityDamping
+    {
+        public float Linear { get; set; }
+        public float Angular { get; set; }
+    }
+
+    internal struct SceneSimulationCallbacks : INarrowPhaseCallbacks, IPoseIntegratorCallbacks
+    {
+        public SceneSimulationCallbacks(SceneLayer scene)
+        {
+            mInitialized = false;
+            mScene = scene;
+        }
+
+        public void Dispose()
+        {
+            if (!mInitialized)
+            {
+                return;
+            }
+
+            // todo: dispose
+            mInitialized = false;
+        }
+
+        public void Initialize(Simulation simulation)
+        {
+            // todo: initialize
+        }
+
+        public bool AllowContactGeneration(int workerIndex, CollidableReference a, CollidableReference b, ref float speculativeMargin)
+        {
+            return a.Mobility == b.Mobility && a.Mobility == CollidableMobility.Dynamic;
+        }
+
+        public bool AllowContactGeneration(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB)
+        {
+            return true;
+        }
+
+        public unsafe bool ConfigureContactManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold, out PairMaterialProperties pairMaterial) where TManifold : unmanaged, IContactManifold<TManifold>
+        {
+            pairMaterial.FrictionCoefficient = 1f;
+            pairMaterial.MaximumRecoveryVelocity = 2f;
+            pairMaterial.SpringSettings = new SpringSettings
+            {
+                Frequency = 30f,
+                DampingRatio = 1f
+            };
+
+            return true;
+        }
+
+        public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref ConvexContactManifold manifold)
+        {
+            return true;
+        }
+
+        public void PrepareForIntegration(float dt)
+        {
+            mLinearDamping = new Vector<float>(MathF.Pow(float.Clamp(1f - mScene.VelocityDamping.Linear, 0f, 1f), dt));
+            mAngularDamping = new Vector<float>(MathF.Pow(float.Clamp(1f - mScene.VelocityDamping.Angular, 0f, 1f), dt));
+            mGravity = Vector3Wide.Broadcast(mScene.Gravity * dt);
+        }
+
+        public void IntegrateVelocity(Vector<int> bodyIndices, Vector3Wide position, QuaternionWide orientation, BodyInertiaWide localInertia, Vector<int> integrationMask, int workerIndex, Vector<float> dt, ref BodyVelocityWide velocity)
+        {
+            velocity.Linear += mGravity;
+
+            velocity.Linear *= mLinearDamping;
+            velocity.Angular *= mAngularDamping;
+        }
+
+        public AngularIntegrationMode AngularIntegrationMode => AngularIntegrationMode.Nonconserving;
+        public bool AllowSubstepsForUnconstrainedBodies => false;
+        public bool IntegrateVelocityForKinematics => false;
+
+        private Vector<float> mLinearDamping, mAngularDamping;
+        public Vector3Wide mGravity;
+
+        private bool mInitialized;
+        private readonly SceneLayer mScene;
+    }
+
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
     internal sealed class SceneLayer : Layer
     {
@@ -155,6 +261,14 @@ namespace Ragdoll.Layers
             mLoadedModelInfo = new Dictionary<int, LoadedModelInfo>();
             mCameraBuffer = null;
             mReflectionView = null;
+
+            int targetThreadCount = int.Max(1, Environment.ProcessorCount > 4 ? Environment.ProcessorCount - 2 : Environment.ProcessorCount - 1);
+            var callbacks = new SceneSimulationCallbacks(this);
+
+            mUpdatePhysics = true;
+            mBufferPool = new BufferPool();
+            mThreadDispatcher = new ThreadDispatcher(targetThreadCount);
+            mSimulation = Simulation.Create(mBufferPool, callbacks, callbacks, new SolveDescription(6, 1));
         }
 
         private int LoadModel(string path, string name)
@@ -347,8 +461,6 @@ namespace Ragdoll.Layers
 
         public override void OnUpdate(double delta)
         {
-            // todo: update scene
-
             var app = App.Instance;
             var context = app.GraphicsContext;
             var registry = app.ModelRegistry;
@@ -390,9 +502,7 @@ namespace Ragdoll.Layers
             if (context is not null)
             {
                 var camera = Registry.Null;
-                var entityView = ViewEntities(typeof(TransformComponent), typeof(CameraComponent));
-
-                foreach (ulong entity in entityView)
+                foreach (ulong entity in ViewEntities(typeof(TransformComponent), typeof(CameraComponent)))
                 {
                     var component = GetComponent<CameraComponent>(entity);
                     if (component.MainCamera)
@@ -424,6 +534,11 @@ namespace Ragdoll.Layers
                         ViewProjection = Matrix4x4.Transpose(projection * view)
                     });
                 }
+            }
+
+            if (mUpdatePhysics)
+            {
+                mSimulation.Timestep((float)delta);
             }
         }
 
@@ -473,6 +588,16 @@ namespace Ragdoll.Layers
         [ImGuiMenu("Scene Hierarchy")]
         private void SceneHierarchy(IEnumerable<ImGuiMenu> children)
         {
+            ImGui.Text("Phyics simulation");
+            ImGui.SameLine();
+
+            if (ImGui.Button(mUpdatePhysics ? "Pause" : "Resume"))
+            {
+                mUpdatePhysics = !mUpdatePhysics;
+            }
+
+            ImGui.Separator();
+
             var deletedEntities = new HashSet<ulong>();
             bool entityHovered = false;
 
@@ -609,7 +734,7 @@ namespace Ragdoll.Layers
 
                 if (open)
                 {
-                    if (!InvokeComponentEvent(component, mSelectedEntity, "OnEdit"))
+                    if (!InvokeComponentEvent(component, mSelectedEntity, ComponentEventID.Edited))
                     {
                         ImGui.Text("This component is not editable");
                     }
@@ -696,27 +821,29 @@ namespace Ragdoll.Layers
         #endregion
         #region ECS
 
-        private bool InvokeComponentEvent(object component, ulong id, string name)
+        private bool InvokeComponentEvent(object component, ulong id, ComponentEventID eventID, object? context = null)
         {
             var type = component.GetType();
-            var method = type.GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, new Type[]
+            var method = type.GetMethod("OnEvent", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, new Type[]
             {
-                typeof(ulong),
-                typeof(SceneLayer)
+                typeof(ComponentEventInfo),
             });
 
-            if (method is null)
+            if (method?.ReturnType != typeof(bool))
             {
                 return false;
             }
 
-            method.Invoke(component, new object[]
+            return (bool)method.Invoke(component, new object[]
             {
-                id,
-                this
-            });
-
-            return true;
+                new ComponentEventInfo
+                {
+                    Scene = this,
+                    Entity = id,
+                    Event = eventID,
+                    Context = context
+                }
+            })!;
         }
 
         public IDisposable LockRegistry() => mRegistry.Lock();
@@ -758,7 +885,7 @@ namespace Ragdoll.Layers
             var component = mRegistry.Add(id, type, args);
 
             using var registryLock = LockRegistry();
-            InvokeComponentEvent(component, id, "OnComponentAdded");
+            InvokeComponentEvent(component, id, ComponentEventID.Added);
 
             return component;
         }
@@ -773,13 +900,25 @@ namespace Ragdoll.Layers
 
             using (var registryLock = LockRegistry())
             {
-                InvokeComponentEvent(component, id, "OnComponentRemoved");
+                InvokeComponentEvent(component, id, ComponentEventID.Removed);
             }
 
             mRegistry.Remove(id, type);
         }
 
         #endregion
+
+        public Simulation PhysicsSimulation => mSimulation;
+        public ref Vector3 Gravity => ref mGravity;
+        public ref VelocityDamping VelocityDamping => ref mVelocityDamping;
+
+        private bool mUpdatePhysics;
+        private readonly Simulation mSimulation;
+        private readonly BufferPool mBufferPool;
+        private readonly ThreadDispatcher mThreadDispatcher;
+
+        private Vector3 mGravity;
+        private VelocityDamping mVelocityDamping;
 
         private ulong mSelectedEntity;
         private readonly Registry mRegistry;

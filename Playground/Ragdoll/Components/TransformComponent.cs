@@ -31,11 +31,18 @@ namespace Ragdoll.Components
         /// </summary>
         public Vector3 Scale;
 
-        internal void OnEdit(ulong id, SceneLayer scene)
+        internal bool OnEvent(ComponentEventInfo eventInfo)
         {
+            if (eventInfo.Event != ComponentEventID.Edited)
+            {
+                return false;
+            }
+
             ImGui.DragFloat3("Translation", ref Translation, 0.1f);
             ImGui.DragFloat3("Rotation", ref Rotation, 1f);
             ImGui.DragFloat3("Scale", ref Scale, 0.1f);
+
+            return true;
         }
 
         public static implicit operator Matrix4x4(TransformComponent transform)

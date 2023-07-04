@@ -71,7 +71,24 @@ namespace Ragdoll.Components
             UpdateBoneOffset(previousId, entityId);
         }
 
-        internal unsafe void OnEdit(ulong id, SceneLayer scene)
+        internal bool OnEvent(ComponentEventInfo eventInfo)
+        {
+            switch (eventInfo.Event)
+            {
+                case ComponentEventID.Removed:
+                    UpdateModel(-1, eventInfo.Entity);
+                    break;
+                case ComponentEventID.Edited:
+                    OnEdit(eventInfo.Entity);
+                    break;
+                default:
+                    return false;
+            }
+
+            return true;
+        }
+
+        private unsafe void OnEdit(ulong id)
         {
             var registry = App.Instance.ModelRegistry;
             if (registry is null)
@@ -121,11 +138,6 @@ namespace Ragdoll.Components
             }
 
             ImGui.PopID();
-        }
-
-        internal void OnComponentRemoved(ulong id, SceneLayer scene)
-        {
-            UpdateModel(-1, id);
         }
     }
 }
