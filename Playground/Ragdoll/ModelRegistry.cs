@@ -161,7 +161,7 @@ namespace Ragdoll
                 throw new NotImplementedException();
             }
 
-            var path = Path.IsPathFullyQualified(texturePath) ? texturePath : Path.GetFullPath(Path.Join(Path.GetDirectoryName(modelPath), texturePath));
+            var path = Path.IsPathFullyQualified(texturePath) ? texturePath : Path.GetFullPath(Path.Join(Path.GetDirectoryName(modelPath), texturePath.Replace('\\', '/')));
             var image = Image.Load<Rgba32>(path);
 
             var deviceImage = mContext.CreateDeviceImage(new DeviceImageInfo
@@ -268,6 +268,7 @@ namespace Ragdoll
             foreach (var model in mModels.Values)
             {
                 model.Model.Dispose();
+                model.BoneBuffer.Dispose();
             }
 
             mModels.Clear();

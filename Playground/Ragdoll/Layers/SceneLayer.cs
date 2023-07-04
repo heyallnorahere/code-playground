@@ -155,11 +155,47 @@ namespace Ragdoll.Layers
             mLoadedModelInfo = new Dictionary<int, LoadedModelInfo>();
             mCameraBuffer = null;
             mReflectionView = null;
+        }
 
-            for (int i = 0; i < 5; i++)
+        private int LoadModel(string path, string name)
+        {
+            var app = App.Instance;
+            var library = app.Renderer!.Library;
+            var renderTarget = app.GraphicsContext!.Swapchain.RenderTarget; // todo: framebuffer
+            var registry = app.ModelRegistry!;
+
+            int modelId = registry.Load<ModelShader>(path, name, nameof(ModelShader.u_BoneBuffer));
+            if (modelId < 0)
             {
-                NewEntity($"Entity {i + 1}");
+                return -1;
             }
+
+            var modelData = registry.Models[modelId];
+            var materials = modelData.Model.Materials;
+
+            var pipelines = new IPipeline[materials.Count];
+            for (int i = 0; i < materials.Count; i++)
+            {
+                var material = materials[i];
+                var pipeline = pipelines[i] = library.LoadPipeline<ModelShader>(new PipelineDescription
+                {
+                    RenderTarget = renderTarget,
+                    Type = PipelineType.Graphics,
+                    FrameCount = Renderer.FrameCount,
+                    Specification = material.PipelineSpecification
+                });
+
+                pipeline.Bind(mCameraBuffer!, nameof(ModelShader.u_CameraBuffer));
+                pipeline.Bind(modelData.BoneBuffer, nameof(ModelShader.u_BoneBuffer));
+                material.Bind(pipeline, nameof(ModelShader.u_MaterialBuffer), textureType => $"u_{textureType}Map");
+            }
+
+            mLoadedModelInfo.Add(modelId, new LoadedModelInfo
+            {
+                Pipelines = pipelines
+            });
+
+            return modelId;
         }
 
         #region Menu loading
@@ -248,6 +284,22 @@ namespace Ragdoll.Layers
             }
 
             mCameraBuffer = app.GraphicsContext!.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize);
+
+            // test scene
+            {
+                int modelId = LoadModel("../../../../VulkanTest/Resources/Models/sledge-hammer.fbx", "sledge-hammer");
+
+                ulong entity = NewEntity("Model");
+                AddComponent<TransformComponent>(entity).Scale = Vector3.One * 0.1f;
+                AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
+
+                entity = NewEntity("Camera");
+                AddComponent<CameraComponent>(entity).MainCamera = true;
+
+                var transform = AddComponent<TransformComponent>(entity);
+                transform.Translation = (Vector3.UnitY - Vector3.UnitZ) * 7.5f;
+                transform.Rotation.X = -45f;
+            }
         }
 
         public override void OnPopped()
@@ -262,16 +314,21 @@ namespace Ragdoll.Layers
             }
         }
 
+        // this math is so fucking confusing...
+        // aligned with TransformComponent.operator Matrix4x4
         private static void ComputeCameraVectors(Vector3 angle, out Vector3 direction, out Vector3 up)
         {
             var radians = angle * MathF.PI / 180f;
+            // +X - tilt camera up
+            // +Y - rotate view to the left
+            // +Z - roll camera clockwise
 
             float pitch = radians.X;
-            float yaw = radians.Y;
-            float roll = radians.Z + MathF.PI / 2f;
+            float yaw = radians.Y; // offset of 90 degrees - we want the camera to be facing +Z at 0 degrees yaw
+            float roll = -radians.Z + MathF.PI / 2f; // we want the up vector to face +Y at 0 degrees roll
 
             float directionPitch = MathF.Sin(roll) * pitch - MathF.Cos(roll) * yaw;
-            float directionYaw = MathF.Sin(roll) * yaw - MathF.Cos(roll) * pitch;
+            float directionYaw = MathF.Sin(roll) * yaw - MathF.Cos(roll) * pitch + MathF.PI / 2f;
 
             // todo: take roll into account
             direction = Vector3.Normalize(new Vector3
@@ -283,9 +340,9 @@ namespace Ragdoll.Layers
 
             up = Vector3.Normalize(new Vector3
             {
-                X = MathF.Cos(yaw - MathF.PI / 2f) * MathF.Cos(roll),
+                X = MathF.Cos(yaw) * MathF.Cos(roll),
                 Y = MathF.Sin(roll),
-                Z = MathF.Sin(yaw - MathF.PI / 2f) * MathF.Cos(roll)
+                Z = MathF.Sin(yaw) * MathF.Cos(roll)
             });
         }
 
@@ -595,44 +652,13 @@ namespace Ragdoll.Layers
                     try
                     {
                         string name = string.IsNullOrEmpty(mModelName) ? hint : mModelName;
-                        int modelId = registry.Load<ModelShader>(mModelPath, name, nameof(ModelShader.u_BoneBuffer));
-
-                        if (modelId < 0)
+                        if (LoadModel(mModelPath, name) < 0)
                         {
                             mModelError = "Failed to load model!";
                         }
                         else
                         {
                             mModelName = mModelPath = mModelError = string.Empty;
-
-                            var app = App.Instance;
-                            var library = App.Instance.Renderer!.Library;
-                            var renderTarget = app.GraphicsContext!.Swapchain.RenderTarget; // todo: framebuffer
-
-                            var modelData = registry.Models[modelId];
-                            var materials = modelData.Model.Materials;
-
-                            var pipelines = new IPipeline[materials.Count];
-                            for (int i = 0; i < materials.Count; i++)
-                            {
-                                var material = materials[i];
-                                var pipeline = pipelines[i] = library.LoadPipeline<ModelShader>(new PipelineDescription
-                                {
-                                    RenderTarget = renderTarget,
-                                    Type = PipelineType.Graphics,
-                                    FrameCount = Renderer.FrameCount,
-                                    Specification = material.PipelineSpecification
-                                });
-
-                                pipeline.Bind(mCameraBuffer!, nameof(ModelShader.u_CameraBuffer));
-                                pipeline.Bind(modelData.BoneBuffer, nameof(ModelShader.u_BoneBuffer));
-                                material.Bind(pipeline, nameof(ModelShader.u_MaterialBuffer), textureType => $"u_{textureType}Map");
-                            }
-
-                            mLoadedModelInfo.Add(modelId, new LoadedModelInfo
-                            {
-                                Pipelines = pipelines
-                            });
                         }
                     }
                     catch (Exception exc)

@@ -62,6 +62,15 @@ namespace Ragdoll.Components
             }
         }
 
+        public void UpdateModel(int modelId, ulong entityId)
+        {
+            int previousId = ID;
+            ID = modelId;
+
+            UpdateBoneTransformArray();
+            UpdateBoneOffset(previousId, entityId);
+        }
+
         internal unsafe void OnEdit(ulong id, SceneLayer scene)
         {
             var registry = App.Instance.ModelRegistry;
@@ -87,11 +96,8 @@ namespace Ragdoll.Components
                 var payload = ImGui.AcceptDragDropPayload(ModelDragDropID);
                 if (payload.NativePtr != null)
                 {
-                    int previousId = ID;
-                    ID = Marshal.PtrToStructure<int>(payload.Data);
-
-                    UpdateBoneTransformArray();
-                    UpdateBoneOffset(previousId, id);
+                    int modelId = Marshal.PtrToStructure<int>(payload.Data);
+                    UpdateModel(modelId, id);
                 }
 
                 ImGui.EndDragDropTarget();
@@ -106,11 +112,7 @@ namespace Ragdoll.Components
             ImGui.SameLine(xOffset);
             if (ImGui.Button("X", new Vector2(lineHeight)))
             {
-                int previousId = ID;
-                ID = -1;
-
-                UpdateBoneTransformArray();
-                UpdateBoneOffset(previousId, id);
+                UpdateModel(-1, id);
             }
 
             if (disabled)
@@ -123,10 +125,7 @@ namespace Ragdoll.Components
 
         internal void OnComponentRemoved(ulong id, SceneLayer scene)
         {
-            int previousId = ID;
-            ID = -1;
-
-            UpdateBoneOffset(previousId, id);
+            UpdateModel(-1, id);
         }
     }
 }
