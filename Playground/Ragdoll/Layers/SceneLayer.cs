@@ -136,8 +136,8 @@ namespace Ragdoll.Layers
 
     internal struct VelocityDamping
     {
-        public float Linear { get; set; }
-        public float Angular { get; set; }
+        public float Linear;
+        public float Angular;
     }
 
     internal struct SceneSimulationCallbacks : INarrowPhaseCallbacks, IPoseIntegratorCallbacks
@@ -262,13 +262,13 @@ namespace Ragdoll.Layers
             mCameraBuffer = null;
             mReflectionView = null;
 
-            int targetThreadCount = int.Max(1, Environment.ProcessorCount > 4 ? Environment.ProcessorCount - 2 : Environment.ProcessorCount - 1);
-            var callbacks = new SceneSimulationCallbacks(this);
-
             mUpdatePhysics = true;
-            mBufferPool = new BufferPool();
-            mThreadDispatcher = new ThreadDispatcher(targetThreadCount);
-            mSimulation = Simulation.Create(mBufferPool, callbacks, callbacks, new SolveDescription(6, 1));
+            mGravity = Vector3.UnitY * -10f;
+            mVelocityDamping = new VelocityDamping
+            {
+                Linear = 0.3f,
+                Angular = 0.3f
+            };
         }
 
         private int LoadModel(string path, string name)
@@ -399,6 +399,13 @@ namespace Ragdoll.Layers
 
             mCameraBuffer = app.GraphicsContext!.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize);
 
+            int targetThreadCount = int.Max(1, Environment.ProcessorCount > 4 ? Environment.ProcessorCount - 2 : Environment.ProcessorCount - 1);
+            mThreadDispatcher = new ThreadDispatcher(targetThreadCount);
+
+            var callbacks = new SceneSimulationCallbacks(this);
+            mBufferPool = new BufferPool();
+            mSimulation = Simulation.Create(mBufferPool, callbacks, callbacks, new SolveDescription(6, 1));
+
             // test scene
             {
                 int modelId = LoadModel("../../../../VulkanTest/Resources/Models/sledge-hammer.fbx", "sledge-hammer");
@@ -426,6 +433,9 @@ namespace Ragdoll.Layers
                     pipeline.Dispose();
                 }
             }
+
+            mSimulation?.Dispose();
+            mThreadDispatcher?.Dispose();
         }
 
         // this math is so fucking confusing...
@@ -538,7 +548,7 @@ namespace Ragdoll.Layers
 
             if (mUpdatePhysics)
             {
-                mSimulation.Timestep((float)delta);
+                mSimulation?.Timestep((float)delta);
             }
         }
 
@@ -585,17 +595,20 @@ namespace Ragdoll.Layers
         #endregion
         #region Menus
 
-        [ImGuiMenu("Scene Hierarchy")]
-        private void SceneHierarchy(IEnumerable<ImGuiMenu> children)
+        [ImGuiMenu("Scene")]
+        private void SceneMenu(IEnumerable<ImGuiMenu> children)
         {
-            ImGui.Text("Phyics simulation");
-            ImGui.SameLine();
-
             if (ImGui.Button(mUpdatePhysics ? "Pause" : "Resume"))
             {
                 mUpdatePhysics = !mUpdatePhysics;
             }
 
+            ImGui.SameLine();
+            ImGui.Text("Physics simulation");
+
+            ImGui.DragFloat3("Gravity", ref mGravity, 0.1f);
+            ImGui.DragFloat("Linear velocity damping", ref mVelocityDamping.Linear, 0.01f);
+            ImGui.DragFloat("Angular velocity damping", ref mVelocityDamping.Angular, 0.01f);
             ImGui.Separator();
 
             var deletedEntities = new HashSet<ulong>();
@@ -908,14 +921,14 @@ namespace Ragdoll.Layers
 
         #endregion
 
-        public Simulation PhysicsSimulation => mSimulation;
+        public Simulation PhysicsSimulation => mSimulation!;
         public ref Vector3 Gravity => ref mGravity;
         public ref VelocityDamping VelocityDamping => ref mVelocityDamping;
 
         private bool mUpdatePhysics;
-        private readonly Simulation mSimulation;
-        private readonly BufferPool mBufferPool;
-        private readonly ThreadDispatcher mThreadDispatcher;
+        private Simulation? mSimulation;
+        private BufferPool? mBufferPool;
+        private ThreadDispatcher? mThreadDispatcher;
 
         private Vector3 mGravity;
         private VelocityDamping mVelocityDamping;
