@@ -290,7 +290,7 @@ namespace Ragdoll.Layers
                 int modelId = LoadModel("../../../../VulkanTest/Resources/Models/sledge-hammer.fbx", "sledge-hammer");
 
                 ulong entity = NewEntity("Model");
-                AddComponent<TransformComponent>(entity).Scale = Vector3.One * 0.1f;
+                AddComponent<TransformComponent>(entity).Scale = Vector3.One * 10f;
                 AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
 
                 entity = NewEntity("Camera");
@@ -298,7 +298,7 @@ namespace Ragdoll.Layers
 
                 var transform = AddComponent<TransformComponent>(entity);
                 transform.Translation = (Vector3.UnitY - Vector3.UnitZ) * 7.5f;
-                transform.Rotation.X = -45f;
+                transform.Rotation.X = 45f;
             }
         }
 
@@ -320,17 +320,16 @@ namespace Ragdoll.Layers
         {
             var radians = angle * MathF.PI / 180f;
             // +X - tilt camera up
-            // +Y - rotate view to the left
-            // +Z - roll camera clockwise
+            // +Y - rotate view to the right
+            // +Z - roll camera counterclockwise
 
-            float pitch = radians.X;
-            float yaw = radians.Y; // offset of 90 degrees - we want the camera to be facing +Z at 0 degrees yaw
-            float roll = -radians.Z + MathF.PI / 2f; // we want the up vector to face +Y at 0 degrees roll
+            float pitch = -radians.X;
+            float yaw = -radians.Y; // offset of 90 degrees - we want the camera to be facing +Z at 0 degrees yaw
+            float roll = radians.Z + MathF.PI / 2f; // we want the up vector to face +Y at 0 degrees roll
 
             float directionPitch = MathF.Sin(roll) * pitch - MathF.Cos(roll) * yaw;
             float directionYaw = MathF.Sin(roll) * yaw - MathF.Cos(roll) * pitch + MathF.PI / 2f;
 
-            // todo: take roll into account
             direction = Vector3.Normalize(new Vector3
             {
                 X = MathF.Cos(directionYaw) * MathF.Cos(directionPitch),
@@ -460,7 +459,7 @@ namespace Ragdoll.Layers
                     {
                         mReflectionView!.MapStructure(mapped, nameof(ModelShader.u_PushConstants), new PushConstantData
                         {
-                            Model = Matrix4x4.Transpose(transform * mesh.Transform), // see OnUpdate
+                            Model = Matrix4x4.Transpose(transform), // see OnUpdate
                             BoneOffset = renderedModel.BoneOffset
                         });
                     });

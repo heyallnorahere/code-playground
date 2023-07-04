@@ -28,12 +28,7 @@ namespace CodePlayground.Graphics
             rotation = new Quaternion(0f, 0f, 0f, 1f);
             scale = new Vector3(1f);
 
-            if (MathF.Abs(matrix[3, 3]) < float.Epsilon)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < 4; i++)
             {
                 if (MathF.Abs(matrix[3, i]) < float.Epsilon)
                 {

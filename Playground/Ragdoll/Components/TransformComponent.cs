@@ -45,9 +45,9 @@ namespace Ragdoll.Components
                                  Matrix4x4.CreateRotationY(rotation.Y) *
                                  Matrix4x4.CreateRotationX(rotation.X); // aligned with SceneLayer.ComputeCameraVectors
             
-            return Matrix4x4.CreateTranslation(transform.Translation) *
-                   rotationMatrix *
-                   Matrix4x4.CreateScale(transform.Scale);
+            return Matrix4x4.Transpose(Matrix4x4.CreateTranslation(transform.Translation) *
+                                       rotationMatrix *
+                                       Matrix4x4.CreateScale(transform.Scale));
         }
 
         /// <summary>
