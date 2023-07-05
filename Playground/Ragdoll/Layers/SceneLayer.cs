@@ -39,19 +39,28 @@ namespace Ragdoll.Layers
             Path = path;
             Flags = ImGuiWindowFlags.None;
             Visible = true;
+            Fullscreen = false;
+            RenderChildren = true;
+            NoPadding = false;
         }
 
         public string Path { get; }
         public ImGuiWindowFlags Flags { get; set; }
         public bool Visible { get; set; }
+        public bool Fullscreen { get; set; }
+        public bool RenderChildren { get; set; }
+        public bool NoPadding { get; set; }
     }
 
     internal delegate void ImGuiMenuCallback(IEnumerable<ImGuiMenu> children);
     internal sealed class ImGuiMenu
     {
-        public ImGuiMenu(string title, ImGuiWindowFlags flags, bool visible, ImGuiMenuCallback callback)
+        public ImGuiMenu(string title, ImGuiWindowFlags flags, bool visible, bool fullscreen, bool renderChildren, bool noPadding, ImGuiMenuCallback callback)
         {
             mVisible = visible;
+            mFullscreen = fullscreen;
+            mRenderChildren = renderChildren;
+            mNoPadding = noPadding;
             mTitle = title;
             mFlags = flags;
             mCallback = callback;
@@ -60,30 +69,80 @@ namespace Ragdoll.Layers
 
         public void Render(bool enableVisibility = true)
         {
-            bool visible;
-            if (enableVisibility)
-            {
-                visible = ImGui.Begin(mTitle, ref mVisible, mFlags);
-            }
-            else
-            {
-                visible = ImGui.Begin(mTitle, mFlags);
-            }
-
-            if (!visible)
+            if (!mVisible)
             {
                 return;
             }
 
-            mCallback.Invoke(mChildren);
+            var flags = mFlags;
+            if (mFullscreen)
+            {
+                var viewport = ImGui.GetMainViewport();
+
+                ImGui.SetNextWindowPos(viewport.WorkPos);
+                ImGui.SetNextWindowSize(viewport.WorkSize);
+                ImGui.SetNextWindowViewport(viewport.ID);
+
+                ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 0f);
+                ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
+
+                flags |= ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize;
+                flags |= ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoBringToFrontOnFocus | ImGuiWindowFlags.NoNavFocus;
+            }
+
+            if (mNoPadding)
+            {
+                ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+            }
+
+            bool visible;
+            if (enableVisibility)
+            {
+                visible = ImGui.Begin(mTitle, ref mVisible, flags);
+            }
+            else
+            {
+                visible = ImGui.Begin(mTitle, flags);
+            }
+
+            int styleVarCount = 0;
+            if (mNoPadding)
+            {
+                styleVarCount++;
+            }
+
+            if (mFullscreen)
+            {
+                styleVarCount += 2;
+            }
+
+            if (styleVarCount > 0)
+            {
+                ImGui.PopStyleVar(styleVarCount);
+            }
+
+            if (visible)
+            {
+                mCallback.Invoke(mChildren);
+            }
+
             ImGui.End();
+            if (mRenderChildren && visible)
+            {
+                foreach (var child in mChildren)
+                {
+                    child.Render();
+                }
+            }
         }
 
         public ref bool Visible => ref mVisible;
+        public ref bool Fullscreen => ref mFullscreen;
         public string Title => mTitle;
         public IList<ImGuiMenu> Children => mChildren;
 
-        private bool mVisible;
+        private bool mVisible, mFullscreen;
+        private readonly bool mRenderChildren, mNoPadding;
         private readonly string mTitle;
         private readonly ImGuiWindowFlags mFlags;
         private readonly ImGuiMenuCallback mCallback;
@@ -336,7 +395,7 @@ namespace Ragdoll.Layers
 
                 var currentContainer = menus;
                 var callback = (ImGuiMenuCallback)Delegate.CreateDelegate(typeof(ImGuiMenuCallback), method.IsStatic ? null : this, method);
-                var menu = new ImGuiMenu(path[^1], attribute.Flags, attribute.Visible, callback);
+                var menu = new ImGuiMenu(path[^1], attribute.Flags, attribute.Visible, attribute.Fullscreen, attribute.RenderChildren, attribute.NoPadding, callback);
 
                 for (int i = 0; i < path.Length; i++)
                 {
@@ -725,7 +784,7 @@ namespace Ragdoll.Layers
             queue.Submit(commandList);
         }
 
-        [ImGuiMenu("Viewport")]
+        [ImGuiMenu("Dockspace/Viewport", NoPadding = true)]
         private void Viewport(IEnumerable<ImGuiMenu> children)
         {
             var imageSize = ImGui.GetContentRegionAvail();
@@ -748,7 +807,7 @@ namespace Ragdoll.Layers
             ImGui.Image(id, imageSize);
         }
 
-        [ImGuiMenu("Scene")]
+        [ImGuiMenu("Dockspace/Scene")]
         private void SceneMenu(IEnumerable<ImGuiMenu> children)
         {
             if (ImGui.Button(mUpdatePhysics ? "Pause" : "Resume"))
@@ -823,7 +882,7 @@ namespace Ragdoll.Layers
             }
         }
 
-        [ImGuiMenu("Editor")]
+        [ImGuiMenu("Dockspace/Editor")]
         private void Editor(IEnumerable<ImGuiMenu> children)
         {
             if (mSelectedEntity == Registry.Null)
@@ -917,7 +976,7 @@ namespace Ragdoll.Layers
             }
         }
 
-        [ImGuiMenu("Model registry")]
+        [ImGuiMenu("Dockspace/Model registry")]
         private unsafe void ModelRegistry(IEnumerable<ImGuiMenu> children)
         {
             var registry = App.Instance.ModelRegistry;
@@ -981,6 +1040,36 @@ namespace Ragdoll.Layers
                 }
 
                 ImGui.PopID();
+            }
+        }
+
+        [ImGuiMenu("Dockspace", Fullscreen = true, NoPadding = true, Flags = ImGuiWindowFlags.MenuBar | ImGuiWindowFlags.NoDocking)]
+        private void Dockspace(IEnumerable<ImGuiMenu> children)
+        {
+            var io = ImGui.GetIO();
+            if (io.ConfigFlags.HasFlag(ImGuiConfigFlags.DockingEnable))
+            {
+                var id = ImGui.GetID("main-dockspace");
+                ImGui.DockSpace(id, Vector2.Zero, ImGuiDockNodeFlags.None);
+            }
+            else
+            {
+                ImGui.Text("Docking has been disabled");
+            }
+
+            if (ImGui.BeginMenuBar())
+            {
+                if (ImGui.BeginMenu("View"))
+                {
+                    foreach (var child in children)
+                    {
+                        ImGui.MenuItem(child.Title, string.Empty, ref child.Visible);
+                    }
+
+                    ImGui.EndMenu();
+                }
+
+                ImGui.EndMenuBar();
             }
         }
 
