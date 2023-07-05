@@ -810,6 +810,9 @@ namespace Ragdoll.Layers
         [ImGuiMenu("Dockspace/Scene")]
         private void SceneMenu(IEnumerable<ImGuiMenu> children)
         {
+            var io = ImGui.GetIO();
+            ImGui.Text($"FPS: {io.Framerate:0.###}");
+
             if (ImGui.Button(mUpdatePhysics ? "Pause" : "Resume"))
             {
                 mUpdatePhysics = !mUpdatePhysics;

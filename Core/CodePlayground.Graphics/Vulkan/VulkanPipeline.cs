@@ -407,16 +407,9 @@ namespace CodePlayground.Graphics.Vulkan
             foreach (nint existingId in mDynamicIDs.Keys)
             {
                 var existingData = mDynamicIDs[existingId];
-                if (existingData.Name == name)
+                if (existingData.Name == name && existingData.Resource.ID == resource.ID)
                 {
-                    if (existingData.Resource.ID == resource.ID)
-                    {
-                        return existingId;
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"ID already exists for resource \"{name}:\" 0x{existingId:X}");
-                    }
+                    return existingId;
                 }
             }
 
@@ -440,7 +433,8 @@ namespace CodePlayground.Graphics.Vulkan
                 Set = set,
                 Binding = binding,
                 Index = index,
-                DescriptorSet = descriptorSet
+                DescriptorSet = descriptorSet,
+                Name = name
             });
 
             return id;
