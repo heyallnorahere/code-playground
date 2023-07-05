@@ -73,6 +73,8 @@ namespace CodePlayground.Graphics
     [RequestedVulkanExtension("VK_LAYER_KHRONOS_validation", VulkanExtensionLevel.Device, VulkanExtensionType.Layer, Required = false)]
     public abstract class GraphicsApplication : Application
     {
+        public const int SynchronizationFrames = 2;
+
         public GraphicsApplication()
         {
             Utilities.BindHandlers(this, this);

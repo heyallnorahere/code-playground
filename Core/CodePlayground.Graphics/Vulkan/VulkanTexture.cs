@@ -66,6 +66,14 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
+            foreach (var pipelineData in mBoundPipelines.Values)
+            {
+                foreach (nint id in pipelineData.DynamicIDs)
+                {
+                    pipelineData.Pipeline.DestroyDynamicID(id);
+                }
+            }
+
             if (disposing)
             {
                 if (OwnsImage)

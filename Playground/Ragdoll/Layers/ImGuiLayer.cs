@@ -66,6 +66,8 @@ namespace Ragdoll.Layers
             }
         }
 
+        public ImGuiController Controller => mController!;
+
         private readonly IGraphicsContext mGraphicsContext;
         private readonly IInputContext mInputContext;
         private readonly IWindow mWindow;

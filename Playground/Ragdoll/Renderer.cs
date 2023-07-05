@@ -19,7 +19,7 @@ namespace Ragdoll
 
     internal sealed class Renderer : IDisposable
     {
-        public const int FrameCount = 2;
+        public const int FrameCount = GraphicsApplication.SynchronizationFrames;
 
         public Renderer(IGraphicsContext context)
         {

@@ -627,6 +627,102 @@ namespace CodePlayground.Graphics.Vulkan
 
         IDisposable IGraphicsContext.CreateSemaphore() => new VulkanSemaphore(mDevice!);
 
+        IFramebuffer IGraphicsContext.CreateFramebuffer(FramebufferInfo info, out IRenderTarget renderTarget)
+        {
+            var colorAttachments = new List<VulkanRenderPassAttachment>();
+            VulkanRenderPassAttachment? depthAttachment = null;
+
+            for (int i = 0; i < info.Attachments.Count; i++)
+            {
+                var attachment = info.Attachments[i];
+                if (attachment.Image is not VulkanImage image)
+                {
+                    throw new ArgumentException("Attachments must be Vulkan images!");
+                }
+
+                var layout = (VulkanImageLayout?)attachment.Layout ?? image.Layout;
+                var attachmentInfo = new VulkanRenderPassAttachment
+                {
+                    ImageFormat = image.VulkanFormat,
+                    Samples = SampleCountFlags.Count1Bit, // todo: read from image
+                    LoadOp = AttachmentLoadOp.Clear,
+                    StoreOp = AttachmentStoreOp.Store,
+                    StencilLoadOp = AttachmentLoadOp.DontCare, // stencil is not supported yet
+                    StencilStoreOp = AttachmentStoreOp.DontCare, // ^
+                    InitialLayout = ((VulkanImageLayout?)attachment.InitialLayout)?.Layout ?? ImageLayout.Undefined,
+                    FinalLayout = ((VulkanImageLayout?)attachment.FinalLayout ?? layout).Layout,
+                    Layout = layout.Layout
+                };
+
+                switch (attachment.Type)
+                {
+                    case AttachmentType.Color:
+                        colorAttachments.Add(attachmentInfo);
+                        break;
+                    case AttachmentType.DepthStencil:
+                        if (i < info.Attachments.Count - 1)
+                        {
+                            // im just lazy lmao
+                            // though it makes it easier
+                            throw new ArgumentException("Depth stencil attachment must be the last element in the attachment list!");
+                        }
+
+                        depthAttachment = attachmentInfo;
+                        break;
+                    default:
+                        throw new ArgumentException("Invalid attachment type!");
+                }
+            }
+
+            var renderPass = new VulkanRenderPass(mDevice!, new VulkanRenderPassInfo
+            {
+                ColorAttachments = colorAttachments,
+                DepthAttachment = depthAttachment,
+                SubpassDependency = new VulkanSubpassDependency
+                {
+                    SourceStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
+                    SourceAccessMask = 0,
+                    DestinationStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
+                    DestinationAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit
+                }
+            });
+
+            renderTarget = renderPass;
+            return CreateFramebuffer(info, renderPass);
+        }
+
+        IFramebuffer IGraphicsContext.CreateFramebuffer(FramebufferInfo info, IRenderTarget renderTarget)
+        {
+            if (renderTarget is not VulkanRenderPass)
+            {
+                throw new ArgumentException("Must pass a Vulkan render pass!");
+            }
+
+            return CreateFramebuffer(info, (VulkanRenderPass)renderTarget);
+        }
+
+        private IFramebuffer CreateFramebuffer(FramebufferInfo info, VulkanRenderPass renderPass)
+        {
+            var views = new List<ImageView>();
+            foreach (var attachment in info.Attachments)
+            {
+                if (attachment.Image is not VulkanImage image)
+                {
+                    throw new ArgumentException("Attachments must be Vulkan images!");
+                }
+
+                views.Add(image.View);
+            }
+
+            return new VulkanFramebuffer(mDevice!, new VulkanFramebufferInfo
+            {
+                Width = info.Width,
+                Height = info.Height,
+                RenderPass = renderPass,
+                Attachments = views
+            });
+        }
+
         public void Dispose()
         {
             if (!mInitialized)

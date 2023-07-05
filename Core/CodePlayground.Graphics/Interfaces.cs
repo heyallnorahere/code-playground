@@ -174,6 +174,22 @@ namespace CodePlayground.Graphics
         public int MipLevels { get; set; }
     }
 
+    public struct FramebufferAttachmentInfo
+    {
+        public IDeviceImage Image { get; set; }
+        public AttachmentType Type { get; set; }
+        public object? InitialLayout { get; set; }
+        public object? FinalLayout { get; set; }
+        public object? Layout { get; set; }
+    }
+
+    public struct FramebufferInfo
+    {
+        public int Width { get; set; }
+        public int Height { get; set; }
+        public IReadOnlyList<FramebufferAttachmentInfo> Attachments { get; set; }
+    }
+
     public struct ReflectedPushConstantBuffer
     {
         public int Type { get; set; }
@@ -255,6 +271,8 @@ namespace CodePlayground.Graphics
         public IPipeline CreatePipeline(PipelineDescription description);
 
         public IDisposable CreateSemaphore();
+        public IFramebuffer CreateFramebuffer(FramebufferInfo info, out IRenderTarget renderTarget);
+        public IFramebuffer CreateFramebuffer(FramebufferInfo info, IRenderTarget renderTarget);
     }
 
     public interface IGraphicsDeviceInfo

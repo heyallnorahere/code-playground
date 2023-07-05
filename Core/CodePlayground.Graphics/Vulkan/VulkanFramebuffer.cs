@@ -17,6 +17,11 @@ namespace CodePlayground.Graphics.Vulkan
     {
         internal unsafe VulkanFramebuffer(VulkanDevice device, VulkanFramebufferInfo info)
         {
+            if (!info.Attachments.Any())
+            {
+                throw new ArgumentException("No attachments provided!");
+            }
+
             if (info.Attachments.Count != info.RenderPass.AttachmentTypes.Count)
             {
                 throw new ArgumentException("Inconsistent attachment count!");

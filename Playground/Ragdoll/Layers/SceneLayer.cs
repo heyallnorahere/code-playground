@@ -8,6 +8,7 @@ using CodePlayground.Graphics;
 using ImGuiNET;
 using Ragdoll.Components;
 using Ragdoll.Shaders;
+using SixLabors.ImageSharp;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -259,6 +260,7 @@ namespace Ragdoll.Layers
             mMenus = LoadMenus();
             mModelPath = mModelName = mModelError = string.Empty;
             mLoadedModelInfo = new Dictionary<int, LoadedModelInfo>();
+            mFramebufferAttachments = new FramebufferAttachmentInfo[2];
             mCameraBuffer = null;
             mReflectionView = null;
 
@@ -275,7 +277,6 @@ namespace Ragdoll.Layers
         {
             var app = App.Instance;
             var library = app.Renderer!.Library;
-            var renderTarget = app.GraphicsContext!.Swapchain.RenderTarget; // todo: framebuffer
             var registry = app.ModelRegistry!;
 
             int modelId = registry.Load<ModelShader>(path, name, nameof(ModelShader.u_BoneBuffer));
@@ -293,7 +294,7 @@ namespace Ragdoll.Layers
                 var material = materials[i];
                 var pipeline = pipelines[i] = library.LoadPipeline<ModelShader>(new PipelineDescription
                 {
-                    RenderTarget = renderTarget,
+                    RenderTarget = mRenderTarget,
                     Type = PipelineType.Graphics,
                     FrameCount = Renderer.FrameCount,
                     Specification = material.PipelineSpecification
@@ -389,15 +390,32 @@ namespace Ragdoll.Layers
         public override void OnPushed()
         {
             var app = App.Instance;
-            mReflectionView = app.Renderer!.Library.CreateReflectionView<ModelShader>();
+            var graphicsContext = app.GraphicsContext!;
 
+            // for transfer operations
+            var queue = graphicsContext.Device.GetQueue(CommandQueueFlags.Transfer);
+            var commandList = queue.Release();
+            commandList.Begin();
+
+            mReflectionView = app.Renderer!.Library.CreateReflectionView<ModelShader>();
             int bufferSize = mReflectionView.GetBufferSize(nameof(ModelShader.u_CameraBuffer));
             if (bufferSize < 0)
             {
                 throw new InvalidOperationException("Failed to find camera buffer!");
             }
 
-            mCameraBuffer = app.GraphicsContext!.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize);
+            mCameraBuffer = graphicsContext.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize);
+            mFramebufferSemaphore = graphicsContext.CreateSemaphore();
+            mFramebufferRecreated = true;
+
+            var size = app.RootWindow!.FramebufferSize;
+            CreateFramebufferAttachments(size.X, size.Y, commandList);
+            mFramebuffer = graphicsContext.CreateFramebuffer(new FramebufferInfo
+            {
+                Width = size.X,
+                Height = size.Y,
+                Attachments = mFramebufferAttachments
+            }, out mRenderTarget);
 
             int targetThreadCount = int.Max(1, Environment.ProcessorCount > 4 ? Environment.ProcessorCount - 2 : Environment.ProcessorCount - 1);
             mThreadDispatcher = new ThreadDispatcher(targetThreadCount);
@@ -421,6 +439,64 @@ namespace Ragdoll.Layers
                 transform.Translation = (Vector3.UnitY - Vector3.UnitZ) * 7.5f;
                 transform.Rotation.X = 45f;
             }
+
+            commandList.AddSemaphore(mFramebufferSemaphore, SemaphoreUsage.Signal);
+            commandList.End();
+            queue.Submit(commandList);
+        }
+
+        private void CreateFramebufferAttachments(int width, int height, ICommandList commandList)
+        {
+            var graphicsContext = App.Instance.GraphicsContext!;
+            var colorImage = graphicsContext.CreateDeviceImage(new DeviceImageInfo
+            {
+                Size = new Size(width, height),
+                Usage = DeviceImageUsageFlags.Render | DeviceImageUsageFlags.ColorAttachment,
+                Format = DeviceImageFormat.RGBA8_UNORM,
+                MipLevels = 1
+            });
+
+            var depthImage = graphicsContext.CreateDeviceImage(new DeviceImageInfo
+            {
+                Size = new Size(width, height),
+                Usage = DeviceImageUsageFlags.DepthStencilAttachment,
+                Format = DeviceImageFormat.DepthStencil,
+                MipLevels = 1
+            });
+
+            var colorLayout = colorImage.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
+            colorImage.TransitionLayout(commandList, colorImage.Layout, colorLayout);
+            colorImage.Layout = colorLayout;
+
+            var depthLayout = depthImage.GetLayout(DeviceImageLayoutName.DepthStencilAttachment);
+            depthImage.TransitionLayout(commandList, depthImage.Layout, depthLayout);
+            depthImage.Layout = depthLayout;
+
+            mFramebufferAttachments[0] = new FramebufferAttachmentInfo
+            {
+                Image = colorImage,
+                Type = AttachmentType.Color,
+                Layout = colorImage.GetLayout(DeviceImageLayoutName.ColorAttachment)
+            };
+
+            mFramebufferAttachments[1] = new FramebufferAttachmentInfo
+            {
+                Image = depthImage,
+                Type = AttachmentType.DepthStencil
+            };
+
+            mViewportTexture = colorImage.CreateTexture(false, null);
+        }
+
+        private void DestroyFramebuffer()
+        {
+            mFramebuffer?.Dispose();
+            mViewportTexture?.Dispose();
+
+            foreach (var attachment in mFramebufferAttachments)
+            {
+                attachment.Image.Dispose();
+            }
         }
 
         public override void OnPopped()
@@ -433,6 +509,10 @@ namespace Ragdoll.Layers
                     pipeline.Dispose();
                 }
             }
+
+            DestroyFramebuffer();
+            mRenderTarget?.Dispose();
+            mFramebufferSemaphore?.Dispose();
 
             mSimulation?.Dispose();
             mThreadDispatcher?.Dispose();
@@ -448,9 +528,10 @@ namespace Ragdoll.Layers
             // +Z - roll camera counterclockwise
 
             float pitch = -radians.X;
-            float yaw = -radians.Y; // offset of 90 degrees - we want the camera to be facing +Z at 0 degrees yaw
+            float yaw = -radians.Y;
             float roll = radians.Z + MathF.PI / 2f; // we want the up vector to face +Y at 0 degrees roll
 
+            // yaw offset of 90 degrees - we want the camera to be facing +Z at 0 degrees yaw
             float directionPitch = MathF.Sin(roll) * pitch - MathF.Cos(roll) * yaw;
             float directionYaw = MathF.Sin(roll) * yaw - MathF.Cos(roll) * pitch + MathF.PI / 2f;
 
@@ -524,12 +605,10 @@ namespace Ragdoll.Layers
 
                 if (camera != Registry.Null)
                 {
-                    // todo: use framebuffer
-                    var swapchain = context.Swapchain;
                     var transform = GetComponent<TransformComponent>(camera);
                     var cameraData = GetComponent<CameraComponent>(camera);
 
-                    float aspectRatio = (float)swapchain.Width / swapchain.Height;
+                    float aspectRatio = (float)mFramebuffer!.Width / mFramebuffer!.Height;
                     float fov = cameraData.FOV * MathF.PI / 180f;
                     ComputeCameraVectors(transform.Rotation + cameraData.RotationOffset, out Vector3 direction, out Vector3 up);
 
@@ -560,9 +639,22 @@ namespace Ragdoll.Layers
             }
         }
 
-        // todo: move to prerender with a framebuffer
-        public override void OnRender(Renderer renderer)
+        public override void PreRender(Renderer renderer)
         {
+            var commandList = renderer.FrameInfo.CommandList;
+            if (mFramebufferRecreated)
+            {
+                commandList.AddSemaphore(mFramebufferSemaphore!, SemaphoreUsage.Wait);
+                mFramebufferRecreated = false;
+            }
+
+            var colorAttachment = mFramebufferAttachments[0];
+            var attachmentLayout = colorAttachment.Layout!;
+            var renderLayout = colorAttachment.Image.Layout;
+
+            colorAttachment.Image.TransitionLayout(commandList, renderLayout, attachmentLayout);
+            renderer.BeginRender(mRenderTarget!, mFramebuffer!, new Vector4(0.2f, 0.2f, 0.2f, 1f));
+
             foreach (ulong id in ViewEntities(typeof(TransformComponent), typeof(RenderedModelComponent)))
             {
                 var transform = GetComponent<TransformComponent>(id);
@@ -590,10 +682,71 @@ namespace Ragdoll.Layers
                     });
                 }
             }
+
+            renderer.EndRender();
+            colorAttachment.Image.TransitionLayout(commandList, attachmentLayout, renderLayout);
         }
 
         #endregion
         #region Menus
+
+        private void RecreateFramebuffer(int width, int height)
+        {
+            if (width <= 0 || height <= 0)
+            {
+                return;
+            }
+
+            var graphicsContext = App.Instance.GraphicsContext!;
+            var device = graphicsContext.Device;
+            device.ClearQueues();
+
+            var queue = device.GetQueue(CommandQueueFlags.Transfer);
+            var commandList = queue.Release();
+            commandList.Begin();
+
+            DestroyFramebuffer();
+            CreateFramebufferAttachments(width, height, commandList);
+
+            mFramebuffer = graphicsContext.CreateFramebuffer(new FramebufferInfo
+            {
+                Width = width,
+                Height = height,
+                Attachments = mFramebufferAttachments
+            }, mRenderTarget!);
+
+            if (!mFramebufferRecreated)
+            {
+                mFramebufferRecreated = true;
+                commandList.AddSemaphore(mFramebufferSemaphore!, SemaphoreUsage.Signal);
+            }
+
+            commandList.End();
+            queue.Submit(commandList);
+        }
+
+        [ImGuiMenu("Viewport")]
+        private void Viewport(IEnumerable<ImGuiMenu> children)
+        {
+            var imageSize = ImGui.GetContentRegionAvail();
+
+            int width = (int)imageSize.X;
+            int height = (int)imageSize.Y;
+            if (width != mFramebuffer?.Width || height != mFramebuffer?.Height)
+            {
+                RecreateFramebuffer(width, height);
+            }
+
+            var app = App.Instance;
+            var imguiLayer = app.LayerView.FindLayer<ImGuiLayer>();
+            if (imguiLayer is null)
+            {
+                throw new InvalidOperationException("Failed to find ImGui layer!");
+            }
+
+            nint id = imguiLayer.Controller.GetTextureID(mViewportTexture!);
+            ImGui.Image(id, imageSize);
+        }
 
         [ImGuiMenu("Scene")]
         private void SceneMenu(IEnumerable<ImGuiMenu> children)
@@ -938,6 +1091,15 @@ namespace Ragdoll.Layers
         private readonly IReadOnlyList<ImGuiMenu> mMenus;
         private string mModelPath, mModelName, mModelError;
         private readonly Dictionary<int, LoadedModelInfo> mLoadedModelInfo;
+
+        private IFramebuffer? mFramebuffer;
+        private IRenderTarget? mRenderTarget;
+        private FramebufferAttachmentInfo[] mFramebufferAttachments;
+        private ITexture? mViewportTexture;
+
+        private IDisposable? mFramebufferSemaphore;
+        private bool mFramebufferRecreated;
+
         private IDeviceBuffer? mCameraBuffer;
         private IReflectionView? mReflectionView;
     }

@@ -361,7 +361,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe VulkanSwapchainFrameSyncObjects[] CreateSyncObjects()
         {
-            var result = new VulkanSwapchainFrameSyncObjects[2]; // 2 frames, hardcoded constant
+            var result = new VulkanSwapchainFrameSyncObjects[GraphicsApplication.SynchronizationFrames];
 
             var semaphoreInfo = VulkanUtilities.Init<SemaphoreCreateInfo>();
             var fenceInfo = VulkanUtilities.Init<FenceCreateInfo>() with
