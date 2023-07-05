@@ -183,11 +183,11 @@ namespace CodePlayground.Graphics
             mMouseButtonValues = new Dictionary<int, bool>();
             RegisterInputCallbacks();
 
-            var windowSize = mWindow.FramebufferSize;
+            var windowSize = mWindow.Size;
             mWindowWidth = windowSize.X;
             mWindowHeight = windowSize.Y;
 
-            mWindow.FramebufferResize += OnResize;
+            mWindow.Resize += OnResize;
         }
 
         ~ImGuiController()
@@ -232,7 +232,7 @@ namespace CodePlayground.Graphics
                 mFontAtlas?.Dispose();
                 mProjectionBuffer.Dispose();
 
-                mWindow.FramebufferResize -= OnResize;
+                mWindow.Resize -= OnResize;
             }
 
             foreach (var handle in mCallbackHandles)
@@ -494,9 +494,13 @@ namespace CodePlayground.Graphics
         private void UpdateIO(double delta)
         {
             var io = ImGui.GetIO();
-            io.DisplaySize = new Vector2(mWindowWidth, mWindowHeight);
-            io.DisplayFramebufferScale = Vector2.One;
+
             io.DeltaTime = (float)delta;
+            io.DisplaySize = new Vector2(mWindowWidth, mWindowHeight);
+            if (mWindowWidth > 0 || mWindowHeight > 0)
+            {
+                io.DisplayFramebufferScale = new Vector2(mWindow.FramebufferSize.X / mWindowWidth, mWindow.FramebufferSize.Y / mWindowHeight);
+            }
         }
 
         private void UpdateProjectionBuffer()
