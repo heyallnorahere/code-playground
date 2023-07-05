@@ -479,7 +479,7 @@ namespace CodePlayground.Graphics
                         continue;
                     }
 
-                    var clip = command.ClipRect;
+                    var clip = command.ClipRect * new Vector4(mFramebufferScale.X, mFramebufferScale.Y, mFramebufferScale.X, mFramebufferScale.Y);
                     renderer.SetScissor(commandList, 0, (int)clip.X, (int)clip.Y, (int)(clip.Z - clip.X), (int)(clip.W - clip.Y));
 
                     mPipeline.Bind(commandList, command.TextureId);
@@ -499,7 +499,7 @@ namespace CodePlayground.Graphics
             io.DisplaySize = new Vector2(mWindowWidth, mWindowHeight);
             if (mWindowWidth > 0 || mWindowHeight > 0)
             {
-                io.DisplayFramebufferScale = new Vector2(mWindow.FramebufferSize.X / mWindowWidth, mWindow.FramebufferSize.Y / mWindowHeight);
+                io.DisplayFramebufferScale = mFramebufferScale = new Vector2(mWindow.FramebufferSize.X / mWindowWidth, mWindow.FramebufferSize.Y / mWindowHeight);
             }
         }
 
@@ -608,6 +608,7 @@ namespace CodePlayground.Graphics
         private readonly List<GCHandle> mCallbackHandles;
         private bool mDisposed, mFrameStarted;
         private int mWindowWidth, mWindowHeight;
+        private Vector2 mFramebufferScale;
 
         private readonly List<ImGuiKeyEvent> mKeyEvents;
         private readonly List<char> mTypedCharacters;
