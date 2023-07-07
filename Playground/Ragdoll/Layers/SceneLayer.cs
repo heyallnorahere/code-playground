@@ -1,7 +1,4 @@
 using BepuPhysics;
-using BepuPhysics.Collidables;
-using BepuPhysics.CollisionDetection;
-using BepuPhysics.Constraints;
 using BepuUtilities;
 using BepuUtilities.Memory;
 using CodePlayground.Graphics;
@@ -13,7 +10,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
-using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -178,106 +174,6 @@ namespace Ragdoll.Layers
         public int BoneOffset;
     }
 
-    internal enum ComponentEventID
-    {
-        Added,
-        Removed,
-        Edited,
-        Collision
-    }
-
-    internal struct ComponentEventInfo
-    {
-        public SceneLayer Scene { get; set; }
-        public ulong Entity { get; set; }
-        public ComponentEventID Event { get; set; }
-        public object? Context { get; set; }
-    }
-
-    internal struct VelocityDamping
-    {
-        public float Linear;
-        public float Angular;
-    }
-
-    internal struct SceneSimulationCallbacks : INarrowPhaseCallbacks, IPoseIntegratorCallbacks
-    {
-        public SceneSimulationCallbacks(SceneLayer scene)
-        {
-            mInitialized = false;
-            mScene = scene;
-        }
-
-        public void Dispose()
-        {
-            if (!mInitialized)
-            {
-                return;
-            }
-
-            // todo: dispose
-            mInitialized = false;
-        }
-
-        public void Initialize(Simulation simulation)
-        {
-            // todo: initialize
-        }
-
-        public bool AllowContactGeneration(int workerIndex, CollidableReference a, CollidableReference b, ref float speculativeMargin)
-        {
-            return a.Mobility == b.Mobility && a.Mobility == CollidableMobility.Dynamic;
-        }
-
-        public bool AllowContactGeneration(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB)
-        {
-            return true;
-        }
-
-        public unsafe bool ConfigureContactManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold, out PairMaterialProperties pairMaterial) where TManifold : unmanaged, IContactManifold<TManifold>
-        {
-            pairMaterial.FrictionCoefficient = 1f;
-            pairMaterial.MaximumRecoveryVelocity = 2f;
-            pairMaterial.SpringSettings = new SpringSettings
-            {
-                Frequency = 30f,
-                DampingRatio = 1f
-            };
-
-            return true;
-        }
-
-        public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref ConvexContactManifold manifold)
-        {
-            return true;
-        }
-
-        public void PrepareForIntegration(float dt)
-        {
-            mLinearDamping = new Vector<float>(MathF.Pow(float.Clamp(1f - mScene.VelocityDamping.Linear, 0f, 1f), dt));
-            mAngularDamping = new Vector<float>(MathF.Pow(float.Clamp(1f - mScene.VelocityDamping.Angular, 0f, 1f), dt));
-            mGravity = Vector3Wide.Broadcast(mScene.Gravity * dt);
-        }
-
-        public void IntegrateVelocity(Vector<int> bodyIndices, Vector3Wide position, QuaternionWide orientation, BodyInertiaWide localInertia, Vector<int> integrationMask, int workerIndex, Vector<float> dt, ref BodyVelocityWide velocity)
-        {
-            velocity.Linear += mGravity;
-
-            velocity.Linear *= mLinearDamping;
-            velocity.Angular *= mAngularDamping;
-        }
-
-        public AngularIntegrationMode AngularIntegrationMode => AngularIntegrationMode.Nonconserving;
-        public bool AllowSubstepsForUnconstrainedBodies => false;
-        public bool IntegrateVelocityForKinematics => false;
-
-        private Vector<float> mLinearDamping, mAngularDamping;
-        public Vector3Wide mGravity;
-
-        private bool mInitialized;
-        private readonly SceneLayer mScene;
-    }
-
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
     internal sealed class SceneLayer : Layer
     {
@@ -314,22 +210,13 @@ namespace Ragdoll.Layers
 
         public SceneLayer()
         {
-            mSelectedEntity = Registry.Null;
-            mRegistry = new Registry();
+            mSelectedEntity = Scene.Null;
             mMenus = LoadMenus();
             mModelPath = mModelName = mModelError = string.Empty;
             mLoadedModelInfo = new Dictionary<int, LoadedModelInfo>();
             mFramebufferAttachments = new FramebufferAttachmentInfo[2];
             mCameraBuffer = null;
             mReflectionView = null;
-
-            mUpdatePhysics = true;
-            mGravity = Vector3.UnitY * -10f;
-            mVelocityDamping = new VelocityDamping
-            {
-                Linear = 0.3f,
-                Angular = 0.3f
-            };
         }
 
         private int LoadModel(string path, string name)
@@ -476,25 +363,19 @@ namespace Ragdoll.Layers
                 Attachments = mFramebufferAttachments
             }, out mRenderTarget);
 
-            int targetThreadCount = int.Max(1, Environment.ProcessorCount > 4 ? Environment.ProcessorCount - 2 : Environment.ProcessorCount - 1);
-            mThreadDispatcher = new ThreadDispatcher(targetThreadCount);
-
-            var callbacks = new SceneSimulationCallbacks(this);
-            mBufferPool = new BufferPool();
-            mSimulation = Simulation.Create(mBufferPool, callbacks, callbacks, new SolveDescription(6, 1));
-
             // test scene
+            mScene = new Scene();
             {
                 int modelId = LoadModel("../../../../VulkanTest/Resources/Models/sledge-hammer.fbx", "sledge-hammer");
 
-                ulong entity = NewEntity("Model");
-                AddComponent<TransformComponent>(entity).Scale = Vector3.One * 10f;
-                AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
+                ulong entity = mScene.NewEntity("Model");
+                mScene.AddComponent<TransformComponent>(entity).Scale = Vector3.One * 10f;
+                mScene.AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
 
-                entity = NewEntity("Camera");
-                AddComponent<CameraComponent>(entity).MainCamera = true;
+                entity = mScene.NewEntity("Camera");
+                mScene.AddComponent<CameraComponent>(entity).MainCamera = true;
 
-                var transform = AddComponent<TransformComponent>(entity);
+                var transform = mScene.AddComponent<TransformComponent>(entity);
                 transform.Translation = (Vector3.UnitY - Vector3.UnitZ) * 7.5f;
                 transform.Rotation.X = 45f;
             }
@@ -573,8 +454,9 @@ namespace Ragdoll.Layers
             mRenderTarget?.Dispose();
             mFramebufferSemaphore?.Dispose();
 
-            mSimulation?.Dispose();
-            mThreadDispatcher?.Dispose();
+            mScene?.Dispose();
+            mScene = null;
+            mSelectedEntity = Scene.Null;
         }
 
         // this math is so fucking confusing...
@@ -611,15 +493,22 @@ namespace Ragdoll.Layers
 
         public override void OnUpdate(double delta)
         {
+            if (mScene is null)
+            {
+                return;
+            }
+
+            mScene.Update(delta);
+
             var app = App.Instance;
             var context = app.GraphicsContext;
             var registry = app.ModelRegistry;
 
             if (registry is not null)
             {
-                foreach (ulong entity in ViewEntities(typeof(RenderedModelComponent)))
+                foreach (ulong entity in mScene.ViewEntities(typeof(RenderedModelComponent)))
                 {
-                    var modelData = GetComponent<RenderedModelComponent>(entity);
+                    var modelData = mScene.GetComponent<RenderedModelComponent>(entity);
 
                     var skeleton = modelData.Model?.Skeleton;
                     if (skeleton is null)
@@ -651,10 +540,10 @@ namespace Ragdoll.Layers
 
             if (context is not null)
             {
-                var camera = Registry.Null;
-                foreach (ulong entity in ViewEntities(typeof(TransformComponent), typeof(CameraComponent)))
+                var camera = Scene.Null;
+                foreach (ulong entity in mScene.ViewEntities(typeof(TransformComponent), typeof(CameraComponent)))
                 {
-                    var component = GetComponent<CameraComponent>(entity);
+                    var component = mScene.GetComponent<CameraComponent>(entity);
                     if (component.MainCamera)
                     {
                         camera = entity;
@@ -662,10 +551,10 @@ namespace Ragdoll.Layers
                     }
                 }
 
-                if (camera != Registry.Null)
+                if (camera != Scene.Null)
                 {
-                    var transform = GetComponent<TransformComponent>(camera);
-                    var cameraData = GetComponent<CameraComponent>(camera);
+                    var transform = mScene.GetComponent<TransformComponent>(camera);
+                    var cameraData = mScene.GetComponent<CameraComponent>(camera);
 
                     float aspectRatio = (float)mFramebuffer!.Width / mFramebuffer!.Height;
                     float fov = cameraData.FOV * MathF.PI / 180f;
@@ -683,11 +572,6 @@ namespace Ragdoll.Layers
                     });
                 }
             }
-
-            if (mUpdatePhysics)
-            {
-                mSimulation?.Timestep((float)delta);
-            }
         }
 
         public override void OnImGuiRender()
@@ -700,6 +584,11 @@ namespace Ragdoll.Layers
 
         public override void PreRender(Renderer renderer)
         {
+            if (mScene is null)
+            {
+                return;
+            }
+
             var commandList = renderer.FrameInfo.CommandList;
             if (mFramebufferRecreated)
             {
@@ -714,10 +603,10 @@ namespace Ragdoll.Layers
             colorAttachment.Image.TransitionLayout(commandList, renderLayout, attachmentLayout);
             renderer.BeginRender(mRenderTarget!, mFramebuffer!, new Vector4(0.2f, 0.2f, 0.2f, 1f));
 
-            foreach (ulong id in ViewEntities(typeof(TransformComponent), typeof(RenderedModelComponent)))
+            foreach (ulong id in mScene.ViewEntities(typeof(TransformComponent), typeof(RenderedModelComponent)))
             {
-                var transform = GetComponent<TransformComponent>(id);
-                var renderedModel = GetComponent<RenderedModelComponent>(id);
+                var transform = mScene.GetComponent<TransformComponent>(id);
+                var renderedModel = mScene.GetComponent<RenderedModelComponent>(id);
 
                 var model = renderedModel.Model;
                 if (model is null)
@@ -810,28 +699,34 @@ namespace Ragdoll.Layers
         [ImGuiMenu("Dockspace/Scene")]
         private void SceneMenu(IEnumerable<ImGuiMenu> children)
         {
+            if (mScene is null)
+            {
+                ImGui.Text("No scene is associated with the scene layer");
+                return;
+            }
+
             var io = ImGui.GetIO();
             ImGui.Text($"FPS: {io.Framerate:0.###}");
 
-            if (ImGui.Button(mUpdatePhysics ? "Pause" : "Resume"))
+            if (ImGui.Button(mScene.UpdatePhysics ? "Pause" : "Resume"))
             {
-                mUpdatePhysics = !mUpdatePhysics;
+                mScene.UpdatePhysics = !mScene.UpdatePhysics;
             }
 
             ImGui.SameLine();
             ImGui.Text("Physics simulation");
 
-            ImGui.DragFloat3("Gravity", ref mGravity, 0.1f);
-            ImGui.DragFloat("Linear velocity damping", ref mVelocityDamping.Linear, 0.01f);
-            ImGui.DragFloat("Angular velocity damping", ref mVelocityDamping.Angular, 0.01f);
+            ImGui.DragFloat3("Gravity", ref mScene.Gravity, 0.1f);
+            ImGui.DragFloat("Linear velocity damping", ref mScene.VelocityDamping.Linear, 0.01f);
+            ImGui.DragFloat("Angular velocity damping", ref mScene.VelocityDamping.Angular, 0.01f);
             ImGui.Separator();
 
             var deletedEntities = new HashSet<ulong>();
             bool entityHovered = false;
 
-            foreach (ulong id in mRegistry)
+            foreach (ulong id in mScene.Entities)
             {
-                string tag = TryGetComponent(id, out TagComponent? component) ? component.Tag : $"<no tag:{id}>";
+                string tag = mScene.TryGetComponent(id, out TagComponent? component) ? component.Tag : $"<no tag:{id}>";
 
                 ImGui.PushID($"entity-{id}");
                 if (ImGui.Selectable(tag, mSelectedEntity == id))
@@ -845,7 +740,7 @@ namespace Ragdoll.Layers
                     if (ImGui.MenuItem("Delete entity"))
                     {
                         deletedEntities.Add(id);
-                        mSelectedEntity = Registry.Null;
+                        mSelectedEntity = Scene.Null;
                     }
 
                     ImGui.EndPopup();
@@ -856,7 +751,7 @@ namespace Ragdoll.Layers
 
             foreach (ulong id in deletedEntities)
             {
-                mRegistry.Destroy(id);
+                mScene.DestroyEntity(id);
             }
 
             const string windowContextId = "window-context";
@@ -864,7 +759,7 @@ namespace Ragdoll.Layers
             {
                 if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
                 {
-                    mSelectedEntity = Registry.Null;
+                    mSelectedEntity = Scene.Null;
                 }
 
                 // these bindings don't have right-click BeginPopupContextWindow
@@ -878,7 +773,7 @@ namespace Ragdoll.Layers
             {
                 if (ImGui.MenuItem("New entity"))
                 {
-                    mSelectedEntity = NewEntity();
+                    mSelectedEntity = mScene.NewEntity();
                 }
 
                 ImGui.EndPopup();
@@ -888,7 +783,7 @@ namespace Ragdoll.Layers
         [ImGuiMenu("Dockspace/Editor")]
         private void Editor(IEnumerable<ImGuiMenu> children)
         {
-            if (mSelectedEntity == Registry.Null)
+            if (mSelectedEntity == Scene.Null || mScene is null)
             {
                 ImGui.Text("No entity selected");
                 return;
@@ -904,9 +799,9 @@ namespace Ragdoll.Layers
             {
                 foreach (var componentType in sComponentTypes)
                 {
-                    if (ImGui.MenuItem(componentType.DisplayName) && !mRegistry.Has(mSelectedEntity, componentType.Type))
+                    if (ImGui.MenuItem(componentType.DisplayName) && !mScene.HasComponent(mSelectedEntity, componentType.Type))
                     {
-                        AddComponent(mSelectedEntity, componentType.Type);
+                        mScene.AddComponent(mSelectedEntity, componentType.Type);
                     }
                 }
 
@@ -917,7 +812,7 @@ namespace Ragdoll.Layers
             var font = ImGui.GetFont();
 
             var removedComponents = new List<Type>();
-            foreach (var component in ViewComponents(mSelectedEntity))
+            foreach (var component in mScene.ViewComponents(mSelectedEntity))
             {
                 var type = component.GetType();
                 var fullName = type.FullName ?? type.Name;
@@ -962,7 +857,7 @@ namespace Ragdoll.Layers
 
                 if (open)
                 {
-                    if (!InvokeComponentEvent(component, mSelectedEntity, ComponentEventID.Edited))
+                    if (!mScene.InvokeComponentEvent(component, mSelectedEntity, ComponentEventID.Edited))
                     {
                         ImGui.Text("This component is not editable");
                     }
@@ -975,7 +870,7 @@ namespace Ragdoll.Layers
 
             foreach (var type in removedComponents)
             {
-                RemoveComponent(mSelectedEntity, type);
+                mScene.RemoveComponent(mSelectedEntity, type);
             }
         }
 
@@ -1077,109 +972,12 @@ namespace Ragdoll.Layers
         }
 
         #endregion
-        #region ECS
 
-        private bool InvokeComponentEvent(object component, ulong id, ComponentEventID eventID, object? context = null)
-        {
-            var type = component.GetType();
-            var method = type.GetMethod("OnEvent", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, new Type[]
-            {
-                typeof(ComponentEventInfo),
-            });
-
-            if (method?.ReturnType != typeof(bool))
-            {
-                return false;
-            }
-
-            return (bool)method.Invoke(component, new object[]
-            {
-                new ComponentEventInfo
-                {
-                    Scene = this,
-                    Entity = id,
-                    Event = eventID,
-                    Context = context
-                }
-            })!;
-        }
-
-        public IDisposable LockRegistry() => mRegistry.Lock();
-        public ulong NewEntity(string tag = "Entity")
-        {
-            ulong id = mRegistry.New();
-            AddComponent<TagComponent>(id, tag);
-
-            return id;
-        }
-
-        public void DestroyEntity(ulong id)
-        {
-            var types = ViewComponents(id).Select(component => component.GetType());
-            foreach (var type in types)
-            {
-                RemoveComponent(id, type);
-            }
-
-            mRegistry.Destroy(id);
-        }
-
-        public IEnumerable<ulong> Entities => mRegistry;
-        public IEnumerable<object> ViewComponents(ulong id) => mRegistry.View(id);
-        public IEnumerable<ulong> ViewEntities(params Type[] types) => mRegistry.View(types);
-
-        public bool HasComponent<T>(ulong id) where T : class => mRegistry.Has<T>(id);
-        public bool HasComponent(ulong id, Type type) => mRegistry.Has(id, type);
-
-        public T GetComponent<T>(ulong id) where T : class => mRegistry.Get<T>(id);
-        public object GetComponent(ulong id, Type type) => mRegistry.Get(id, type);
-
-        public bool TryGetComponent<T>(ulong id, [NotNullWhen(true)] out T? component) where T : class => mRegistry.TryGet(id, out component);
-        public bool TryGetComponent(ulong id, Type type, [NotNullWhen(true)] out object? component) => mRegistry.TryGet(id, type, out component);
-
-        public T AddComponent<T>(ulong id, params object?[] args) where T : class => (T)AddComponent(id, typeof(T), args);
-        public object AddComponent(ulong id, Type type, params object?[] args)
-        {
-            var component = mRegistry.Add(id, type, args);
-
-            using var registryLock = LockRegistry();
-            InvokeComponentEvent(component, id, ComponentEventID.Added);
-
-            return component;
-        }
-
-        public void RemoveComponent<T>(ulong id) where T : class => RemoveComponent(id, typeof(T));
-        public void RemoveComponent(ulong id, Type type)
-        {
-            if (!TryGetComponent(id, type, out object? component))
-            {
-                return;
-            }
-
-            using (var registryLock = LockRegistry())
-            {
-                InvokeComponentEvent(component, id, ComponentEventID.Removed);
-            }
-
-            mRegistry.Remove(id, type);
-        }
-
-        #endregion
-
-        public Simulation PhysicsSimulation => mSimulation!;
-        public ref Vector3 Gravity => ref mGravity;
-        public ref VelocityDamping VelocityDamping => ref mVelocityDamping;
-
-        private bool mUpdatePhysics;
-        private Simulation? mSimulation;
-        private BufferPool? mBufferPool;
-        private ThreadDispatcher? mThreadDispatcher;
-
-        private Vector3 mGravity;
-        private VelocityDamping mVelocityDamping;
+        public Scene Scene => mScene!;
 
         private ulong mSelectedEntity;
-        private readonly Registry mRegistry;
+        private Scene? mScene;
+
         private readonly IReadOnlyList<ImGuiMenu> mMenus;
         private string mModelPath, mModelName, mModelError;
         private readonly Dictionary<int, LoadedModelInfo> mLoadedModelInfo;
