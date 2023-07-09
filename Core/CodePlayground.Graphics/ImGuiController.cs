@@ -147,7 +147,7 @@ namespace CodePlayground.Graphics
                     GCHandle.Alloc(setClipboardText)
                 };
 
-                io.GetClipboardTextFn = Marshal.GetFunctionPointerForDelegate(setClipboardText);
+                io.GetClipboardTextFn = Marshal.GetFunctionPointerForDelegate(getClipboardText);
                 io.SetClipboardTextFn = Marshal.GetFunctionPointerForDelegate(setClipboardText);
             }
 

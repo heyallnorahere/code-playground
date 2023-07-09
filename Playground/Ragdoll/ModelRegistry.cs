@@ -221,13 +221,10 @@ namespace Ragdoll
 
             var renderer = App.Instance.Renderer!;
             var reflectionView = renderer.Library.CreateReflectionView(shader);
-            
-            int bufferSize = reflectionView.GetBufferSize(bufferName);
-            if (bufferSize < 0)
-            {
-                throw new ArgumentException($"Failed to find buffer {bufferName} in shader {ShaderLibrary.GetShaderID(shader)}!");
-            }
 
+            var skeleton = model.Skeleton;
+            int bufferSize = (skeleton?.BoneCount ?? 1) * Marshal.SizeOf<Matrix4x4>();
+            
             int id = mCurrentModelID++;
             mModels.Add(id, new LoadedModel
             {
