@@ -131,6 +131,7 @@ namespace CodePlayground.Graphics.Vulkan
         public bool IsRecording => mRecording;
         public CommandQueueFlags QueueUsage => mQueueUsage;
         public CommandBuffer Buffer => mBuffer;
+        public nint Address => mBuffer.Handle;
 
         private bool mDisposed, mRecording;
         private readonly Device mDevice;

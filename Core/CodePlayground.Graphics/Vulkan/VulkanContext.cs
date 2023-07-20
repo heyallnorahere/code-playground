@@ -553,7 +553,7 @@ namespace CodePlayground.Graphics.Vulkan
             var scoredDevices = new List<ScoredVulkanDevice>();
             foreach (var device in devices)
             {
-                var physicalDevice = new VulkanPhysicalDevice(device);
+                var physicalDevice = new VulkanPhysicalDevice(device, instance);
                 scoredDevices.Add(new ScoredVulkanDevice
                 {
                     Device = physicalDevice,
@@ -736,6 +736,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
+            var app = (GraphicsApplication)Application.Instance;
+            app.OnContextDestroyed();
+
             if (disposing)
             {
                 mRequestedExtensions.Clear();

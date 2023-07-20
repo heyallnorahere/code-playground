@@ -1,8 +1,6 @@
-using BepuPhysics;
-using BepuUtilities;
-using BepuUtilities.Memory;
 using CodePlayground.Graphics;
 using ImGuiNET;
+using Optick.NET;
 using Ragdoll.Components;
 using Ragdoll.Shaders;
 using SixLabors.ImageSharp;
@@ -498,6 +496,7 @@ namespace Ragdoll.Layers
                 return;
             }
 
+            using var updateEvent = OptickMacros.Event(category: Category.GameLogic);
             mScene.Update(delta);
 
             var app = App.Instance;
@@ -506,6 +505,7 @@ namespace Ragdoll.Layers
 
             if (registry is not null)
             {
+                using var boneUpdateEvent = OptickMacros.Category("Bone update", Category.Animation);
                 foreach (ulong entity in mScene.ViewEntities(typeof(RenderedModelComponent)))
                 {
                     var modelData = mScene.GetComponent<RenderedModelComponent>(entity);
@@ -540,6 +540,8 @@ namespace Ragdoll.Layers
 
             if (context is not null)
             {
+                using var updateMatricesEvent = OptickMacros.Category("Update scene matrices", Category.Rendering);
+
                 var camera = Scene.Null;
                 foreach (ulong entity in mScene.ViewEntities(typeof(TransformComponent), typeof(CameraComponent)))
                 {
@@ -617,11 +619,14 @@ namespace Ragdoll.Layers
                 var info = mLoadedModelInfo[renderedModel.ID];
                 foreach (var mesh in model.Submeshes)
                 {
+                    using var renderEvent = OptickMacros.GPUEvent("Render entity mesh");
+
                     var pipeline = info.Pipelines[mesh.MaterialIndex];
                     renderer.RenderMesh(model.VertexBuffer, model.IndexBuffer, pipeline,
                                         mesh.IndexOffset, mesh.IndexCount, DeviceBufferIndexType.UInt32,
                                         mapped =>
                     {
+                        using var pushConstantsEvent = OptickMacros.Category("Push constants", Category.Rendering);
                         mReflectionView!.MapStructure(mapped, nameof(ModelShader.u_PushConstants), new PushConstantData
                         {
                             Model = Matrix4x4.Transpose(transform), // see OnUpdate

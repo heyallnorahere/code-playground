@@ -4,6 +4,7 @@ using BepuPhysics.CollisionDetection;
 using BepuPhysics.Constraints;
 using BepuUtilities;
 using BepuUtilities.Memory;
+using Optick.NET;
 using Ragdoll.Components;
 using System;
 using System.Collections.Generic;
@@ -120,6 +121,8 @@ namespace Ragdoll
 
         public Scene()
         {
+            using var createdEvent = OptickMacros.Event();
+
             mDisposed = true;
             mRegistry = new Registry();
 
@@ -171,8 +174,10 @@ namespace Ragdoll
 
         public void Update(double delta)
         {
+            using var updateEvent = OptickMacros.Event(category: Category.GameLogic);
             if (mUpdatePhysics)
             {
+                using var physicsEvent = OptickMacros.Category("Update physics", Category.Physics);
                 mSimulation.Timestep((float)delta, null);
             }
 
@@ -181,6 +186,8 @@ namespace Ragdoll
 
         public bool InvokeComponentEvent(object component, ulong id, ComponentEventID eventID, object? context = null)
         {
+            using var eventEvent = OptickMacros.Event();
+
             var type = component.GetType();
             var method = type.GetMethod("OnEvent", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, new Type[]
             {

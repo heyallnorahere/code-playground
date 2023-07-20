@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Optick.NET;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -20,6 +21,8 @@ namespace CodePlayground
         public static T CreateDynamicInstance<T>(params object?[] args) => (T)CreateDynamicInstance(typeof(T), args);
         public static object CreateDynamicInstance(Type type, params object?[] args)
         {
+            using var createEvent = OptickMacros.Event();
+
             var constructors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
             foreach (var constructor in constructors)
             {
@@ -85,6 +88,8 @@ namespace CodePlayground
 
         public static IReadOnlySet<T> SplitFlags<T>(this T flags) where T : struct, Enum
         {
+            using var splitEvent = OptickMacros.Event();
+        
             var type = typeof(T);
             if (type.GetCustomAttribute<FlagsAttribute>() is null)
             {
@@ -237,6 +242,8 @@ namespace CodePlayground
 
         public static List<ILInstruction>? GetILAsInstructionList(this MethodBody body, Module module)
         {
+            using var ilParseEvent = OptickMacros.Event();
+
             var code = body.GetILAsByteArray();
             if (code is null)
             {

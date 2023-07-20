@@ -33,7 +33,7 @@ namespace Ragdoll
         private void OnLoad()
         {
             var context = CreateGraphicsContext();
-            context.Swapchain.VSync = true;
+            context.Swapchain.VSync = false;
 
             mRenderer = new Renderer(context);
             mModelRegistry = new ModelRegistry(context);

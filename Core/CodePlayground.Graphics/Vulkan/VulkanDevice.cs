@@ -1,16 +1,19 @@
-﻿using Silk.NET.Vulkan;
+﻿using Optick.NET;
+using Silk.NET.Vulkan;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace CodePlayground.Graphics.Vulkan
 {
     public sealed class VulkanPhysicalDevice : IGraphicsDeviceInfo
     {
-        internal unsafe VulkanPhysicalDevice(PhysicalDevice physicalDevice)
+        internal unsafe VulkanPhysicalDevice(PhysicalDevice physicalDevice, Instance instance)
         {
             Device = physicalDevice;
+            Instance = instance;
             GetProperties(out PhysicalDeviceProperties properties);
 
             Name = Marshal.PtrToStringAnsi((nint)properties.DeviceName) ?? string.Empty;
@@ -118,6 +121,7 @@ namespace CodePlayground.Graphics.Vulkan
         }
 
         public PhysicalDevice Device { get; }
+        public Instance Instance { get; }
         public string Name { get; }
         public DeviceType Type { get; }
     }
@@ -181,14 +185,65 @@ namespace CodePlayground.Graphics.Vulkan
                 }, marshal);
             }, marshal);
 
+            var vulkanQueues = new nint[queueFamilies.Length];
+            var vulkanQueueFamilies = new uint[queueFamilies.Length];
+
             mQueues = new Dictionary<int, VulkanQueue>();
-            foreach (int queueFamily in queueFamilies)
+            for (int i = 0; i < queueFamilies.Length; i++)
             {
+                int queueFamily = queueFamilies[i];
+
                 var properties = queueProperties[queueFamily];
                 var usage = VulkanUtilities.ConvertQueueFlags(properties.QueueFlags);
 
                 var queue = new VulkanQueue(queueFamily, usage, this);
                 mQueues.Add(queueFamily, queue);
+
+                vulkanQueues[i] = queue.Queue.Handle;
+                vulkanQueueFamilies[i] = (uint)queueFamily;
+            }
+
+            InitializeOptick(vulkanQueues, vulkanQueueFamilies);
+        }
+
+        private unsafe void InitializeOptick(nint[] queues, uint[] families)
+        {
+            var instanceFunctions = new HashSet<string>
+            {
+                nameof(VulkanFunctions.vkGetPhysicalDeviceProperties)
+            };
+
+            object vulkanFunctions = new VulkanFunctions();
+            var functionType = vulkanFunctions.GetType();
+            var fields = functionType.GetFields(BindingFlags.Public | BindingFlags.Instance);
+
+            var api = VulkanContext.API;
+            foreach (var field in fields)
+            {
+                nint functionAddress;
+                string functionName = field.Name;
+
+                if (instanceFunctions.Contains(functionName))
+                {
+                    functionAddress = api.GetInstanceProcAddr(mPhysicalDevice.Instance, functionName);
+                }
+                else
+                {
+                    functionAddress = api.GetDeviceProcAddr(mDevice, functionName);
+                }
+
+                field.SetValue(vulkanFunctions, functionAddress);
+            }
+
+            var vulkanFunctionStructure = (VulkanFunctions)vulkanFunctions;
+            fixed (nint* queuePtr = queues)
+            {
+                fixed (uint* queueFamilyPtr = families)
+                {
+                    nint device = mDevice.Handle;
+                    nint physicalDevice = mPhysicalDevice.Device.Handle;
+                    OptickImports.InitGpuVulkan(&device, &physicalDevice, queuePtr, queueFamilyPtr, (uint)queues.Length, &vulkanFunctionStructure);
+                }
             }
         }
 

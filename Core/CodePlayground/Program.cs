@@ -22,7 +22,9 @@ namespace CodePlayground
             }
 
             var applicationType = loadedAppAttribute.ApplicationType;
-            return Application.RunApplication(applicationType, args[1..]);
+            int exitCode = Application.RunApplication(applicationType, args[1..]);
+
+            return exitCode;
         }
     }
 }

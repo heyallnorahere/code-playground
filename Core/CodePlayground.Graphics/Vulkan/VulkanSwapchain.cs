@@ -1,4 +1,5 @@
-﻿using Silk.NET.Core;
+﻿using Optick.NET;
+using Silk.NET.Core;
 using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
@@ -158,6 +159,8 @@ namespace CodePlayground.Graphics.Vulkan
         private void Resize(Vector2D<int> windowSize) => mNewSize = windowSize;
         public unsafe void Invalidate()
         {
+            using var invalidateEvent = OptickMacros.Event();
+
             mDevice.ClearQueues();
 
             DestroyFramebuffers();
@@ -234,6 +237,8 @@ namespace CodePlayground.Graphics.Vulkan
         [MemberNotNull(nameof(mImageFences))]
         private unsafe SwapchainKHR Create(Extent2D extent)
         {
+            using var createEvent = OptickMacros.Event();
+
             var queueFamilyIndices = mDevice.PhysicalDevice.FindQueueTypes();
             var graphicsFamily = queueFamilyIndices[CommandQueueFlags.Graphics];
             var queueFamilies = new uint[] { (uint)graphicsFamily, (uint)mPresentQueueFamily };
@@ -335,6 +340,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         private VulkanImage CreateDepthBuffer()
         {
+            using var createEvent = OptickMacros.Event();
+
             var image = new VulkanImage(mDevice, mAllocator, new VulkanImageCreateInfo
             {
                 Size = new SixLabors.ImageSharp.Size((int)mExtent.Width, (int)mExtent.Height),
@@ -361,6 +368,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe VulkanSwapchainFrameSyncObjects[] CreateSyncObjects()
         {
+            using var createEvent = OptickMacros.Event();
             var result = new VulkanSwapchainFrameSyncObjects[GraphicsApplication.SynchronizationFrames];
 
             var semaphoreInfo = VulkanUtilities.Init<SemaphoreCreateInfo>();
@@ -386,6 +394,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe VulkanSwapchainFramebuffer[] CreateFramebuffers()
         {
+            using var createEvent = OptickMacros.Event();
+
             uint imageCount = 0;
             mSwapchainExtension.GetSwapchainImages(mDevice.Device, mSwapchain, &imageCount, null);
 
@@ -459,6 +469,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void AcquireImage()
         {
+            using var acquireEvent = OptickMacros.Event();
+
             var api = VulkanContext.API;
             var currentFrame = mSyncObjects[mCurrentSyncFrame];
 
@@ -497,6 +509,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void Present(ICommandQueue commandQueue, ICommandList commandList)
         {
+            using var presentEvent = OptickMacros.Event();
+
             if (commandQueue is not VulkanQueue || commandList is not VulkanCommandBuffer)
             {
                 throw new ArgumentException("Must pass Vulkan objects!");
@@ -536,6 +550,9 @@ namespace CodePlayground.Graphics.Vulkan
                         PSwapchains = swapchain,
                         PImageIndices = currentImage
                     };
+
+                    OptickImports.GpuFlip((nint)mSwapchain.Handle);
+                    using var vulkanPresentEvent = OptickMacros.Category("vkQueuePresentKHR", Category.Wait);
 
                     var result = mSwapchainExtension.QueuePresent(mPresentQueue.Queue, &presentInfo);
                     if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr || mNewSize is not null)

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Optick.NET;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -39,24 +40,33 @@ namespace CodePlayground
                 throw new InvalidOperationException("The specified type does not have a constructor with no parameters!");
             }
 
-            using var instance = (Application)constructor.Invoke(null);
-            instance.ApplyAttributes();
-            sInstance = instance;
-
-            var copiedBinaries = instance.CopiedBinaries;
-            if (copiedBinaries.Length > 0)
+            int exitCode = 0;
+            using (var instance = (Application)constructor.Invoke(null))
             {
-                var assemblyDir = applicationType.Assembly.GetAssemblyDirectory();
-                if (string.IsNullOrEmpty(assemblyDir))
+                instance.ApplyAttributes();
+                sInstance = instance;
+
+                var copiedBinaries = instance.CopiedBinaries;
+                if (copiedBinaries.Length > 0)
                 {
-                    throw new ArgumentException("Failed to retrieve the directory of the application assembly!");
+                    var assemblyDir = applicationType.Assembly.GetAssemblyDirectory();
+                    if (string.IsNullOrEmpty(assemblyDir))
+                    {
+                        throw new ArgumentException("Failed to retrieve the directory of the application assembly!");
+                    }
+
+                    CopyBinaries(assemblyDir, copiedBinaries);
                 }
 
-                CopyBinaries(assemblyDir, copiedBinaries);
-            }
+#if DEBUG
+                instance.mOptickApp = new OptickApp(instance.Title);
+#endif
 
-            Console.WriteLine($"Running application {instance.Title} version {instance.Version}");
-            int exitCode = instance.Run(args);
+                Console.WriteLine($"Running application {instance.Title} version {instance.Version}");
+                exitCode = instance.Run(args);
+                
+                instance.ShutdownOptick();
+            }
 
             sInstance = null;
             return exitCode;
@@ -138,6 +148,17 @@ namespace CodePlayground
             // nothing
         }
 
+        protected void ShutdownOptick()
+        {
+            mOptickApp?.Dispose();
+            if (mOptickApp is not null)
+            {
+                OptickImports.Shutdown();
+            }
+
+            mOptickApp = null;
+        }
+
         public string Title { get; internal set; }
         public Version Version { get; internal set; }
         public abstract bool IsRunning { get; }
@@ -164,5 +185,6 @@ namespace CodePlayground
         }
 
         private bool mDisposed;
+        private OptickApp? mOptickApp;
     }
 }

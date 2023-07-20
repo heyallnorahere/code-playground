@@ -299,6 +299,7 @@ namespace CodePlayground.Graphics
     {
         public bool IsRecording { get; }
         public CommandQueueFlags QueueUsage { get; }
+        public nint Address { get; }
 
         public void Begin();
         public void End();

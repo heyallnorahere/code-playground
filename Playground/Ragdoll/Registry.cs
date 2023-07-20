@@ -1,4 +1,5 @@
 using CodePlayground;
+using Optick.NET;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -121,6 +122,8 @@ namespace Ragdoll
         public bool Exists(ulong id) => mEntities.ContainsKey(id);
         public void Destroy(ulong id)
         {
+            using var destroyEvent = OptickMacros.Event();
+
             VerifyUnlocked();
             if (!mEntities.TryGetValue(id, out EntityData data))
             {
@@ -150,6 +153,8 @@ namespace Ragdoll
 
         public IEnumerable<object> View(ulong id)
         {
+            using var viewEvent = OptickMacros.Event();
+
             if (!mEntities.TryGetValue(id, out EntityData data))
             {
                 throw new ArgumentException("Invalid entity ID!");
@@ -169,6 +174,8 @@ namespace Ragdoll
 
         public IEnumerable<ulong> View(params Type[] types)
         {
+            using var viewEvent = OptickMacros.Event();
+
             var entities = new List<ulong>();
             foreach (ulong id in mEntities.Keys)
             {
@@ -194,6 +201,8 @@ namespace Ragdoll
         public bool Has<T>(ulong id) where T : class => Has(id, typeof(T));
         public bool Has(ulong id, Type type)
         {
+            using var hasEvent = OptickMacros.Event();
+
             if (!mEntities.TryGetValue(id, out EntityData data))
             {
                 throw new ArgumentException("Invalid entity ID!");
@@ -204,6 +213,8 @@ namespace Ragdoll
 
         public bool TryGet<T>(ulong id, [NotNullWhen(true)] out T? component) where T : class
         {
+            using var tryGetEvent = OptickMacros.Event();
+
             if (TryGet(id, typeof(T), out object? componentObject))
             {
                 component = (T)componentObject;
@@ -216,6 +227,8 @@ namespace Ragdoll
 
         public bool TryGet(ulong id, Type type, [NotNullWhen(true)] out object? component)
         {
+            using var tryGetEvent = OptickMacros.Event();
+
             if (!mEntities.TryGetValue(id, out EntityData data))
             {
                 throw new ArgumentException("Invalid entity ID!");
@@ -234,6 +247,8 @@ namespace Ragdoll
         public T Get<T>(ulong id) where T : class => (T)Get(id, typeof(T));
         public object Get(ulong id, Type type)
         {
+            using var getEvent = OptickMacros.Event();
+
             if (TryGet(id, type, out object? component))
             {
                 return component;
@@ -253,6 +268,8 @@ namespace Ragdoll
 
         public void Add(ulong id, object component)
         {
+            using var addEvent = OptickMacros.Event();
+
             VerifyUnlocked();
             if (!mEntities.TryGetValue(id, out EntityData data))
             {
@@ -287,6 +304,8 @@ namespace Ragdoll
 
         public void Remove(ulong id, Type type)
         {
+            using var removeEvent = OptickMacros.Event();
+
             VerifyUnlocked();
             if (!mEntities.TryGetValue(id, out EntityData data))
             {

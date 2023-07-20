@@ -1,4 +1,5 @@
 ﻿using CodePlayground.Graphics.Vulkan;
+using Optick.NET;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Input;
 using Silk.NET.Maths;
@@ -74,6 +75,7 @@ namespace CodePlayground.Graphics
     public abstract class GraphicsApplication : Application
     {
         public const int SynchronizationFrames = 2;
+        public const string MainThreadName = "Main thread";
 
         public GraphicsApplication()
         {
@@ -161,7 +163,7 @@ namespace CodePlayground.Graphics
             mWindow.Closing += () => Closing?.Invoke();
             mWindow.FocusChanged += focused => FocusChanged?.Invoke(focused);
             mWindow.Load += () => Load?.Invoke();
-            mWindow.Update += delta => Update?.Invoke(delta);
+            mWindow.Update += OnUpdate;
             mWindow.Render += OnRender;
         }
 
@@ -192,45 +194,66 @@ namespace CodePlayground.Graphics
         [EventHandler(nameof(Closing))]
         private void OnClose()
         {
+            mFrameEvent?.Dispose();
+            mFrameEvent = null;
+
             mInputContext?.Dispose();
         }
 
         // not an event handler - we need to be able to call render under certain circumstances
+        private void OnUpdate(double delta)
+        {
+            mFrameEvent?.Dispose();
+            mFrameEvent = OptickMacros.Frame(MainThreadName);
+
+            using var updateEvent = OptickMacros.Category("Update", Category.GameLogic);
+            Update?.Invoke(delta);
+        }
+
         private void OnRender(double delta)
         {
-            if (mGraphicsContext is null)
+            using (var renderEvent = OptickMacros.Category("Render", Category.Rendering))
             {
-                Render?.Invoke(new FrameRenderInfo
+                if (mGraphicsContext is null)
                 {
-                    Delta = delta,
-                    CommandList = null,
-                    RenderTarget = null,
-                    Framebuffer = null,
-                    CurrentImage = -1
-                });
-            }
-            else
-            {
-                var device = mGraphicsContext.Device;
-                var swapchain = mGraphicsContext.Swapchain;
-                swapchain.AcquireImage();
-
-                var queue = device.GetQueue(CommandQueueFlags.Graphics);
-                var commandList = queue.Release();
-                commandList.Begin();
-
-                Render?.Invoke(new FrameRenderInfo
+                    Render?.Invoke(new FrameRenderInfo
+                    {
+                        Delta = delta,
+                        CommandList = null,
+                        RenderTarget = null,
+                        Framebuffer = null,
+                        CurrentImage = -1
+                    });
+                }
+                else
                 {
-                    Delta = delta,
-                    CommandList = commandList,
-                    RenderTarget = swapchain.RenderTarget,
-                    Framebuffer = swapchain.CurrentFramebuffer,
-                    CurrentImage = swapchain.CurrentFrame
-                });
+                    var device = mGraphicsContext.Device;
+                    var swapchain = mGraphicsContext.Swapchain;
+                    swapchain.AcquireImage();
 
-                commandList.End();
-                swapchain.Present(queue, commandList);
+                    var queue = device.GetQueue(CommandQueueFlags.Graphics);
+                    var commandList = queue.Release();
+                    commandList.Begin();
+
+                    using (var context = new GPUContextScope(commandList.Address))
+                    {
+                        Render?.Invoke(new FrameRenderInfo
+                        {
+                            Delta = delta,
+                            CommandList = commandList,
+                            RenderTarget = swapchain.RenderTarget,
+                            Framebuffer = swapchain.CurrentFramebuffer,
+                            CurrentImage = swapchain.CurrentFrame
+                        });
+                    }
+
+                    commandList.End();
+                    swapchain.Present(queue, commandList);
+                }
             }
+
+            mFrameEvent?.Dispose();
+            mFrameEvent = null;
         }
 
         public IGraphicsContext CreateGraphicsContext()
@@ -241,6 +264,12 @@ namespace CodePlayground.Graphics
                 AppGraphicsAPI.Other => throw new InvalidOperationException(),
                 _ => throw new NotImplementedException()
             };
+        }
+
+        internal void OnContextDestroyed()
+        {
+            ShutdownOptick();
+            // what else? idk
         }
 
         protected virtual void OnContextCreation(IGraphicsContext context) { }
@@ -285,5 +314,6 @@ namespace CodePlayground.Graphics
         private IInputContext? mInputContext;
         private IGraphicsContext? mGraphicsContext;
         private string[] mArgs;
+        private Event? mFrameEvent;
     }
 }
