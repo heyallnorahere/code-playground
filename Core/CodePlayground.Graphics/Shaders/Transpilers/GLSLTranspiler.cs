@@ -1,3 +1,4 @@
+using Optick.NET;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -39,6 +40,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private string GetFieldName(FieldInfo field, Type shaderType)
         {
+            using var fieldNameEvent = OptickMacros.Event();
+
             if (mFieldNames.ContainsKey(field))
             {
                 return mFieldNames[field];
@@ -60,6 +63,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private string GetFunctionName(MethodInfo method, Type shaderType)
         {
+            using var functionNameEvent = OptickMacros.Event();
+
             if (mFunctionNames.ContainsKey(method))
             {
                 return mFunctionNames[method];
@@ -109,6 +114,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private string GetTypeName(Type type, Type shaderType, bool asType)
         {
+            using var typeNameEvent = OptickMacros.Event();
+
             if (sPrimitiveTypeNames.ContainsKey(type))
             {
                 return sPrimitiveTypeNames[type];
@@ -215,6 +222,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private static string CreateParameterExpressionString(Stack<string> evaluationStack, int parameterCount)
         {
+            using var parameterExpressionStringEvent = OptickMacros.Event();
+
             string expressionString = string.Empty;
             for (int i = parameterCount - 1; i >= 0; i--)
             {
@@ -228,6 +237,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private void ParseReturnStructure(Type type, ICustomAttributeProvider provider, string identifierExpression, Action<Type, string, string, int> callback)
         {
+            using var parseEvent = OptickMacros.Event();
+
             if (provider.GetCustomAttributes(typeof(OutputPositionAttribute), true).Length != 0)
             {
                 callback.Invoke(type, identifierExpression, "gl_Position", -1);
@@ -266,6 +277,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private void ProcessType(Type type, Type shaderType, bool defineStruct = true)
         {
+            using var processTypeEvent = OptickMacros.Event();
+
             if (mStructDependencies.ContainsKey(type) || !type.IsValueType || type.IsPrimitive)
             {
                 return;
@@ -331,6 +344,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private static void PushOperatorExpression(ShaderOperatorType type, Stack<string> evaluationStack)
         {
+            using var pushEvent = OptickMacros.Event();
+
             var rhs = evaluationStack.Pop();
             evaluationStack.Push(type switch
             {
@@ -346,6 +361,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private TranslatedMethodInfo TranspileMethod(Type type, MethodInfo method, bool entrypoint)
         {
+            using var transpileEvent = OptickMacros.Event();
+
             var body = method.GetMethodBody();
             var instructions = body?.GetILAsInstructionList(method.Module);
 
@@ -366,616 +383,628 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             string returnTypeString, parameterString, functionName;
             var outputFields = new Dictionary<string, string>();
 
-            if (entrypoint)
+            using (var parseSignatureEvent = OptickMacros.Event("Parse shader function signature"))
             {
-                returnTypeString = "void";
-                parameterString = string.Empty;
-                functionName = EntrypointName;
-
-                var returnType = method.ReturnType;
-                var attributes = method.ReturnTypeCustomAttributes;
-
-                ParseReturnStructure(returnType, attributes, string.Empty, (fieldType, expression, destination, location) =>
+                if (entrypoint)
                 {
-                    string outputName;
-                    if (location >= 0)
+                    returnTypeString = "void";
+                    parameterString = string.Empty;
+                    functionName = EntrypointName;
+
+                    var returnType = method.ReturnType;
+                    var attributes = method.ReturnTypeCustomAttributes;
+
+                    ParseReturnStructure(returnType, attributes, string.Empty, (fieldType, expression, destination, location) =>
                     {
-                        outputName = "_output" + destination;
-                        mStageIO.Add(outputName, new StageIOField
+                        string outputName;
+                        if (location >= 0)
                         {
-                            Direction = StageIODirection.Out,
-                            Location = location,
-                            TypeName = GetTypeName(fieldType, type, true)
-                        });
-                    }
-                    else
-                    {
-                        outputName = destination;
-                    }
+                            outputName = "_output" + destination;
+                            mStageIO.Add(outputName, new StageIOField
+                            {
+                                Direction = StageIODirection.Out,
+                                Location = location,
+                                TypeName = GetTypeName(fieldType, type, true)
+                            });
+                        }
+                        else
+                        {
+                            outputName = destination;
+                        }
 
-                    outputFields.Add(expression, outputName);
-                    ProcessType(fieldType, type);
-                });
-            }
-            else
-            {
-                returnTypeString = GetTypeName(method.ReturnType, type, true);
-                parameterString = string.Empty;
-                functionName = GetFunctionName(method, type);
-
-                for (int i = 0; i < parameters.Length; i++)
+                        outputFields.Add(expression, outputName);
+                        ProcessType(fieldType, type);
+                    });
+                }
+                else
                 {
-                    if (i > 0)
+                    returnTypeString = GetTypeName(method.ReturnType, type, true);
+                    parameterString = string.Empty;
+                    functionName = GetFunctionName(method, type);
+
+                    for (int i = 0; i < parameters.Length; i++)
                     {
-                        parameterString += ", ";
+                        if (i > 0)
+                        {
+                            parameterString += ", ";
+                        }
+
+                        var parameter = parameters[i];
+                        var parameterType = parameter.ParameterType;
+                        var parameterTypeName = GetTypeName(parameterType, type, true);
+
+                        parameterString += $"{parameterTypeName} {parameterNames[i]}";
+                        ProcessType(parameterType, type);
                     }
-
-                    var parameter = parameters[i];
-                    var parameterType = parameter.ParameterType;
-                    var parameterTypeName = GetTypeName(parameterType, type, true);
-
-                    parameterString += $"{parameterTypeName} {parameterNames[i]}";
-                    ProcessType(parameterType, type);
                 }
             }
 
             var builder = new StringBuilder();
             builder.AppendLine($"{returnTypeString} {functionName}({parameterString}) {{");
 
-            var localVariables = body.LocalVariables;
-            for (int i = 0; i < localVariables.Count; i++)
-            {
-                var variableType = localVariables[i].LocalType;
-                ProcessType(variableType, type);
-
-                string variableTypeName = GetTypeName(variableType, type, true);
-                builder.AppendLine($"{variableTypeName} var_{i};");
-            }
-
-            var evaluationStack = new Stack<string>();
             var dependencies = new List<MethodInfo>();
-            var jumps = new List<JumpInstruction>();
-
-            var mapCollection = new SourceMapCollection(instructions);
-            for (int i = 0; i < instructions.Count; i++)
+            using (var parseBodyEvent = OptickMacros.Event("Parse shader function body"))
             {
-                var instruction = instructions[i];
-
-                mapCollection.SourceOffsets.Add(instruction.Offset, builder.Length);
-                mapCollection.OffsetInstructionMap.Add(instruction.Offset, i);
-
-                var opCode = instruction.OpCode;
-                var name = opCode.Name?.ToLower();
-
-                if (string.IsNullOrEmpty(name) || name == "nop" || name == "break")
+                var localVariables = body.LocalVariables;
+                for (int i = 0; i < localVariables.Count; i++)
                 {
-                    continue;
+                    var variableType = localVariables[i].LocalType;
+                    ProcessType(variableType, type);
+
+                    string variableTypeName = GetTypeName(variableType, type, true);
+                    builder.AppendLine($"{variableTypeName} var_{i};");
                 }
 
-                // https://learn.microsoft.com/en-us/dotnet/api/system.reflection.emit.opcodes?view=net-7.0
-                if (name.StartsWith("call"))
+                var evaluationStack = new Stack<string>();
+                var jumps = new List<JumpInstruction>();
+
+                var mapCollection = new SourceMapCollection(instructions);
+                using (var parseILEvent = OptickMacros.Event("Parse shader IL"))
                 {
-                    MethodInfo invokedMethod;
-                    if (instruction.Operand is MethodInfo operand)
+                    for (int i = 0; i < instructions.Count; i++)
                     {
-                        var operatorAttribute = operand.GetCustomAttribute<ShaderOperatorAttribute>();
-                        if (operatorAttribute is not null)
+                        var instruction = instructions[i];
+
+                        mapCollection.SourceOffsets.Add(instruction.Offset, builder.Length);
+                        mapCollection.OffsetInstructionMap.Add(instruction.Offset, i);
+
+                        var opCode = instruction.OpCode;
+                        var name = opCode.Name?.ToLower();
+
+                        if (string.IsNullOrEmpty(name) || name == "nop" || name == "break")
                         {
-                            PushOperatorExpression(operatorAttribute.Type, evaluationStack);
                             continue;
                         }
 
-                        invokedMethod = operand;
-                        if (operand != method)
+                        // https://learn.microsoft.com/en-us/dotnet/api/system.reflection.emit.opcodes?view=net-7.0
+                        if (name.StartsWith("call"))
                         {
-                            dependencies.Add(operand);
-                        }
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException("Cannot dynamically call shader functions!");
-                    }
-
-                    var invocationParameters = invokedMethod.GetParameters();
-                    var expressionString = CreateParameterExpressionString(evaluationStack, invocationParameters.Length);
-
-                    if (!invokedMethod.IsStatic)
-                    {
-                        string invokedObject = evaluationStack.Pop();
-                        if (invokedMethod.GetCustomAttribute<BuiltinShaderFunctionAttribute>() is null)
-                        {
-                            var declaringType = invokedMethod.DeclaringType;
-                            if (declaringType is null || !type.Extends(declaringType))
+                            MethodInfo invokedMethod;
+                            if (instruction.Operand is MethodInfo operand)
                             {
-                                throw new InvalidOperationException("Cannot call an instance method outside of the shader class!");
-                            }
-                        }
-                        else
-                        {
-                            var existingExpressions = expressionString;
-                            expressionString = invokedObject;
-
-                            if (existingExpressions.Length > 0)
-                            {
-                                expressionString += $", {existingExpressions}";
-                            }
-                        }
-                    }
-
-                    string invokedFunctionName = GetFunctionName(invokedMethod, type);
-                    string invocationExpression = $"{invokedFunctionName}({expressionString})";
-
-                    if (invokedMethod.ReturnType != typeof(void))
-                    {
-                        evaluationStack.Push(invocationExpression);
-                    }
-                    else
-                    {
-                        builder.AppendLine($"{invocationExpression};");
-                    }
-                }
-                else if (name.StartsWith("ld"))
-                {
-                    string loadType = name[2..];
-
-                    string expression;
-                    if (instruction.Operand is FieldInfo field)
-                    {
-                        var fieldName = GetFieldName(field, type);
-                        var layoutAttribute = field.GetCustomAttribute<LayoutAttribute>();
-
-                        if (field.DeclaringType == type || field.IsStatic)
-                        {
-                            if (layoutAttribute is null)
-                            {
-                                throw new InvalidOperationException("Static and/or shader fields must have the Layout attribute applied!");
-                            }
-                            else if (!mStageResources.ContainsKey(fieldName))
-                            {
-                                var fieldType = field.FieldType;
-                                ProcessType(fieldType, type, false);
-
-                                string layoutString;
-                                if (layoutAttribute.PushConstants)
+                                var operatorAttribute = operand.GetCustomAttribute<ShaderOperatorAttribute>();
+                                if (operatorAttribute is not null)
                                 {
-                                    layoutString = "push_constant";
+                                    PushOperatorExpression(operatorAttribute.Type, evaluationStack);
+                                    continue;
+                                }
+
+                                invokedMethod = operand;
+                                if (operand != method)
+                                {
+                                    dependencies.Add(operand);
+                                }
+                            }
+                            else
+                            {
+                                throw new InvalidOperationException("Cannot dynamically call shader functions!");
+                            }
+
+                            var invocationParameters = invokedMethod.GetParameters();
+                            var expressionString = CreateParameterExpressionString(evaluationStack, invocationParameters.Length);
+
+                            if (!invokedMethod.IsStatic)
+                            {
+                                string invokedObject = evaluationStack.Pop();
+                                if (invokedMethod.GetCustomAttribute<BuiltinShaderFunctionAttribute>() is null)
+                                {
+                                    var declaringType = invokedMethod.DeclaringType;
+                                    if (declaringType is null || !type.Extends(declaringType))
+                                    {
+                                        throw new InvalidOperationException("Cannot call an instance method outside of the shader class!");
+                                    }
                                 }
                                 else
                                 {
-                                    layoutString = $"set = {layoutAttribute.Set}, binding = {layoutAttribute.Binding}";
+                                    var existingExpressions = expressionString;
+                                    expressionString = invokedObject;
 
-                                    var primitiveTypeAttribute = fieldType.GetCustomAttribute<PrimitiveShaderTypeAttribute>();
-                                    if (primitiveTypeAttribute is null || !primitiveTypeAttribute.IsSampler)
+                                    if (existingExpressions.Length > 0)
                                     {
-                                        layoutString = "std140, " + layoutString;
+                                        expressionString += $", {existingExpressions}";
                                     }
                                 }
+                            }
 
-                                mStageResources.Add(fieldName, new ShaderResource
-                                {
-                                    Layout = layoutString,
-                                    ResourceType = fieldType,
-                                    Type = layoutAttribute.ResourceType
-                                });
+                            string invokedFunctionName = GetFunctionName(invokedMethod, type);
+                            string invocationExpression = $"{invokedFunctionName}({expressionString})";
+
+                            if (invokedMethod.ReturnType != typeof(void))
+                            {
+                                evaluationStack.Push(invocationExpression);
+                            }
+                            else
+                            {
+                                builder.AppendLine($"{invocationExpression};");
                             }
                         }
-
-                        if (!field.IsStatic)
+                        else if (name.StartsWith("ld"))
                         {
-                            var parentExpression = evaluationStack.Pop();
-                            expression = parentExpression != "this" ? $"{parentExpression}.{fieldName}" : fieldName;
+                            string loadType = name[2..];
 
-                            if (entrypoint)
+                            string expression;
+                            if (instruction.Operand is FieldInfo field)
                             {
-                                if (layoutAttribute is not null && layoutAttribute.Location >= 0)
-                                {
-                                    bool isInput = false;
-                                    foreach (var parameterName in parameterNames)
-                                    {
-                                        if (expression.Length > parameterName.Length ? expression.StartsWith(parameterName) : expression == parameterName)
-                                        {
-                                            isInput = true;
-                                            break;
-                                        }
-                                    }
+                                var fieldName = GetFieldName(field, type);
+                                var layoutAttribute = field.GetCustomAttribute<LayoutAttribute>();
 
-                                    if (isInput)
+                                if (field.DeclaringType == type || field.IsStatic)
+                                {
+                                    if (layoutAttribute is null)
                                     {
-                                        expression = "_input_" + expression.Replace('.', '_');
-                                        if (!mStageIO.ContainsKey(expression))
+                                        throw new InvalidOperationException("Static and/or shader fields must have the Layout attribute applied!");
+                                    }
+                                    else if (!mStageResources.ContainsKey(fieldName))
+                                    {
+                                        var fieldType = field.FieldType;
+                                        ProcessType(fieldType, type, false);
+
+                                        string layoutString;
+                                        if (layoutAttribute.PushConstants)
                                         {
-                                            mStageIO.Add(expression, new StageIOField
+                                            layoutString = "push_constant";
+                                        }
+                                        else
+                                        {
+                                            layoutString = $"set = {layoutAttribute.Set}, binding = {layoutAttribute.Binding}";
+
+                                            var primitiveTypeAttribute = fieldType.GetCustomAttribute<PrimitiveShaderTypeAttribute>();
+                                            if (primitiveTypeAttribute is null || !primitiveTypeAttribute.IsSampler)
                                             {
-                                                Direction = StageIODirection.In,
-                                                Location = layoutAttribute.Location,
-                                                TypeName = GetTypeName(field.FieldType, type, true)
-                                            });
+                                                layoutString = "std140, " + layoutString;
+                                            }
+                                        }
 
-                                            ProcessType(field.FieldType, type);
+                                        mStageResources.Add(fieldName, new ShaderResource
+                                        {
+                                            Layout = layoutString,
+                                            ResourceType = fieldType,
+                                            Type = layoutAttribute.ResourceType
+                                        });
+                                    }
+                                }
+
+                                if (!field.IsStatic)
+                                {
+                                    var parentExpression = evaluationStack.Pop();
+                                    expression = parentExpression != "this" ? $"{parentExpression}.{fieldName}" : fieldName;
+
+                                    if (entrypoint)
+                                    {
+                                        if (layoutAttribute is not null && layoutAttribute.Location >= 0)
+                                        {
+                                            bool isInput = false;
+                                            foreach (var parameterName in parameterNames)
+                                            {
+                                                if (expression.Length > parameterName.Length ? expression.StartsWith(parameterName) : expression == parameterName)
+                                                {
+                                                    isInput = true;
+                                                    break;
+                                                }
+                                            }
+
+                                            if (isInput)
+                                            {
+                                                expression = "_input_" + expression.Replace('.', '_');
+                                                if (!mStageIO.ContainsKey(expression))
+                                                {
+                                                    mStageIO.Add(expression, new StageIOField
+                                                    {
+                                                        Direction = StageIODirection.In,
+                                                        Location = layoutAttribute.Location,
+                                                        TypeName = GetTypeName(field.FieldType, type, true)
+                                                    });
+
+                                                    ProcessType(field.FieldType, type);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    expression = fieldName;
+                                }
+                            }
+                            else if (loadType.StartsWith("loc"))
+                            {
+                                int variableIndex;
+                                if (instruction.Operand is null)
+                                {
+                                    variableIndex = int.Parse(name[(name.Length - 1)..]);
+                                }
+                                else
+                                {
+                                    variableIndex = Convert.ToInt32(instruction.Operand);
+                                }
+
+                                expression = $"var_{variableIndex}";
+                            }
+                            else if (loadType.StartsWith("arg"))
+                            {
+                                int argumentIndex;
+                                if (instruction.Operand is null)
+                                {
+                                    argumentIndex = int.Parse(name[(name.Length - 1)..]);
+                                }
+                                else
+                                {
+                                    argumentIndex = Convert.ToInt32(instruction.Operand);
+                                }
+
+                                if (!method.IsStatic)
+                                {
+                                    argumentIndex--;
+                                }
+
+                                if (argumentIndex < 0)
+                                {
+                                    expression = "this";
+                                }
+                                else
+                                {
+                                    expression = parameterNames[argumentIndex];
+                                    if (entrypoint)
+                                    {
+                                        var parameter = parameters[argumentIndex];
+                                        var parameterType = parameter.ParameterType;
+
+                                        var attribute = parameter.GetCustomAttribute<LayoutAttribute>();
+                                        if (attribute is not null && attribute.Location >= 0)
+                                        {
+                                            expression = "_input_" + expression;
+                                            if (!mStageIO.ContainsKey(expression))
+                                            {
+                                                mStageIO.Add(expression, new StageIOField
+                                                {
+                                                    Direction = StageIODirection.In,
+                                                    Location = attribute.Location,
+                                                    TypeName = GetTypeName(parameterType, type, true)
+                                                });
+
+                                                ProcessType(parameterType, type);
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                        else
-                        {
-                            expression = fieldName;
-                        }
-                    }
-                    else if (loadType.StartsWith("loc"))
-                    {
-                        int variableIndex;
-                        if (instruction.Operand is null)
-                        {
-                            variableIndex = int.Parse(name[(name.Length - 1)..]);
-                        }
-                        else
-                        {
-                            variableIndex = Convert.ToInt32(instruction.Operand);
-                        }
-
-                        expression = $"var_{variableIndex}";
-                    }
-                    else if (loadType.StartsWith("arg"))
-                    {
-                        int argumentIndex;
-                        if (instruction.Operand is null)
-                        {
-                            argumentIndex = int.Parse(name[(name.Length - 1)..]);
-                        }
-                        else
-                        {
-                            argumentIndex = Convert.ToInt32(instruction.Operand);
-                        }
-
-                        if (!method.IsStatic)
-                        {
-                            argumentIndex--;
-                        }
-
-                        if (argumentIndex < 0)
-                        {
-                            expression = "this";
-                        }
-                        else
-                        {
-                            expression = parameterNames[argumentIndex];
-                            if (entrypoint)
+                            else if (loadType.StartsWith("elem"))
                             {
-                                var parameter = parameters[argumentIndex];
-                                var parameterType = parameter.ParameterType;
-
-                                var attribute = parameter.GetCustomAttribute<LayoutAttribute>();
-                                if (attribute is not null && attribute.Location >= 0)
+                                var index = evaluationStack.Pop();
+                                var array = evaluationStack.Pop();
+                                expression = $"{array}[{index}]";
+                            }
+                            else if (instruction.Operand is string)
+                            {
+                                throw new InvalidOperationException("Strings are not permitted in shaders!");
+                            }
+                            else
+                            {
+                                string? parsedExpression = instruction.Operand?.ToString();
+                                if (parsedExpression is null)
                                 {
-                                    expression = "_input_" + expression;
-                                    if (!mStageIO.ContainsKey(expression))
+                                    int lastSeparator = name.LastIndexOf('.');
+                                    if (lastSeparator >= 0)
                                     {
-                                        mStageIO.Add(expression, new StageIOField
+                                        var valueSegment = name[(lastSeparator + 1)..];
+                                        if (int.TryParse(valueSegment, out int parsedInteger))
                                         {
-                                            Direction = StageIODirection.In,
-                                            Location = attribute.Location,
-                                            TypeName = GetTypeName(parameterType, type, true)
-                                        });
-
-                                        ProcessType(parameterType, type);
+                                            parsedExpression = valueSegment;
+                                        }
                                     }
                                 }
+
+                                expression = parsedExpression ?? throw new InvalidOperationException("Null values are not permitted in shaders!");
                             }
+
+                            evaluationStack.Push(expression);
                         }
-                    }
-                    else if (loadType.StartsWith("elem"))
-                    {
-                        var index = evaluationStack.Pop();
-                        var array = evaluationStack.Pop();
-                        expression = $"{array}[{index}]";
-                    }
-                    else if (instruction.Operand is string)
-                    {
-                        throw new InvalidOperationException("Strings are not permitted in shaders!");
-                    }
-                    else
-                    {
-                        string? parsedExpression = instruction.Operand?.ToString();
-                        if (parsedExpression is null)
+                        else if (name.StartsWith("st"))
                         {
-                            int lastSeparator = name.LastIndexOf('.');
-                            if (lastSeparator >= 0)
-                            {
-                                var valueSegment = name[(lastSeparator + 1)..];
-                                if (int.TryParse(valueSegment, out int parsedInteger))
-                                {
-                                    parsedExpression = valueSegment;
-                                }
-                            }
-                        }
+                            var storeType = name[2..];
 
-                        expression = parsedExpression ?? throw new InvalidOperationException("Null values are not permitted in shaders!");
-                    }
-
-                    evaluationStack.Push(expression);
-                }
-                else if (name.StartsWith("st"))
-                {
-                    var storeType = name[2..];
-
-                    if (instruction.Operand is FieldInfo field)
-                    {
-                        var expression = evaluationStack.Pop();
-
-                        var destination = GetFieldName(field, type);
-                        if (storeType.StartsWith("fld"))
-                        {
-                            var destinationObject = evaluationStack.Pop();
-                            destination = $"{destinationObject}.{destination}";
-                        }
-
-                        builder.AppendLine($"{destination} = {expression};");
-                    }
-                    else if (storeType.StartsWith("loc"))
-                    {
-                        int variableIndex;
-                        if (instruction.Operand is null)
-                        {
-                            variableIndex = int.Parse(name[(name.Length - 1)..]);
-                        }
-                        else
-                        {
-                            variableIndex = Convert.ToInt32(instruction.Operand);
-                        }
-
-                        var expression = evaluationStack.Pop();
-                        builder.AppendLine($"var_{variableIndex} = {expression};");
-                    }
-                    else if (storeType.StartsWith("elem"))
-                    {
-                        var expression = evaluationStack.Pop();
-                        var index = evaluationStack.Pop();
-                        var array = evaluationStack.Pop();
-
-                        builder.AppendLine($"{array}[{index}] = {expression};");
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException("Unsupported store operation!");
-                    }
-                }
-                else if (name.StartsWith("br"))
-                {
-                    var conditionalOp = name[2..];
-                    var condition = new JumpCondition();
-
-                    if (conditionalOp.StartsWith("false"))
-                    {
-                        condition.Type = ConditionalType.False;
-                    }
-                    else if (conditionalOp.StartsWith("true"))
-                    {
-                        condition.Type = ConditionalType.True;
-                    }
-                    else
-                    {
-                        condition.Type = ConditionalType.Unconditional;
-                    }
-
-                    condition.Expression = condition.Type != ConditionalType.Unconditional ? evaluationStack.Pop() : null;
-                    jumps.Add(new JumpInstruction
-                    {
-                        Offset = instruction.Offset,
-                        Destination = Convert.ToInt32(instruction.Operand!),
-                        Condition = condition
-                    });
-                }
-                else if (name.StartsWith("add"))
-                {
-                    PushOperatorExpression(ShaderOperatorType.Add, evaluationStack);
-                }
-                else if (name.StartsWith("sub"))
-                {
-                    PushOperatorExpression(ShaderOperatorType.Subtract, evaluationStack);
-                }
-                else if (name.StartsWith("mul"))
-                {
-                    PushOperatorExpression(ShaderOperatorType.Multiply, evaluationStack);
-                }
-                else if (name.StartsWith("div"))
-                {
-                    PushOperatorExpression(ShaderOperatorType.Divide, evaluationStack);
-                }
-                else if (name.StartsWith("neg"))
-                {
-                    PushOperatorExpression(ShaderOperatorType.Invert, evaluationStack);
-                }
-                else if (name.StartsWith("ceq"))
-                {
-                    var rhs = evaluationStack.Pop();
-                    var lhs = evaluationStack.Pop();
-
-                    evaluationStack.Push($"{lhs} == {rhs}");
-                }
-                else if (name.StartsWith("cgt"))
-                {
-                    var rhs = evaluationStack.Pop();
-                    var lhs = evaluationStack.Pop();
-
-                    evaluationStack.Push($"{lhs} > {rhs}");
-                }
-                else if (name.StartsWith("clt"))
-                {
-                    var rhs = evaluationStack.Pop();
-                    var lhs = evaluationStack.Pop();
-
-                    evaluationStack.Push($"{lhs} < {rhs}");
-                }
-                else
-                {
-                    // explicit cases
-                    switch (name)
-                    {
-                        case "pop":
+                            if (instruction.Operand is FieldInfo field)
                             {
                                 var expression = evaluationStack.Pop();
-                                builder.AppendLine($"{expression};");
-                            }
-                            break;
-                        case "initobj":
-                            evaluationStack.Pop();
-                            break;
-                        case "newobj":
-                            {
-                                var constructor = (ConstructorInfo)instruction.Operand!;
-                                var declaringType = constructor.DeclaringType!;
-                                string typeName = GetTypeName(declaringType, type, true);
 
-                                var attribute = declaringType.GetCustomAttribute<PrimitiveShaderTypeAttribute>();
-                                if (!attribute!.Instantiable)
+                                var destination = GetFieldName(field, type);
+                                if (storeType.StartsWith("fld"))
                                 {
-                                    throw new InvalidOperationException($"Shader type \"{typeName}\" is not instantiable!");
+                                    var destinationObject = evaluationStack.Pop();
+                                    destination = $"{destinationObject}.{destination}";
                                 }
 
-                                var constructorParameters = constructor.GetParameters();
-                                var expressionString = CreateParameterExpressionString(evaluationStack, constructorParameters.Length);
-
-                                evaluationStack.Push($"{typeName}({expressionString})");
+                                builder.AppendLine($"{destination} = {expression};");
                             }
-                            break;
-                        case "ret":
+                            else if (storeType.StartsWith("loc"))
                             {
-                                var returnedExpression = evaluationStack.Pop();
-                                if (entrypoint)
+                                int variableIndex;
+                                if (instruction.Operand is null)
                                 {
-                                    foreach (var expression in outputFields.Keys)
-                                    {
-                                        var outputName = outputFields[expression];
-                                        builder.AppendLine($"{outputName} = {returnedExpression}{expression};");
-                                    }
+                                    variableIndex = int.Parse(name[(name.Length - 1)..]);
                                 }
                                 else
                                 {
-                                    builder.AppendLine($"return {returnedExpression};");
+                                    variableIndex = Convert.ToInt32(instruction.Operand);
                                 }
+
+                                var expression = evaluationStack.Pop();
+                                builder.AppendLine($"var_{variableIndex} = {expression};");
                             }
-                            break;
-                        default:
-                            throw new InvalidOperationException($"Instruction {name} has not been implemented yet!");
-                    }
-                }
-            }
+                            else if (storeType.StartsWith("elem"))
+                            {
+                                var expression = evaluationStack.Pop();
+                                var index = evaluationStack.Pop();
+                                var array = evaluationStack.Pop();
 
-            var nonLoopJumps = new List<JumpInstruction>();
-            foreach (var jump in jumps)
-            {
-                if (jump.Destination > jump.Offset)
-                {
-                    nonLoopJumps.Add(jump);
-                    continue;
-                }
-
-                var scope = new Scope(jump.Destination, jump.Offset - jump.Destination, ScopeType.Loop);
-                if (!AddScope(scope))
-                {
-                    throw new InvalidOperationException($"Jump at offset 0x{jump.Offset:X} is not a valid loop!");
-                }
-
-                string startCode, endCode;
-                var condition = jump.Condition;
-
-                if (condition.Type != ConditionalType.Unconditional)
-                {
-                    var expression = condition.Type != ConditionalType.True ? $"!({condition.Expression})" : condition.Expression;
-
-                    startCode = "do {\n";
-                    endCode = $"}} while ({expression});\n";
-                }
-                else
-                {
-                    startCode = "while (true) {\n";
-                    endCode = "}\n";
-                }
-
-                int instructionIndex = mapCollection.OffsetInstructionMap[jump.Offset];
-                var nextInstruction = mapCollection.InstructionOffsets[instructionIndex + 1];
-
-                InsertCode(jump.Destination, startCode, builder, mapCollection);
-                InsertCode(nextInstruction, endCode, builder, mapCollection);
-            }
-
-            foreach (var jump in nonLoopJumps)
-            {
-                var condition = jump.Condition;
-                var containingScope = FindContainingScope(jump.Offset);
-                if (containingScope is not null && jump.Destination > containingScope.EndOffset)
-                {
-                    var currentScope = containingScope;
-                    while (currentScope.Parent is not null && currentScope.Type != ScopeType.Loop)
-                    {
-                        currentScope = currentScope.Parent;
-                    }
-
-                    if (currentScope.Type == ScopeType.Loop && jump.Destination > currentScope.EndOffset)
-                    {
-                        var currentParent = currentScope.Parent;
-                        if (currentParent is not null && jump.Destination > currentParent.EndOffset)
+                                builder.AppendLine($"{array}[{index}] = {expression};");
+                            }
+                            else
+                            {
+                                throw new InvalidOperationException("Unsupported store operation!");
+                            }
+                        }
+                        else if (name.StartsWith("br"))
                         {
-                            throw new InvalidOperationException("Invalid break statement!");
+                            var conditionalOp = name[2..];
+                            var condition = new JumpCondition();
+
+                            if (conditionalOp.StartsWith("false"))
+                            {
+                                condition.Type = ConditionalType.False;
+                            }
+                            else if (conditionalOp.StartsWith("true"))
+                            {
+                                condition.Type = ConditionalType.True;
+                            }
+                            else
+                            {
+                                condition.Type = ConditionalType.Unconditional;
+                            }
+
+                            condition.Expression = condition.Type != ConditionalType.Unconditional ? evaluationStack.Pop() : null;
+                            jumps.Add(new JumpInstruction
+                            {
+                                Offset = instruction.Offset,
+                                Destination = Convert.ToInt32(instruction.Operand!),
+                                Condition = condition
+                            });
+                        }
+                        else if (name.StartsWith("add"))
+                        {
+                            PushOperatorExpression(ShaderOperatorType.Add, evaluationStack);
+                        }
+                        else if (name.StartsWith("sub"))
+                        {
+                            PushOperatorExpression(ShaderOperatorType.Subtract, evaluationStack);
+                        }
+                        else if (name.StartsWith("mul"))
+                        {
+                            PushOperatorExpression(ShaderOperatorType.Multiply, evaluationStack);
+                        }
+                        else if (name.StartsWith("div"))
+                        {
+                            PushOperatorExpression(ShaderOperatorType.Divide, evaluationStack);
+                        }
+                        else if (name.StartsWith("neg"))
+                        {
+                            PushOperatorExpression(ShaderOperatorType.Invert, evaluationStack);
+                        }
+                        else if (name.StartsWith("ceq"))
+                        {
+                            var rhs = evaluationStack.Pop();
+                            var lhs = evaluationStack.Pop();
+
+                            evaluationStack.Push($"{lhs} == {rhs}");
+                        }
+                        else if (name.StartsWith("cgt"))
+                        {
+                            var rhs = evaluationStack.Pop();
+                            var lhs = evaluationStack.Pop();
+
+                            evaluationStack.Push($"{lhs} > {rhs}");
+                        }
+                        else if (name.StartsWith("clt"))
+                        {
+                            var rhs = evaluationStack.Pop();
+                            var lhs = evaluationStack.Pop();
+
+                            evaluationStack.Push($"{lhs} < {rhs}");
+                        }
+                        else
+                        {
+                            // explicit cases
+                            switch (name)
+                            {
+                                case "pop":
+                                    {
+                                        var expression = evaluationStack.Pop();
+                                        builder.AppendLine($"{expression};");
+                                    }
+                                    break;
+                                case "initobj":
+                                    evaluationStack.Pop();
+                                    break;
+                                case "newobj":
+                                    {
+                                        var constructor = (ConstructorInfo)instruction.Operand!;
+                                        var declaringType = constructor.DeclaringType!;
+                                        string typeName = GetTypeName(declaringType, type, true);
+
+                                        var attribute = declaringType.GetCustomAttribute<PrimitiveShaderTypeAttribute>();
+                                        if (!attribute!.Instantiable)
+                                        {
+                                            throw new InvalidOperationException($"Shader type \"{typeName}\" is not instantiable!");
+                                        }
+
+                                        var constructorParameters = constructor.GetParameters();
+                                        var expressionString = CreateParameterExpressionString(evaluationStack, constructorParameters.Length);
+
+                                        evaluationStack.Push($"{typeName}({expressionString})");
+                                    }
+                                    break;
+                                case "ret":
+                                    {
+                                        var returnedExpression = evaluationStack.Pop();
+                                        if (entrypoint)
+                                        {
+                                            foreach (var expression in outputFields.Keys)
+                                            {
+                                                var outputName = outputFields[expression];
+                                                builder.AppendLine($"{outputName} = {returnedExpression}{expression};");
+                                            }
+                                        }
+                                        else
+                                        {
+                                            builder.AppendLine($"return {returnedExpression};");
+                                        }
+                                    }
+                                    break;
+                                default:
+                                    throw new InvalidOperationException($"Instruction {name} has not been implemented yet!");
+                            }
+                        }
+                    }
+                }
+
+                using (var parseJumpEvent = OptickMacros.Event("Parse shader IL jumps"))
+                {
+                    var nonLoopJumps = new List<JumpInstruction>();
+                    foreach (var jump in jumps)
+                    {
+                        if (jump.Destination > jump.Offset)
+                        {
+                            nonLoopJumps.Add(jump);
+                            continue;
                         }
 
-                        string code = "break;\n";
+                        var scope = new Scope(jump.Destination, jump.Offset - jump.Destination, ScopeType.Loop);
+                        if (!AddScope(scope))
+                        {
+                            throw new InvalidOperationException($"Jump at offset 0x{jump.Offset:X} is not a valid loop!");
+                        }
+
+                        string startCode, endCode;
+                        var condition = jump.Condition;
+
                         if (condition.Type != ConditionalType.Unconditional)
                         {
-                            var expression = condition.Type != ConditionalType.False ? condition.Expression : $"!({condition.Expression})";
-                            code = $"if ({expression}) {{\n{code}}}\n";
+                            var expression = condition.Type != ConditionalType.True ? $"!({condition.Expression})" : condition.Expression;
+
+                            startCode = "do {\n";
+                            endCode = $"}} while ({expression});\n";
+                        }
+                        else
+                        {
+                            startCode = "while (true) {\n";
+                            endCode = "}\n";
                         }
 
-                        InsertCode(jump.Offset, code, builder, mapCollection);
-                        continue;
+                        int instructionIndex = mapCollection.OffsetInstructionMap[jump.Offset];
+                        var nextInstruction = mapCollection.InstructionOffsets[instructionIndex + 1];
+
+                        InsertCode(jump.Destination, startCode, builder, mapCollection);
+                        InsertCode(nextInstruction, endCode, builder, mapCollection);
                     }
 
-                    if (condition.Type != ConditionalType.Unconditional)
+                    foreach (var jump in nonLoopJumps)
                     {
-                        throw new InvalidOperationException("\"Else\" jumps may not have conditions!");
+                        var condition = jump.Condition;
+                        var containingScope = FindContainingScope(jump.Offset);
+                        if (containingScope is not null && jump.Destination > containingScope.EndOffset)
+                        {
+                            var currentScope = containingScope;
+                            while (currentScope.Parent is not null && currentScope.Type != ScopeType.Loop)
+                            {
+                                currentScope = currentScope.Parent;
+                            }
+
+                            if (currentScope.Type == ScopeType.Loop && jump.Destination > currentScope.EndOffset)
+                            {
+                                var currentParent = currentScope.Parent;
+                                if (currentParent is not null && jump.Destination > currentParent.EndOffset)
+                                {
+                                    throw new InvalidOperationException("Invalid break statement!");
+                                }
+
+                                string code = "break;\n";
+                                if (condition.Type != ConditionalType.Unconditional)
+                                {
+                                    var expression = condition.Type != ConditionalType.False ? condition.Expression : $"!({condition.Expression})";
+                                    code = $"if ({expression}) {{\n{code}}}\n";
+                                }
+
+                                InsertCode(jump.Offset, code, builder, mapCollection);
+                                continue;
+                            }
+
+                            if (condition.Type != ConditionalType.Unconditional)
+                            {
+                                throw new InvalidOperationException("\"Else\" jumps may not have conditions!");
+                            }
+
+                            var containingParent = containingScope.Parent;
+                            if (containingParent is not null && jump.Destination > containingParent.EndOffset)
+                            {
+                                throw new InvalidOperationException("Invalid else clause!");
+                            }
+
+                            var elseScope = new Scope(containingScope.EndOffset, jump.Destination - containingScope.EndOffset, ScopeType.Conditional);
+                            if (!AddScope(elseScope))
+                            {
+                                throw new InvalidOperationException("Invalid scope generated for else clause!");
+                            }
+
+                            InsertCode(elseScope.StartOffset, " else {", builder, mapCollection, -1);
+                            InsertCode(elseScope.EndOffset, "}\n", builder, mapCollection);
+
+                            continue;
+                        }
+
+                        int instructionIndex = mapCollection.OffsetInstructionMap[jump.Offset];
+                        var nextInstruction = mapCollection.InstructionOffsets[instructionIndex + 1];
+
+                        if (condition.Type == ConditionalType.Unconditional)
+                        {
+                            var comment = $"// skip to offset 0x{jump.Destination:X}... not sure how thats possible here\n";
+                            InsertCode(nextInstruction, comment, builder, mapCollection);
+
+                            continue;
+                        }
+
+                        var ifScope = new Scope(jump.Offset, jump.Destination - jump.Offset, ScopeType.Conditional);
+                        if (!AddScope(ifScope))
+                        {
+                            throw new InvalidOperationException("Invalid scope generated for if statement!");
+                        }
+
+                        var ifExpression = condition.Type != ConditionalType.True ? condition.Expression : $"!({condition.Expression})";
+                        var startCode = $"if ({ifExpression}) {{\n";
+
+                        InsertCode(nextInstruction, startCode, builder, mapCollection);
+                        InsertCode(jump.Destination, "}\n", builder, mapCollection);
                     }
-
-                    var containingParent = containingScope.Parent;
-                    if (containingParent is not null && jump.Destination > containingParent.EndOffset)
-                    {
-                        throw new InvalidOperationException("Invalid else clause!");
-                    }
-
-                    var elseScope = new Scope(containingScope.EndOffset, jump.Destination - containingScope.EndOffset, ScopeType.Conditional);
-                    if (!AddScope(elseScope))
-                    {
-                        throw new InvalidOperationException("Invalid scope generated for else clause!");
-                    }
-
-                    InsertCode(elseScope.StartOffset, " else {", builder, mapCollection, -1);
-                    InsertCode(elseScope.EndOffset, "}\n", builder, mapCollection);
-
-                    continue;
                 }
-
-                int instructionIndex = mapCollection.OffsetInstructionMap[jump.Offset];
-                var nextInstruction = mapCollection.InstructionOffsets[instructionIndex + 1];
-
-                if (condition.Type == ConditionalType.Unconditional)
-                {
-                    var comment = $"// skip to offset 0x{jump.Destination:X}... not sure how thats possible here\n";
-                    InsertCode(nextInstruction, comment, builder, mapCollection);
-
-                    continue;
-                }
-
-                var ifScope = new Scope(jump.Offset, jump.Destination - jump.Offset, ScopeType.Conditional);
-                if (!AddScope(ifScope))
-                {
-                    throw new InvalidOperationException("Invalid scope generated for if statement!");
-                }
-
-                var ifExpression = condition.Type != ConditionalType.True ? condition.Expression : $"!({condition.Expression})";
-                var startCode = $"if ({ifExpression}) {{\n";
-
-                InsertCode(nextInstruction, startCode, builder, mapCollection);
-                InsertCode(jump.Destination, "}\n", builder, mapCollection);
             }
 
             builder.AppendLine("}");
@@ -1100,6 +1129,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private IReadOnlyList<Type> ResolveStructOrder()
         {
+            using var resolveEvent = OptickMacros.Event();
+
             var definedStructs = mStructDependencies.Keys.ToList();
             definedStructs.Sort((lhs, rhs) =>
             {
@@ -1155,6 +1186,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private IReadOnlyList<MethodInfo> ResolveFunctionOrder()
         {
+            using var resolveEvent = OptickMacros.Event();
+
             var dependencyInfo = new List<EvaluationMethodInfo>();
             var dependencyInfoIndices = new Dictionary<MethodInfo, int>();
 
@@ -1264,6 +1297,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         protected override StageOutput TranspileStage(Type type, MethodInfo entrypoint, ShaderStage stage)
         {
+            using var transpileEvent = OptickMacros.Event();
             ProcessMethod(type, entrypoint, true);
 
             var builder = new StringBuilder();

@@ -1,4 +1,5 @@
 using CodePlayground.Graphics.Shaders.Transpilers;
+using Optick.NET;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
@@ -28,6 +29,8 @@ namespace CodePlayground.Graphics.Shaders
         protected abstract StageOutput TranspileStage(Type type, MethodInfo entrypoint, ShaderStage stage);
         public IReadOnlyDictionary<ShaderStage, StageOutput> Transpile(Type type)
         {
+            using var transpileEvent = OptickMacros.Event();
+
             if (!type.IsClass)
             {
                 throw new ArgumentException("Shader type must be a class!");
