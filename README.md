@@ -1,6 +1,6 @@
 # code-playground
 
-Simple framework for creating simple projects
+.NET 7 framework for simple setup of graphics projects
 
 ## Building
 
