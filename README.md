@@ -6,8 +6,10 @@ Simple framework for creating simple projects
 
 This project uses [.NET 7](https://dotnet.microsoft.com/en-us/download/dotnet/7.0). Additionally, depending on your system, you may have to build and install the following projects to avoid runtime crashes:
 - [GLFW](https://github.com/glfw/glfw) or `libglfw3` on Ubuntu/Debian
-- [Vulkan-Loader](https://github.com/KhronosGroup/Vulkan-Loader) or the [Vulkan SDK](https://vulkan.lunarg.com/) or `libvulkan1` on Ubuntu/Debian
 - [Assimp](https://github.com/assimp/assimp) or `libassimp5` on Ubuntu/Debian
+- [shaderc](https://github.com/google/shaderc)
+- [Vulkan-Loader](https://github.com/KhronosGroup/Vulkan-Loader) or the [Vulkan SDK](https://vulkan.lunarg.com/) or `libvulkan1` on Ubuntu/Debian
+- [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) or `libspirv-cross-c-shared0` on Ubuntu/Debian
 - [cimgui](https://github.com/cimgui/cimgui)
 - [Optick](https://github.com/bombomby/optick) with Vulkan & (Windows) DirectX support ([Vulkan validation fix](https://github.com/qbojj/optick/tree/fix-vulkan))
 - `coptick` from my [.NET Optick bindings](https://github.com/yodasoda1219/Optick.NET)
