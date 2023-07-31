@@ -73,22 +73,15 @@ namespace Ragdoll.Components
 
         internal bool OnEvent(ComponentEventInfo eventInfo)
         {
-            switch (eventInfo.Event)
-            {
-                case ComponentEventID.Removed:
-                    UpdateModel(-1, eventInfo.Entity);
-                    break;
-                case ComponentEventID.Edited:
-                    OnEdit(eventInfo.Entity);
-                    break;
-                default:
-                    return false;
-            }
+            var dispatcher = new ComponentEventDispatcher(eventInfo);
 
-            return true;
+            dispatcher.Dispatch(ComponentEventID.Removed, (scene, entity) => UpdateModel(-1, entity));
+            dispatcher.Dispatch(ComponentEventID.Edited, OnEdit);
+
+            return dispatcher;
         }
 
-        private unsafe void OnEdit(ulong id)
+        private unsafe void OnEdit(Scene scene, ulong id)
         {
             var registry = App.Instance.ModelRegistry;
             if (registry is null)

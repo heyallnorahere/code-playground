@@ -45,15 +45,19 @@ namespace Ragdoll.Components
             return true;
         }
 
+        public Quaternion CalculateQuaternion() => Quaternion.CreateFromRotationMatrix(CalculateRotationMatrix());
+        public Matrix4x4 CalculateRotationMatrix()
+        {
+            var rotation = Rotation * MathF.PI / 180f;
+            return Matrix4x4.CreateRotationX(rotation.Z) *
+                   Matrix4x4.CreateRotationY(rotation.Y) *
+                   Matrix4x4.CreateRotationZ(rotation.X);
+        }
+
         public static implicit operator Matrix4x4(TransformComponent transform)
         {
-            var rotation = transform.Rotation * MathF.PI / 180f;
-            var rotationMatrix = Matrix4x4.CreateRotationZ(rotation.Z) *
-                                 Matrix4x4.CreateRotationY(rotation.Y) *
-                                 Matrix4x4.CreateRotationX(rotation.X); // aligned with SceneLayer.ComputeCameraVectors
-            
             return Matrix4x4.Transpose(Matrix4x4.CreateTranslation(transform.Translation) *
-                                       rotationMatrix *
+                                       transform.CalculateRotationMatrix() *
                                        Matrix4x4.CreateScale(transform.Scale));
         }
 

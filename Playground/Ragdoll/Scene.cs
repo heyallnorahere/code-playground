@@ -20,7 +20,9 @@ namespace Ragdoll
         Added,
         Removed,
         Edited,
-        Collision
+        Collision,
+        PrePhysicsUpdate,
+        PostPhysicsUpdate
     }
 
     public struct ComponentEventInfo
@@ -29,6 +31,84 @@ namespace Ragdoll
         public ulong Entity { get; set; }
         public ComponentEventID Event { get; set; }
         public object? Context { get; set; }
+    }
+
+    public sealed class ComponentEventDispatcher
+    {
+        public ComponentEventDispatcher(ComponentEventInfo eventInfo)
+        {
+            mEventInfo = eventInfo;
+            mHandled = false;
+        }
+
+        public void Dispatch(ComponentEventID eventID, Action handler)
+        {
+            if (mEventInfo.Event != eventID)
+            {
+                return;
+            }
+
+            handler.Invoke();
+            mHandled = true;
+        }
+
+        public void Dispatch(ComponentEventID eventID, Func<bool> handler)
+        {
+            if (mEventInfo.Event != eventID)
+            {
+                return;
+            }
+
+            mHandled |= handler.Invoke();
+        }
+
+        public void Dispatch(ComponentEventID eventID, Action<Scene, ulong> handler)
+        {
+            if (mEventInfo.Event != eventID)
+            {
+                return;
+            }
+
+            handler.Invoke(mEventInfo.Scene, mEventInfo.Entity);
+            mHandled = true;
+        }
+
+        public void Dispatch(ComponentEventID eventID, Func<Scene, ulong, bool> handler)
+        {
+            if (mEventInfo.Event != eventID)
+            {
+                return;
+            }
+
+            mHandled |= handler.Invoke(mEventInfo.Scene, mEventInfo.Entity);
+        }
+
+        public void Dispatch(ComponentEventID eventID, Action<Scene, ulong, object?> handler)
+        {
+            if (mEventInfo.Event != eventID)
+            {
+                return;
+            }
+
+            handler.Invoke(mEventInfo.Scene, mEventInfo.Entity, mEventInfo.Context);
+            mHandled = true;
+        }
+
+        public void Dispatch(ComponentEventID eventID, Func<Scene, ulong, object?, bool> handler)
+        {
+            if (mEventInfo.Event != eventID)
+            {
+                return;
+            }
+
+            mHandled |= handler.Invoke(mEventInfo.Scene, mEventInfo.Entity, mEventInfo.Context);
+        }
+
+        public bool Handled => mHandled;
+        public static implicit operator bool(ComponentEventDispatcher dispatcher) => dispatcher.mHandled;
+
+        private bool mHandled;
+        private readonly ComponentEventInfo mEventInfo;
     }
 
     public struct VelocityDamping
@@ -178,7 +258,26 @@ namespace Ragdoll
             if (mUpdatePhysics)
             {
                 using var physicsEvent = OptickMacros.Category("Update physics", Category.Physics);
+                var entityView = ViewEntities(typeof(RigidBodyComponent), typeof(TransformComponent));
+
+                using (var prePhysicsUpdateEvent = OptickMacros.Category("Pre-physics update", Category.Physics))
+                {
+                    foreach (var entity in entityView)
+                    {
+                        var rigidBody = GetComponent<RigidBodyComponent>(entity);
+                        InvokeComponentEvent(rigidBody, entity, ComponentEventID.PrePhysicsUpdate, null);
+                    }
+                }
+
                 mSimulation.Timestep((float)delta, null);
+                using (var postPhysicsUpdateEvent = OptickMacros.Category("Post-physics update", Category.Physics))
+                {
+                    foreach (var entity in entityView)
+                    {
+                        var rigidBody = GetComponent<RigidBodyComponent>(entity);
+                        InvokeComponentEvent(rigidBody, entity, ComponentEventID.PostPhysicsUpdate, null);
+                    }
+                }
             }
 
             // todo: some sort of script
@@ -187,6 +286,8 @@ namespace Ragdoll
         public bool InvokeComponentEvent(object component, ulong id, ComponentEventID eventID, object? context = null)
         {
             using var eventEvent = OptickMacros.Event();
+            OptickMacros.Tag("Event", eventID);
+            OptickMacros.Tag("Component type", component.GetType());
 
             var type = component.GetType();
             var method = type.GetMethod("OnEvent", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, new Type[]
