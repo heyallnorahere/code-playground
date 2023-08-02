@@ -10,18 +10,21 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace Ragdoll.Components
 {
     public enum ColliderType
     {
-        Box
+        Box,
+        StaticModel
     }
 
     public enum BodyType
     {
         Dynamic,
-        Kinematic
+        Kinematic,
+        Static
     }
 
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
@@ -52,11 +55,11 @@ namespace Ragdoll.Components
 
         public ColliderType Type { get; }
 
-        public event Action<TypedIndex, IConvexShape>? OnChanged;
+        public event Action<TypedIndex, BodyInertia>? OnChanged;
 
-        protected void TriggerOnChanged(TypedIndex index, IConvexShape shape)
+        protected void TriggerOnChanged(TypedIndex index, BodyInertia inertia)
         {
-            OnChanged?.Invoke(index, shape);
+            OnChanged?.Invoke(index, inertia);
         }
 
         public abstract void Initialize(Scene scene, ulong id);
@@ -94,7 +97,8 @@ namespace Ragdoll.Components
 
         public override void Cleanup()
         {
-            mScene!.Simulation.Shapes.Remove(mIndex);
+            var simulation = mScene!.Simulation;
+            simulation.Shapes.RemoveAndDispose(mIndex, simulation.BufferPool);
         }
 
         public override void Update()
@@ -123,11 +127,11 @@ namespace Ragdoll.Components
 
             var shape = new Box(size.X, size.Y, size.Z);
             mIndex = simulation.Shapes.Add(shape);
-            TriggerOnChanged(mIndex, shape);
+            TriggerOnChanged(mIndex, shape.ComputeInertia(1f));
 
             if (removeOld)
             {
-                simulation.Shapes.Remove(oldIndex);
+                simulation.Shapes.RemoveAndDispose(oldIndex, simulation.BufferPool);
             }
         }
 
@@ -147,6 +151,160 @@ namespace Ragdoll.Components
 
         private TypedIndex mIndex;
         private Vector3 mCurrentScale;
+    }
+
+    [RegisteredCollider(ColliderType.StaticModel)]
+    public sealed class StaticModelCollider : Collider
+    {
+        public override void Initialize(Scene scene, ulong id)
+        {
+            mScene = scene;
+            mEntity = id;
+
+            mScene.TryGetComponent(mEntity, out TransformComponent? transform);
+            mCurrentScale = transform?.Scale ?? Vector3.One;
+
+            mModel = -1;
+            Invalidate(force: true);
+        }
+
+        public override void Cleanup()
+        {
+            if (mModel >= 0)
+            {
+                var registry = App.Instance.ModelRegistry;
+                registry!.RemoveEntityCollider(mModel, mScene!, mEntity);
+            }
+            else if (mPlaceholderShape is not null)
+            {
+                var simulation = mScene!.Simulation;
+                simulation.Shapes.RemoveAndDispose(mPlaceholderShape.Value, simulation.BufferPool);
+            }
+        }
+
+        public override void Update()
+        {
+            mScene!.TryGetComponent(mEntity, out TransformComponent? transform);
+            Invalidate(transform?.Scale);
+        }
+
+        public unsafe override void Edit()
+        {
+            var registry = App.Instance.ModelRegistry;
+
+            var style = ImGui.GetStyle();
+            var font = ImGui.GetFont();
+            var regionAvailable = ImGui.GetContentRegionAvail();
+
+            string name = registry!.GetFormattedName(mModel);
+            float lineHeight = font.FontSize + style.FramePadding.Y * 2f;
+            float xOffset = regionAvailable.X - lineHeight / 2f;
+
+            ImGui.PushID("collision-mesh-id");
+            ImGui.InputText("Collision mesh", ref name, 512, ImGuiInputTextFlags.ReadOnly);
+
+            if (ImGui.BeginDragDropTarget())
+            {
+                var payload = ImGui.AcceptDragDropPayload(ModelRegistry.RegisteredModelID, ImGuiDragDropFlags.AcceptPeekOnly);
+                if (payload.NativePtr != null)
+                {
+                    int modelId = Marshal.PtrToStructure<int>(payload.Data);
+                    var model = registry.Models[modelId];
+
+                    if (model.PhysicsData is not null)
+                    {
+                        payload = ImGui.AcceptDragDropPayload(ModelRegistry.RegisteredModelID);
+                        if (payload.NativePtr != null)
+                        {
+                            int oldModel = mModel;
+                            mModel = modelId;
+
+                            Invalidate(oldModel: oldModel);
+                        }
+                    }
+                }
+
+                ImGui.EndDragDropTarget();
+            }
+
+            bool disabled = mModel < 0;
+            if (disabled)
+            {
+                ImGui.BeginDisabled();
+            }
+
+            ImGui.SameLine(xOffset);
+            if (ImGui.Button("X", Vector2.One * lineHeight))
+            {
+                int oldModel = mModel;
+                mModel = -1;
+
+                Invalidate(oldModel: oldModel);
+            }
+
+            if (disabled)
+            {
+                ImGui.EndDisabled();
+            }
+
+            ImGui.PopID();
+        }
+
+        private void Invalidate(Vector3? scale = null, int oldModel = -1, bool force = false)
+        {
+            var registry = App.Instance.ModelRegistry;
+            if (registry is null)
+            {
+                throw new InvalidOperationException();
+            }
+
+            bool modelsDiffer = oldModel != mModel;
+            if (!force && !modelsDiffer &&
+                !(scale.HasValue && (scale.Value - mCurrentScale).Length() > float.Epsilon))
+            {
+                return;
+            }
+
+            var simulation = mScene!.Simulation;
+            if (modelsDiffer && oldModel >= 0)
+            {
+                registry.RemoveEntityCollider(oldModel, mScene!, mEntity);
+            }
+            else if (mPlaceholderShape is not null)
+            {
+                simulation.Shapes.RemoveAndDispose(mPlaceholderShape.Value, simulation.BufferPool);
+                mPlaceholderShape = null;
+            }
+
+            if (scale.HasValue)
+            {
+                mCurrentScale = scale.Value;
+            }
+
+            if (mModel >= 0)
+            {
+                registry.SetEntityColliderScale(mModel, mScene, mEntity, mCurrentScale);
+
+                var modelData = registry.Models[mModel];
+                var physicsData = modelData.PhysicsData[mEntity];
+                TriggerOnChanged(physicsData.Shape, physicsData.Inertia);
+            }
+            else
+            {
+                var placeholder = new Capsule((mCurrentScale.X + mCurrentScale.Z) / 4f, mCurrentScale.Y);
+                var placeholderIndex = simulation.Shapes.Add(placeholder);
+
+                mPlaceholderShape = placeholderIndex;
+                TriggerOnChanged(placeholderIndex, placeholder.ComputeInertia(1f));
+            }
+        }
+
+        private Scene? mScene;
+        private ulong mEntity;
+        private Vector3 mCurrentScale;
+
+        private int mModel;
+        private TypedIndex? mPlaceholderShape;
     }
 
     [RegisteredComponent(DisplayName = "Rigid body")]
@@ -188,7 +346,6 @@ namespace Ragdoll.Components
             mColliderType = collider;
             mCollider = null;
             mShapeIndex = new TypedIndex(-1, -1);
-            mShape = null;
 
             BodyType = BodyType.Dynamic;
             Mass = 1f;
@@ -222,10 +379,16 @@ namespace Ragdoll.Components
             mCollider.Initialize(mScene, mEntity);
         }
 
-        private void OnColliderChanged(TypedIndex index, IConvexShape shape)
+        private void OnColliderChanged(TypedIndex index, BodyInertia inertia)
         {
             mShapeIndex = index;
-            mShape = shape;
+            mInertia = inertia;
+
+            var simulation = mScene!.Simulation;
+            var body = simulation.Bodies[mHandle];
+
+            body.SetShape(mShapeIndex);
+            body.SetLocalInertia(ComputeInertia(Mass));
         }
 
         internal bool OnEvent(ComponentEventInfo eventInfo)
@@ -239,6 +402,15 @@ namespace Ragdoll.Components
             dispatcher.Dispatch(ComponentEventID.PostPhysicsUpdate, PostPhysicsUpdate);
 
             return dispatcher;
+        }
+
+        private BodyInertia ComputeInertia(float mass)
+        {
+            return new BodyInertia
+            {
+                InverseMass = 1f / mass,
+                InverseInertiaTensor = mInertia.InverseInertiaTensor * (1f / (mass * mInertia.InverseMass))
+            };
         }
 
         private void OnComponentAdded(Scene scene, ulong id)
@@ -257,7 +429,7 @@ namespace Ragdoll.Components
                 Orientation = transform?.CalculateQuaternion() ?? Quaternion.Zero
             };
 
-            var body = BodyDescription.CreateDynamic(rigidPose, mShape!.ComputeInertia(Mass), mShapeIndex, SleepThreshold);
+            var body = BodyDescription.CreateDynamic(rigidPose, ComputeInertia(Mass), mShapeIndex, SleepThreshold);
             mHandle = simulation.Bodies.Add(body);
         }
 
@@ -287,6 +459,9 @@ namespace Ragdoll.Components
                     case BodyType.Kinematic:
                         body.BecomeKinematic();
                         break;
+                    default:
+                        // TODO: implement static bodies
+                        throw new NotImplementedException();
                 }
             }
 
@@ -300,12 +475,16 @@ namespace Ragdoll.Components
             if (ImGui.DragFloat("Mass", ref mass, 0.05f))
             {
                 Mass = mass;
-                updateMass = true;
+
+                if (BodyType != BodyType.Kinematic)
+                {
+                    updateMass = true;
+                }
             }
 
-            if (updateMass && mShape is not null)
+            if (updateMass)
             {
-                body.LocalInertia = mShape.ComputeInertia(mass);
+                body.SetLocalInertia(ComputeInertia(mass));
             }
 
             var colliderType = mCollider!.Type;
@@ -358,11 +537,6 @@ namespace Ragdoll.Components
             var body = simulation.Bodies[mHandle];
 
             body.Activity.SleepThreshold = SleepThreshold;
-            if (mShape is not null)
-            {
-                body.LocalInertia = mShape.ComputeInertia(Mass);
-            }
-
             if (mScene.TryGetComponent<TransformComponent>(mEntity, out TransformComponent? transform))
             {
                 body.Pose.Position = transform.Translation;
@@ -390,7 +564,7 @@ namespace Ragdoll.Components
         private Collider? mCollider;
 
         private TypedIndex mShapeIndex;
-        private IConvexShape? mShape;
+        private BodyInertia mInertia;
 
         private BodyHandle mHandle;
 

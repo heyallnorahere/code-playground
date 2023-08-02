@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Skeleton = CodePlayground.Graphics.Animation.Skeleton;
@@ -503,9 +504,10 @@ namespace CodePlayground.Graphics
                 opacity = 1f;
             }
 
-            var data = new byte[] { 255, 255, 255, 255 };
+            var data = new byte[4];
+            Array.Fill(data, byte.MaxValue);
+            
             mWhiteTexture ??= mImportContext.CreateTexture(data, 1, 1, DeviceImageFormat.RGBA8_UNORM);
-
             var material = new Material(name.ToString(), mWhiteTexture, mImportContext.GraphicsContext);
 
             material.Set("DiffuseColor", diffuseColor);
@@ -521,6 +523,12 @@ namespace CodePlayground.Graphics
 
             ProcessMaterialTextures(assimpMaterial, material);
             return material;
+        }
+
+        public void GetMeshData(out Vector3[] vertices, out int[] indices)
+        {
+            vertices = mVertices.Select(vertex => vertex.Position).ToArray();
+            indices = mIndices.Select(index => (int)index).ToArray();
         }
 
         public IReadOnlyList<Submesh> Submeshes => mSubeshes;

@@ -10,8 +10,6 @@ namespace Ragdoll.Components
     [RegisteredComponent(DisplayName = "Rendered model")]
     public sealed class RenderedModelComponent
     {
-        public const string ModelDragDropID = "registered-model";
-
         public RenderedModelComponent()
         {
             ID = -1;
@@ -103,7 +101,7 @@ namespace Ragdoll.Components
 
             if (ImGui.BeginDragDropTarget())
             {
-                var payload = ImGui.AcceptDragDropPayload(ModelDragDropID);
+                var payload = ImGui.AcceptDragDropPayload(ModelRegistry.RegisteredModelID);
                 if (payload.NativePtr != null)
                 {
                     int modelId = Marshal.PtrToStructure<int>(payload.Data);
@@ -120,7 +118,7 @@ namespace Ragdoll.Components
             }
 
             ImGui.SameLine(xOffset);
-            if (ImGui.Button("X", new Vector2(lineHeight)))
+            if (ImGui.Button("X", Vector2.One * lineHeight))
             {
                 UpdateModel(-1, id);
             }

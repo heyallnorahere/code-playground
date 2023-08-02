@@ -880,7 +880,7 @@ namespace Ragdoll.Layers
         }
 
         [ImGuiMenu("Dockspace/Model registry")]
-        private unsafe void ModelRegistry(IEnumerable<ImGuiMenu> children)
+        private unsafe void ModelRegistryMenu(IEnumerable<ImGuiMenu> children)
         {
             var registry = App.Instance.ModelRegistry;
             if (registry is null)
@@ -938,7 +938,7 @@ namespace Ragdoll.Layers
                 if (ImGui.BeginDragDropSource())
                 {
                     ImGui.Text(name);
-                    ImGui.SetDragDropPayload(RenderedModelComponent.ModelDragDropID, (nint)(void*)&id, sizeof(int));
+                    ImGui.SetDragDropPayload(ModelRegistry.RegisteredModelID, (nint)(void*)&id, sizeof(int));
                     ImGui.EndDragDropSource();
                 }
 

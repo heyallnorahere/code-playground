@@ -1,4 +1,8 @@
 ﻿using CodePlayground.Graphics;
+using BepuPhysics;
+using BepuPhysics.Collidables;
+using BepuUtilities.Memory;
+using Ragdoll.Layers;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
@@ -22,17 +26,27 @@ namespace Ragdoll
         public unsafe fixed float BoneWeights[ModelRegistry.BoneLimitPerVertex];
     }
 
+    public struct ModelPhysicsData
+    {
+        public TypedIndex Shape { get; set; }
+        public BodyInertia Inertia { get; set; }
+    }
+
     public struct LoadedModel
     {
         public Model Model { get; set; }
         public string Name { get; set; }
         public IDeviceBuffer BoneBuffer { get; set; }
         public Dictionary<ulong, int> BoneOffsets { get; set; }
+        public Dictionary<ulong, ModelPhysicsData> PhysicsData { get; set; }
     }
 
     public sealed class ModelRegistry : IModelImportContext, IDisposable
     {
         public const int BoneLimitPerVertex = 4;
+
+        // ImGui drag/drop ID
+        public const string RegisteredModelID = "registered-model";
 
         public ModelRegistry(IGraphicsContext context)
         {
@@ -209,7 +223,7 @@ namespace Ragdoll
         #region Model registry
 
         public IReadOnlyDictionary<int, LoadedModel> Models => mModels;
-        
+
         public int Load<T>(string path, string name, string bufferName) where T : class => Load(path, name, typeof(T), bufferName);
         public int Load(string path, string name, Type shader, string bufferName)
         {
@@ -224,17 +238,73 @@ namespace Ragdoll
 
             var skeleton = model.Skeleton;
             int bufferSize = (skeleton?.BoneCount ?? 1) * Marshal.SizeOf<Matrix4x4>();
-            
+
             int id = mCurrentModelID++;
-            mModels.Add(id, new LoadedModel
+            var modelData = new LoadedModel
             {
                 Model = model,
                 Name = name,
                 BoneBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize),
-                BoneOffsets = new Dictionary<ulong, int>()
-            });
+                BoneOffsets = new Dictionary<ulong, int>(),
+                PhysicsData = new Dictionary<ulong, ModelPhysicsData>()
+            };
 
+            mModels.Add(id, modelData);
             return id;
+        }
+
+        public void SetEntityColliderScale(int model, Scene scene, ulong entity, Vector3 scale)
+        {
+            var modelData = mModels[model];
+            if (modelData.PhysicsData.TryGetValue(entity, out ModelPhysicsData physicsData))
+            {
+                var simulation = scene.Simulation;
+                simulation.Shapes.RecursivelyRemoveAndDispose(physicsData.Shape, simulation.BufferPool);
+            }
+
+            CreateCompoundShape(modelData.Model, scene, scale, out physicsData);
+            modelData.PhysicsData[entity] = physicsData;
+        }
+
+        public void RemoveEntityCollider(int model, Scene scene, ulong entity)
+        {
+            var modelData = mModels[model];
+            if (!modelData.PhysicsData.TryGetValue(entity, out ModelPhysicsData physicsData))
+            {
+                return;
+            }
+
+            var simulation = scene.Simulation;
+            simulation.Shapes.RecursivelyRemoveAndDispose(physicsData.Shape, simulation.BufferPool);
+
+            modelData.PhysicsData.Remove(entity);
+        }
+
+        private static void CreateCompoundShape(Model model, Scene scene, Vector3 scale, out ModelPhysicsData physicsData)
+        {
+            model.GetMeshData(out Vector3[] vertices, out int[] indices);
+
+            var simulation = scene.Simulation;
+            using var builder = new CompoundBuilder(simulation.BufferPool, simulation.Shapes, 2);
+
+            for (int i = 0; i < indices.Length; i++)
+            {
+                var triangle = new Triangle
+                {
+                    A = vertices[indices[i]],
+                    B = vertices[indices[i + 1]],
+                    C = vertices[indices[i + 2]]
+                };
+
+                builder.Add(triangle, RigidPose.Identity, 1f);
+            }
+
+            builder.BuildDynamicCompound(out Buffer<CompoundChild> children, out BodyInertia inertia);
+            physicsData = new ModelPhysicsData
+            {
+                Shape = simulation.Shapes.Add(new Compound(children)),
+                Inertia = inertia
+            };
         }
 
         public int CreateBoneOffset(int model, ulong entity)
@@ -262,10 +332,22 @@ namespace Ragdoll
 
         public void Clear()
         {
+            var appLayers = App.Instance.LayerView;
+            var scene = appLayers.FindLayer<SceneLayer>()?.Scene;
+
             foreach (var model in mModels.Values)
             {
                 model.Model.Dispose();
                 model.BoneBuffer.Dispose();
+
+                if (scene is not null)
+                {
+                    var simulation = scene.Simulation;
+                    foreach (var physicsData in model.PhysicsData.Values)
+                    {
+                        simulation.Shapes.RecursivelyRemoveAndDispose(physicsData.Shape, simulation.BufferPool);
+                    }
+                }
             }
 
             mModels.Clear();
