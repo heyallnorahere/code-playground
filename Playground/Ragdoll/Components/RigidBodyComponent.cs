@@ -214,7 +214,7 @@ namespace Ragdoll.Components
                     int modelId = Marshal.PtrToStructure<int>(payload.Data);
                     var model = registry.Models[modelId];
 
-                    if (model.PhysicsData is not null)
+                    if (model.Model.Skeleton is null)
                     {
                         payload = ImGui.AcceptDragDropPayload(ModelRegistry.RegisteredModelID);
                         if (payload.NativePtr != null)
