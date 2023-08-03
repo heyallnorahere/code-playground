@@ -3,6 +3,7 @@ using BepuPhysics.Collidables;
 using CodePlayground;
 using CodePlayground.Graphics;
 using ImGuiNET;
+using Optick.NET;
 using Ragdoll.Layers;
 using System;
 using System.Collections.Generic;
@@ -116,6 +117,8 @@ namespace Ragdoll.Components
 
         private void Invalidate(bool removeOld = true)
         {
+            using var invalidateEvent = OptickMacros.Event();
+
             var oldIndex = mIndex;
             var simulation = mScene!.Simulation;
 
@@ -252,6 +255,8 @@ namespace Ragdoll.Components
 
         private void Invalidate(Vector3? scale = null, int oldModel = -1, bool force = false)
         {
+            using var invalidateEvent = OptickMacros.Event();
+
             var registry = App.Instance.ModelRegistry;
             if (registry is null)
             {
@@ -345,6 +350,7 @@ namespace Ragdoll.Components
         {
             mColliderType = collider;
             mCollider = null;
+            mColliderInitialized = false;
             mShapeIndex = new TypedIndex(-1, -1);
 
             BodyType = BodyType.Dynamic;
@@ -366,6 +372,8 @@ namespace Ragdoll.Components
         [MemberNotNull(nameof(mCollider))]
         public void CreateCollider(ColliderType collider)
         {
+            using var createEvent = OptickMacros.Event();
+
             if (mScene is null)
             {
                 throw new InvalidOperationException("Cannot initialize a collider before the component is attached!");
@@ -381,14 +389,19 @@ namespace Ragdoll.Components
 
         private void OnColliderChanged(TypedIndex index, BodyInertia inertia)
         {
+            using var changedEvent = OptickMacros.Event();
+
             mShapeIndex = index;
             mInertia = inertia;
 
             var simulation = mScene!.Simulation;
             var body = simulation.Bodies[mHandle];
 
-            body.SetShape(mShapeIndex);
-            body.SetLocalInertia(ComputeInertia(Mass));
+            if (mColliderInitialized)
+            {
+                body.SetShape(mShapeIndex);
+                body.SetLocalInertia(ComputeInertia(Mass));
+            }
         }
 
         internal bool OnEvent(ComponentEventInfo eventInfo)
@@ -415,14 +428,16 @@ namespace Ragdoll.Components
 
         private void OnComponentAdded(Scene scene, ulong id)
         {
+            using var addedEvent = OptickMacros.Event();
             var simulation = scene.Simulation;
 
             mScene = scene;
             mEntity = id;
 
             CreateCollider(mColliderType);
+            mColliderInitialized = true;
 
-            mScene.TryGetComponent<TransformComponent>(mEntity, out TransformComponent? transform);
+            mScene.TryGetComponent(mEntity, out TransformComponent? transform);
             var rigidPose = new RigidPose
             {
                 Position = transform?.Translation ?? Vector3.Zero,
@@ -435,12 +450,18 @@ namespace Ragdoll.Components
 
         private void OnComponentRemoved()
         {
+            using var removedEvent = OptickMacros.Event();
+
+            mColliderInitialized = false;
             CleanupCollider();
+
             mScene!.Simulation.Bodies.Remove(mHandle);
         }
 
         private void OnEdit()
         {
+            using var editedEvent = OptickMacros.Event();
+
             var simulation = mScene!.Simulation;
             var body = simulation.Bodies[mHandle];
 
@@ -533,6 +554,8 @@ namespace Ragdoll.Components
 
         public void PrePhysicsUpdate()
         {
+            using var prePhysicsUpdateEvent = OptickMacros.Event();
+
             var simulation = mScene!.Simulation;
             var body = simulation.Bodies[mHandle];
 
@@ -548,7 +571,8 @@ namespace Ragdoll.Components
 
         public void PostPhysicsUpdate()
         {
-            if (!mScene!.TryGetComponent<TransformComponent>(mEntity, out TransformComponent? transform))
+            using var postPhysicsUpdateEvent = OptickMacros.Event();
+            if (!mScene!.TryGetComponent(mEntity, out TransformComponent? transform))
             {
                 return;
             }
@@ -562,6 +586,7 @@ namespace Ragdoll.Components
 
         private ColliderType mColliderType;
         private Collider? mCollider;
+        private bool mColliderInitialized;
 
         private TypedIndex mShapeIndex;
         private BodyInertia mInertia;

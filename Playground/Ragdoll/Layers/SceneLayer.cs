@@ -558,12 +558,12 @@ namespace Ragdoll.Layers
                     var transform = mScene.GetComponent<TransformComponent>(camera);
                     var cameraData = mScene.GetComponent<CameraComponent>(camera);
 
+                    var math = new MatrixMath(context);
                     float aspectRatio = (float)mFramebuffer!.Width / mFramebuffer!.Height;
                     float fov = cameraData.FOV * MathF.PI / 180f;
-                    ComputeCameraVectors(transform.Rotation + cameraData.RotationOffset, out Vector3 direction, out Vector3 up);
-
-                    var math = new MatrixMath(context);
                     var projection = math.Perspective(fov, aspectRatio, 0.1f, 100f);
+
+                    ComputeCameraVectors(transform.Rotation, out Vector3 direction, out Vector3 up);
                     var view = math.LookAt(transform.Translation, transform.Translation + direction, up);
 
                     mCameraBuffer?.MapStructure(mReflectionView!, nameof(ModelShader.u_CameraBuffer), new CameraBufferData

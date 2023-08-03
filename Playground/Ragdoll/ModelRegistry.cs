@@ -287,16 +287,37 @@ namespace Ragdoll
             var simulation = scene.Simulation;
             using var builder = new CompoundBuilder(simulation.BufferPool, simulation.Shapes, 2);
 
-            for (int i = 0; i < indices.Length; i++)
+            for (int i = 0; i < indices.Length; i += 3)
             {
                 var triangle = new Triangle
                 {
-                    A = vertices[indices[i]],
-                    B = vertices[indices[i + 1]],
-                    C = vertices[indices[i + 2]]
+                    A = vertices[indices[i]] * scale,
+                    B = vertices[indices[i + 1]] * scale,
+                    C = vertices[indices[i + 2]] * scale
                 };
 
-                builder.Add(triangle, RigidPose.Identity, 1f);
+                float a = (triangle.A - triangle.B).Length();
+                float b = (triangle.B - triangle.C).Length();
+                float c = (triangle.C - triangle.A).Length();
+
+                // c2 = a2 + b2 - 2ab * cos(theta)
+                // a2 + b2 - c2 = 2ab * cos(theta)
+                // (a2 + b2 - c2) / 2ab = cos(theta)
+                // theta = acos((a2 + b2 - c2) / 2ab)
+                // theta is the angle between line a and line b (angle ABC)
+                float cosTheta = (MathF.Pow(a, 2f) + MathF.Pow(b, 2f) - MathF.Pow(c, 2f)) / (2f * a * b);
+
+                // b2 = (cos(theta) * b) ^ 2 + h2
+                // h2 = b2 - (cos(theta) * b) ^ 2
+                // h2 = b2(1 - cos(theta) ^ 2)
+                // h = sqrt(b2(1 - cos(theta) ^ 2))
+                float height = MathF.Sqrt(MathF.Pow(b, 2f) * (1f - MathF.Pow(cosTheta, 2f)));
+
+                // just using surface area as the weight
+                // todo: change
+                float area = a * height / 2f;
+
+                builder.Add(triangle, RigidPose.Identity, area);
             }
 
             builder.BuildDynamicCompound(out Buffer<CompoundChild> children, out BodyInertia inertia);

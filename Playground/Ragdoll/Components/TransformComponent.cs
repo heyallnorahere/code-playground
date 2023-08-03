@@ -45,7 +45,12 @@ namespace Ragdoll.Components
             return true;
         }
 
-        public Quaternion CalculateQuaternion() => Quaternion.CreateFromRotationMatrix(CalculateRotationMatrix());
+        public Quaternion CalculateQuaternion()
+        {
+            var rotation = Rotation * MathF.PI / 180f;
+            return Quaternion.CreateFromYawPitchRoll(rotation.Y, rotation.X, rotation.Z);
+        }
+
         public Matrix4x4 CalculateRotationMatrix()
         {
             var rotation = Rotation * MathF.PI / 180f;
@@ -56,9 +61,9 @@ namespace Ragdoll.Components
 
         public static implicit operator Matrix4x4(TransformComponent transform)
         {
-            return Matrix4x4.Transpose(Matrix4x4.CreateTranslation(transform.Translation) *
+            return Matrix4x4.Transpose(Matrix4x4.CreateScale(transform.Scale) *
                                        transform.CalculateRotationMatrix() *
-                                       Matrix4x4.CreateScale(transform.Scale));
+                                       Matrix4x4.CreateTranslation(transform.Translation));
         }
 
         /// <summary>

@@ -545,6 +545,11 @@ namespace CodePlayground.Graphics
 
             foreach (var keyEvent in mKeyEvents)
             {
+                if (keyEvent.Key == Key.Unknown)
+                {
+                    continue;
+                }
+
                 var key = keyEvent.Key switch
                 {
                     Key.ShiftLeft or Key.ShiftRight => ImGuiKey.ModShift,
