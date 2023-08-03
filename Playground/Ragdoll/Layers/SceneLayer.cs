@@ -365,17 +365,31 @@ namespace Ragdoll.Layers
             mScene = new Scene();
             {
                 int modelId = LoadModel("../../../../VulkanTest/Resources/Models/sledge-hammer.fbx", "sledge-hammer");
-
                 ulong entity = mScene.NewEntity("Model");
-                mScene.AddComponent<TransformComponent>(entity).Scale = Vector3.One * 10f;
                 mScene.AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
+
+                var collider = (StaticModelCollider)mScene.AddComponent<RigidBodyComponent>(entity, ColliderType.StaticModel).Collider;
+                collider.SetModel(modelId);
+
+                var transform = mScene.AddComponent<TransformComponent>(entity);
+                transform.Rotation.X = 15f;
+                transform.Scale = Vector3.One * 10f;
 
                 entity = mScene.NewEntity("Camera");
                 mScene.AddComponent<CameraComponent>(entity).MainCamera = true;
 
-                var transform = mScene.AddComponent<TransformComponent>(entity);
+                transform = mScene.AddComponent<TransformComponent>(entity);
                 transform.Translation = (Vector3.UnitY - Vector3.UnitZ) * 7.5f;
                 transform.Rotation.X = 45f;
+
+                modelId = LoadModel("../../../../VulkanTest/Resources/Models/cube.obj", "cube");
+                entity = mScene.NewEntity("Floor");
+                mScene.AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
+                mScene.AddComponent<RigidBodyComponent>(entity).BodyType = BodyType.Static;
+
+                transform = mScene.AddComponent<TransformComponent>(entity);
+                transform.Translation.Y = -5f;
+                transform.Scale = (Vector3.One - Vector3.UnitY) * 10f;
             }
 
             commandList.AddSemaphore(mFramebufferSemaphore, SemaphoreUsage.Signal);

@@ -304,6 +304,23 @@ namespace Ragdoll.Components
             }
         }
 
+        public bool SetModel(int modelId)
+        {
+            var registry = App.Instance.ModelRegistry;
+            var model = registry!.Models[modelId];
+
+            if (model.Model.Skeleton is not null)
+            {
+                return false;
+            }
+
+            int oldModel = mModel;
+            mModel = modelId;
+
+            Invalidate(oldModel: oldModel);
+            return true;
+        }
+
         private Scene? mScene;
         private ulong mEntity;
         private Vector3 mCurrentScale;
@@ -351,9 +368,8 @@ namespace Ragdoll.Components
             mColliderType = collider;
             mCollider = null;
             mColliderInitialized = false;
-            mShapeIndex = new TypedIndex(-1, -1);
 
-            BodyType = BodyType.Dynamic;
+            mBodyType = BodyType.Dynamic;
             Mass = 1f;
             SleepThreshold = 0.01f;
         }
@@ -370,7 +386,7 @@ namespace Ragdoll.Components
         }
 
         [MemberNotNull(nameof(mCollider))]
-        public void CreateCollider(ColliderType collider)
+        public Collider CreateCollider(ColliderType collider)
         {
             using var createEvent = OptickMacros.Event();
 
@@ -385,6 +401,8 @@ namespace Ragdoll.Components
             mCollider = newCollider;
             mCollider.OnChanged += OnColliderChanged;
             mCollider.Initialize(mScene, mEntity);
+
+            return mCollider;
         }
 
         private void OnColliderChanged(TypedIndex index, BodyInertia inertia)
@@ -395,12 +413,19 @@ namespace Ragdoll.Components
             mInertia = inertia;
 
             var simulation = mScene!.Simulation;
-            var body = simulation.Bodies[mHandle];
-
             if (mColliderInitialized)
             {
-                body.SetShape(mShapeIndex);
-                body.SetLocalInertia(ComputeInertia(Mass));
+                if (mBodyType != BodyType.Static)
+                {
+                    var body = simulation.Bodies[mBody];
+                    body.SetShape(mShapeIndex);
+                    body.SetLocalInertia(ComputeInertia(Mass));
+                }
+                else
+                {
+                    var staticRef = simulation.Statics[mStatic];
+                    staticRef.SetShape(mShapeIndex);
+                }
             }
         }
 
@@ -426,10 +451,19 @@ namespace Ragdoll.Components
             };
         }
 
+        private RigidPose GetRigidPose()
+        {
+            mScene!.TryGetComponent(mEntity, out TransformComponent? transform);
+            return new RigidPose
+            {
+                Position = transform?.Translation ?? Vector3.Zero,
+                Orientation = transform?.CalculateQuaternion() ?? Quaternion.Zero
+            };
+        }
+
         private void OnComponentAdded(Scene scene, ulong id)
         {
             using var addedEvent = OptickMacros.Event();
-            var simulation = scene.Simulation;
 
             mScene = scene;
             mEntity = id;
@@ -437,15 +471,58 @@ namespace Ragdoll.Components
             CreateCollider(mColliderType);
             mColliderInitialized = true;
 
-            mScene.TryGetComponent(mEntity, out TransformComponent? transform);
-            var rigidPose = new RigidPose
-            {
-                Position = transform?.Translation ?? Vector3.Zero,
-                Orientation = transform?.CalculateQuaternion() ?? Quaternion.Zero
-            };
+            CreateBody();
+        }
 
-            var body = BodyDescription.CreateDynamic(rigidPose, ComputeInertia(Mass), mShapeIndex, SleepThreshold);
-            mHandle = simulation.Bodies.Add(body);
+        private void CreateBody()
+        {
+            var collidable = new CollidableDescription(mShapeIndex, ContinuousDetection.Continuous());
+            var body = BodyDescription.CreateDynamic(GetRigidPose(), ComputeInertia(Mass), collidable, SleepThreshold);
+
+            var simulation = mScene!.Simulation;
+            mBody = simulation.Bodies.Add(body);
+        }
+
+        private void CreateStatic()
+        {
+            var staticDesc = new StaticDescription(GetRigidPose(), mShapeIndex, ContinuousDetection.Continuous());
+
+            var simulation = mScene!.Simulation;
+            mStatic = simulation.Statics.Add(staticDesc);
+        }
+
+        private void DestroyBody(BodyType previousBodyType)
+        {
+            var simulation = mScene!.Simulation;
+            if (previousBodyType != BodyType.Static)
+            {
+                simulation.Bodies.Remove(mBody);
+            }
+            else
+            {
+                simulation.Statics.Remove(mStatic);
+            }
+        }
+
+        private void Invalidate(BodyType previousBodyType)
+        {
+            var isBody = mBodyType != BodyType.Static;
+            if (isBody && previousBodyType != BodyType.Static)
+            {
+                return;
+            }
+
+            using var invalidateEvent = OptickMacros.Event();
+            DestroyBody(previousBodyType);
+
+            if (isBody)
+            {
+                CreateBody();
+            }
+            else
+            {
+                CreateStatic();
+            }
         }
 
         private void OnComponentRemoved()
@@ -455,7 +532,7 @@ namespace Ragdoll.Components
             mColliderInitialized = false;
             CleanupCollider();
 
-            mScene!.Simulation.Bodies.Remove(mHandle);
+            mScene!.Simulation.Bodies.Remove(mBody);
         }
 
         private void OnEdit()
@@ -463,27 +540,23 @@ namespace Ragdoll.Components
             using var editedEvent = OptickMacros.Event();
 
             var simulation = mScene!.Simulation;
-            var body = simulation.Bodies[mHandle];
+            var body = simulation.Bodies[mBody];
 
             var bodyTypes = Enum.GetValues<BodyType>().Select(type => type.ToString()).ToArray();
-            int item = (int)BodyType;
+            int item = (int)mBodyType;
 
-            bool updateMass = false;
             if (ImGui.Combo("Body type", ref item, bodyTypes, bodyTypes.Length))
             {
-                BodyType = (BodyType)item;
-                switch (BodyType)
-                {
-                    case BodyType.Dynamic:
-                        updateMass = true;
-                        break;
-                    case BodyType.Kinematic:
-                        body.BecomeKinematic();
-                        break;
-                    default:
-                        // TODO: implement static bodies
-                        throw new NotImplementedException();
-                }
+                var previous = mBodyType;
+                mBodyType = (BodyType)item;
+
+                TransitionBodyType(previous);
+            }
+
+            bool isBody = mBodyType != BodyType.Static;
+            if (!isBody)
+            {
+                ImGui.BeginDisabled();
             }
 
             float threshold = SleepThreshold;
@@ -492,20 +565,27 @@ namespace Ragdoll.Components
                 body.Activity.SleepThreshold = SleepThreshold = threshold;
             }
 
+            bool awake = body.Awake;
+            if (ImGui.Checkbox("Awake", ref awake))
+            {
+                body.Awake = awake;
+            }
+
+            if (isBody && mBodyType != BodyType.Dynamic)
+            {
+                ImGui.BeginDisabled();
+            }
+
             float mass = Mass;
             if (ImGui.DragFloat("Mass", ref mass, 0.05f))
             {
                 Mass = mass;
-
-                if (BodyType != BodyType.Kinematic)
-                {
-                    updateMass = true;
-                }
+                body.SetLocalInertia(ComputeInertia(mass));
             }
 
-            if (updateMass)
+            if (mBodyType != BodyType.Dynamic)
             {
-                body.SetLocalInertia(ComputeInertia(mass));
+                ImGui.EndDisabled();
             }
 
             var colliderType = mCollider!.Type;
@@ -543,27 +623,106 @@ namespace Ragdoll.Components
             }
 
             mCollider.Edit();
+            if (isBody)
+            {
+                ImGui.PushID("velocity");
+                if (ImGui.CollapsingHeader("Velocity"))
+                {
+                    ImGui.Indent();
+
+                    ref BodyVelocity velocity = ref body.Velocity;
+                    if (ImGui.Button("Reset"))
+                    {
+                        velocity.Linear = Vector3.Zero;
+                        velocity.Angular = Vector3.Zero;
+                    }
+
+                    ImGui.InputFloat3("Linear", ref velocity.Linear, "%.3f", ImGuiInputTextFlags.ReadOnly);
+                    ImGui.SameLine();
+
+                    if (ImGui.Button("Reset linear"))
+                    {
+                        velocity.Linear = Vector3.Zero;
+                    }
+
+                    var angular = velocity.Angular * 180f / MathF.PI;
+                    ImGui.InputFloat3("Angular", ref angular, "%.3f", ImGuiInputTextFlags.ReadOnly);
+                    ImGui.SameLine();
+
+                    if (ImGui.Button("Reset angular"))
+                    {
+                        velocity.Angular = Vector3.Zero;
+                    }
+
+                    ImGui.Unindent();
+                }
+
+                ImGui.PopID();
+            }
+        }
+
+        private void TransitionBodyType(BodyType previous)
+        {
+            Invalidate(previous);
+
+            var simulation = mScene!.Simulation;
+            switch (BodyType)
+            {
+                case BodyType.Dynamic:
+                    simulation.Bodies[mBody].SetLocalInertia(ComputeInertia(Mass));
+                    break;
+                case BodyType.Kinematic:
+                    simulation.Bodies[mBody].BecomeKinematic();
+                    break;
+            }
+        }
+
+        public BodyType BodyType
+        {
+            get => mBodyType;
+            set
+            {
+                var previous = mBodyType;
+                mBodyType = value;
+
+                TransitionBodyType(previous);
+            }
         }
 
         public Collider Collider => mCollider!;
-        public BodyType BodyType { get; set; }
         public float Mass { get; set; }
         public float SleepThreshold { get; set; }
 
-        public BodyHandle Handle => mHandle;
+        public BodyHandle Handle => mBody;
 
         public void PrePhysicsUpdate()
         {
             using var prePhysicsUpdateEvent = OptickMacros.Event();
 
-            var simulation = mScene!.Simulation;
-            var body = simulation.Bodies[mHandle];
-
-            body.Activity.SleepThreshold = SleepThreshold;
-            if (mScene.TryGetComponent<TransformComponent>(mEntity, out TransformComponent? transform))
+            if (mScene!.TryGetComponent<TransformComponent>(mEntity, out TransformComponent? transform))
             {
-                body.Pose.Position = transform.Translation;
-                body.Pose.Orientation = transform.CalculateQuaternion();
+                var quaternion = transform.CalculateQuaternion();
+
+                var simulation = mScene.Simulation;
+                if (mBodyType != BodyType.Static)
+                {
+                    var body = simulation.Bodies[mBody];
+
+                    body.Pose.Position = transform.Translation;
+                    body.Pose.Orientation = quaternion;
+
+                    body.Awake = true;
+                    body.UpdateBounds();
+                }
+                else
+                {
+                    var staticRef = simulation.Statics[mStatic];
+
+                    staticRef.Pose.Position = transform.Translation;
+                    staticRef.Pose.Orientation = quaternion;
+
+                    staticRef.UpdateBounds();
+                }
             }
 
             mCollider!.Update();
@@ -571,6 +730,11 @@ namespace Ragdoll.Components
 
         public void PostPhysicsUpdate()
         {
+            if (mBodyType == BodyType.Static)
+            {
+                return;
+            }
+
             using var postPhysicsUpdateEvent = OptickMacros.Event();
             if (!mScene!.TryGetComponent(mEntity, out TransformComponent? transform))
             {
@@ -578,7 +742,7 @@ namespace Ragdoll.Components
             }
 
             var simulation = mScene.Simulation;
-            var body = simulation.Bodies[mHandle];
+            var body = simulation.Bodies[mBody];
 
             transform.Translation = body.Pose.Position;
             transform.Rotation = MatrixMath.EulerAngles(body.Pose.Orientation) * 180f / MathF.PI;
@@ -591,7 +755,9 @@ namespace Ragdoll.Components
         private TypedIndex mShapeIndex;
         private BodyInertia mInertia;
 
-        private BodyHandle mHandle;
+        private BodyHandle mBody;
+        private StaticHandle mStatic;
+        private BodyType mBodyType;
 
         private Scene? mScene;
         private ulong mEntity;

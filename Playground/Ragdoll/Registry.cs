@@ -322,6 +322,15 @@ namespace Ragdoll
             mComponents.RemoveAt(offset + index);
             data.ComponentIndices.Remove(type);
 
+            foreach (var componentType in data.ComponentIndices.Keys)
+            {
+                int componentIndex = data.ComponentIndices[componentType];
+                if (componentIndex > index)
+                {
+                    data.ComponentIndices[componentType] = componentIndex - 1;
+                }
+            }
+
             ulong current = data.Next;
             while (current != Null)
             {
