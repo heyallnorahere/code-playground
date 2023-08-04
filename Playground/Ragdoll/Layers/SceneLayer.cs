@@ -362,7 +362,11 @@ namespace Ragdoll.Layers
             }, out mRenderTarget);
 
             // test scene
-            mScene = new Scene();
+            mScene = new Scene
+            {
+                UpdatePhysics = false
+            };
+
             {
                 int modelId = LoadModel("../../../../VulkanTest/Resources/Models/sledge-hammer.fbx", "sledge-hammer");
                 ulong entity = mScene.NewEntity("Model");
@@ -372,7 +376,7 @@ namespace Ragdoll.Layers
                 collider.SetModel(modelId);
 
                 var transform = mScene.AddComponent<TransformComponent>(entity);
-                transform.Rotation.X = 15f;
+                transform.Rotation = MatrixMath.Quaternion(Vector3.One * MathF.PI / 6f);
                 transform.Scale = Vector3.One * 10f;
 
                 entity = mScene.NewEntity("Camera");
@@ -380,7 +384,7 @@ namespace Ragdoll.Layers
 
                 transform = mScene.AddComponent<TransformComponent>(entity);
                 transform.Translation = (Vector3.UnitY - Vector3.UnitZ) * 7.5f;
-                transform.Rotation.X = 45f;
+                transform.Rotation = MatrixMath.Quaternion(Vector3.UnitX * MathF.PI / 4f);
 
                 modelId = LoadModel("../../../../VulkanTest/Resources/Models/cube.obj", "cube");
                 entity = mScene.NewEntity("Floor");
@@ -472,17 +476,15 @@ namespace Ragdoll.Layers
         }
 
         // this math is so fucking confusing...
-        // aligned with TransformComponent.operator Matrix4x4
         private static void ComputeCameraVectors(Vector3 angle, out Vector3 direction, out Vector3 up)
         {
-            var radians = angle * MathF.PI / 180f;
             // +X - tilt camera up
             // +Y - rotate view to the right
             // +Z - roll camera counterclockwise
 
-            float pitch = -radians.X;
-            float yaw = -radians.Y;
-            float roll = radians.Z + MathF.PI / 2f; // we want the up vector to face +Y at 0 degrees roll
+            float pitch = -angle.X;
+            float yaw = -angle.Y;
+            float roll = angle.Z + MathF.PI / 2f; // we want the up vector to face +Y at 0 degrees roll
 
             // yaw offset of 90 degrees - we want the camera to be facing +Z at 0 degrees yaw
             float directionPitch = MathF.Sin(roll) * pitch - MathF.Cos(roll) * yaw;
@@ -577,7 +579,7 @@ namespace Ragdoll.Layers
                     float fov = cameraData.FOV * MathF.PI / 180f;
                     var projection = math.Perspective(fov, aspectRatio, 0.1f, 100f);
 
-                    ComputeCameraVectors(transform.Rotation, out Vector3 direction, out Vector3 up);
+                    ComputeCameraVectors(MatrixMath.EulerAngles(transform.Rotation), out Vector3 direction, out Vector3 up);
                     var view = math.LookAt(transform.Translation, transform.Translation + direction, up);
 
                     mCameraBuffer?.MapStructure(mReflectionView!, nameof(ModelShader.u_CameraBuffer), new CameraBufferData

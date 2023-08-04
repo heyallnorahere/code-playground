@@ -107,6 +107,38 @@ namespace CodePlayground.Graphics
             };
         }
 
+        // https://github.com/g-truc/glm/blob/master/glm/detail/type_quat.inl#L208
+        public static Quaternion Quaternion(Vector3 eulerAngles)
+        {
+            Vector3 s, c;
+            s = c = Vector3.Zero;
+
+            for (int i = 0; i < 3; i++)
+            {
+                float angle = eulerAngles[i] / 2f;
+                s[i] = MathF.Sin(angle);
+                c[i] = MathF.Cos(angle);
+            }
+
+            var result = new Quaternion();
+            for (int i = 0; i < 4; i++)
+            {
+                float sine, cosine;
+                sine = cosine = 1f;
+
+                for (int j = 0; j < 3; j++)
+                {
+                    sine *= (i != j) ? s[j] : c[j];
+                    cosine *= (i != j) ? c[j] : s[j];
+                }
+
+                result[i] = sine + cosine;
+            }
+
+            return result;
+        }
+
+
         // https://github.com/g-truc/glm/blob/5c46b9c07008ae65cb81ab79cd677ecc1934b903/glm/gtc/quaternion.inl#L28
         public static float Pitch(Quaternion quat)
         {

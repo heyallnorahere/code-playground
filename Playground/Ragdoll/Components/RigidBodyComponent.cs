@@ -1,7 +1,6 @@
 using BepuPhysics;
 using BepuPhysics.Collidables;
 using CodePlayground;
-using CodePlayground.Graphics;
 using ImGuiNET;
 using Optick.NET;
 using Ragdoll.Layers;
@@ -56,11 +55,11 @@ namespace Ragdoll.Components
 
         public ColliderType Type { get; }
 
-        public event Action<TypedIndex, BodyInertia>? OnChanged;
+        public event Action<TypedIndex, Func<float, BodyInertia>>? OnChanged;
 
-        protected void TriggerOnChanged(TypedIndex index, BodyInertia inertia)
+        protected void TriggerOnChanged(TypedIndex index, Func<float, BodyInertia> computeInertia)
         {
-            OnChanged?.Invoke(index, inertia);
+            OnChanged?.Invoke(index, computeInertia);
         }
 
         public abstract void Initialize(Scene scene, ulong id);
@@ -130,7 +129,7 @@ namespace Ragdoll.Components
 
             var shape = new Box(size.X, size.Y, size.Z);
             mIndex = simulation.Shapes.Add(shape);
-            TriggerOnChanged(mIndex, shape.ComputeInertia(1f));
+            TriggerOnChanged(mIndex, shape.ComputeInertia);
 
             if (removeOld)
             {
@@ -292,7 +291,7 @@ namespace Ragdoll.Components
 
                 var modelData = registry.Models[mModel];
                 var physicsData = modelData.PhysicsData[mEntity];
-                TriggerOnChanged(physicsData.Shape, physicsData.Inertia);
+                TriggerOnChanged(physicsData.Index, physicsData.ComputeInertia);
             }
             else
             {
@@ -300,7 +299,7 @@ namespace Ragdoll.Components
                 var placeholderIndex = simulation.Shapes.Add(placeholder);
 
                 mPlaceholderShape = placeholderIndex;
-                TriggerOnChanged(placeholderIndex, placeholder.ComputeInertia(1f));
+                TriggerOnChanged(placeholderIndex, placeholder.ComputeInertia);
             }
         }
 
@@ -365,7 +364,7 @@ namespace Ragdoll.Components
 
         public RigidBodyComponent(ColliderType collider = ColliderType.Box)
         {
-            mColliderType = collider;
+            mInitialColliderType = collider;
             mCollider = null;
             mColliderInitialized = false;
 
@@ -405,12 +404,12 @@ namespace Ragdoll.Components
             return mCollider;
         }
 
-        private void OnColliderChanged(TypedIndex index, BodyInertia inertia)
+        private void OnColliderChanged(TypedIndex index, Func<float, BodyInertia> computeInertia)
         {
             using var changedEvent = OptickMacros.Event();
 
             mShapeIndex = index;
-            mInertia = inertia;
+            mComputeInertia = computeInertia;
 
             var simulation = mScene!.Simulation;
             if (mColliderInitialized)
@@ -419,7 +418,7 @@ namespace Ragdoll.Components
                 {
                     var body = simulation.Bodies[mBody];
                     body.SetShape(mShapeIndex);
-                    body.SetLocalInertia(ComputeInertia(Mass));
+                    body.SetLocalInertia(mComputeInertia.Invoke(Mass));
                 }
                 else
                 {
@@ -442,22 +441,14 @@ namespace Ragdoll.Components
             return dispatcher;
         }
 
-        private BodyInertia ComputeInertia(float mass)
-        {
-            return new BodyInertia
-            {
-                InverseMass = 1f / mass,
-                InverseInertiaTensor = mInertia.InverseInertiaTensor * (1f / (mass * mInertia.InverseMass))
-            };
-        }
-
+        private BodyInertia ComputeInertia(float mass) => mComputeInertia!.Invoke(mass);
         private RigidPose GetRigidPose()
         {
             mScene!.TryGetComponent(mEntity, out TransformComponent? transform);
             return new RigidPose
             {
                 Position = transform?.Translation ?? Vector3.Zero,
-                Orientation = transform?.CalculateQuaternion() ?? Quaternion.Zero
+                Orientation = transform?.Rotation ?? Quaternion.Zero
             };
         }
 
@@ -468,7 +459,7 @@ namespace Ragdoll.Components
             mScene = scene;
             mEntity = id;
 
-            CreateCollider(mColliderType);
+            CreateCollider(mInitialColliderType);
             mColliderInitialized = true;
 
             CreateBody();
@@ -699,17 +690,15 @@ namespace Ragdoll.Components
         {
             using var prePhysicsUpdateEvent = OptickMacros.Event();
 
-            if (mScene!.TryGetComponent<TransformComponent>(mEntity, out TransformComponent? transform))
+            if (mScene!.TryGetComponent(mEntity, out TransformComponent? transform))
             {
-                var quaternion = transform.CalculateQuaternion();
-
                 var simulation = mScene.Simulation;
                 if (mBodyType != BodyType.Static)
                 {
                     var body = simulation.Bodies[mBody];
 
                     body.Pose.Position = transform.Translation;
-                    body.Pose.Orientation = quaternion;
+                    body.Pose.Orientation = transform.Rotation;
 
                     body.Awake = true;
                     body.UpdateBounds();
@@ -719,7 +708,7 @@ namespace Ragdoll.Components
                     var staticRef = simulation.Statics[mStatic];
 
                     staticRef.Pose.Position = transform.Translation;
-                    staticRef.Pose.Orientation = quaternion;
+                    staticRef.Pose.Orientation = transform.Rotation;
 
                     staticRef.UpdateBounds();
                 }
@@ -745,15 +734,15 @@ namespace Ragdoll.Components
             var body = simulation.Bodies[mBody];
 
             transform.Translation = body.Pose.Position;
-            transform.Rotation = MatrixMath.EulerAngles(body.Pose.Orientation) * 180f / MathF.PI;
+            transform.Rotation = body.Pose.Orientation;
         }
 
-        private ColliderType mColliderType;
+        private readonly ColliderType mInitialColliderType;
         private Collider? mCollider;
         private bool mColliderInitialized;
 
         private TypedIndex mShapeIndex;
-        private BodyInertia mInertia;
+        private Func<float, BodyInertia>? mComputeInertia;
 
         private BodyHandle mBody;
         private StaticHandle mStatic;

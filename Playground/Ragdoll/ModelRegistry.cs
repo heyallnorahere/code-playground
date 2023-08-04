@@ -28,8 +28,8 @@ namespace Ragdoll
 
     public struct ModelPhysicsData
     {
-        public TypedIndex Shape { get; set; }
-        public BodyInertia Inertia { get; set; }
+        public TypedIndex Index { get; set; }
+        public Func<float, BodyInertia> ComputeInertia { get; set; }
     }
 
     public struct LoadedModel
@@ -259,7 +259,7 @@ namespace Ragdoll
             if (modelData.PhysicsData.TryGetValue(entity, out ModelPhysicsData physicsData))
             {
                 var simulation = scene.Simulation;
-                simulation.Shapes.RecursivelyRemoveAndDispose(physicsData.Shape, simulation.BufferPool);
+                simulation.Shapes.RecursivelyRemoveAndDispose(physicsData.Index, simulation.BufferPool);
             }
 
             CreateCompoundShape(modelData.Model, scene, scale, out physicsData);
@@ -275,7 +275,7 @@ namespace Ragdoll
             }
 
             var simulation = scene.Simulation;
-            simulation.Shapes.RecursivelyRemoveAndDispose(physicsData.Shape, simulation.BufferPool);
+            simulation.Shapes.RecursivelyRemoveAndDispose(physicsData.Index, simulation.BufferPool);
 
             modelData.PhysicsData.Remove(entity);
         }
@@ -285,46 +285,30 @@ namespace Ragdoll
             model.GetMeshData(out Vector3[] vertices, out int[] indices);
 
             var simulation = scene.Simulation;
-            using var builder = new CompoundBuilder(simulation.BufferPool, simulation.Shapes, 2);
+            var bufferPool = simulation.BufferPool;
 
+            var triangles = new List<Triangle>();
             for (int i = 0; i < indices.Length; i += 3)
             {
-                var triangle = new Triangle
+                triangles.Add(new Triangle
                 {
-                    A = vertices[indices[i]] * scale,
-                    B = vertices[indices[i + 1]] * scale,
-                    C = vertices[indices[i + 2]] * scale
-                };
-
-                float a = (triangle.A - triangle.B).Length();
-                float b = (triangle.B - triangle.C).Length();
-                float c = (triangle.C - triangle.A).Length();
-
-                // c2 = a2 + b2 - 2ab * cos(theta)
-                // a2 + b2 - c2 = 2ab * cos(theta)
-                // (a2 + b2 - c2) / 2ab = cos(theta)
-                // theta = acos((a2 + b2 - c2) / 2ab)
-                // theta is the angle between line a and line b (angle ABC)
-                float cosTheta = (MathF.Pow(a, 2f) + MathF.Pow(b, 2f) - MathF.Pow(c, 2f)) / (2f * a * b);
-
-                // b2 = (cos(theta) * b) ^ 2 + h2
-                // h2 = b2 - (cos(theta) * b) ^ 2
-                // h2 = b2(1 - cos(theta) ^ 2)
-                // h = sqrt(b2(1 - cos(theta) ^ 2))
-                float height = MathF.Sqrt(MathF.Pow(b, 2f) * (1f - MathF.Pow(cosTheta, 2f)));
-
-                // just using surface area as the weight
-                // todo: change
-                float area = a * height / 2f;
-
-                builder.Add(triangle, RigidPose.Identity, area);
+                    A = vertices[indices[i]],
+                    B = vertices[indices[i + 1]],
+                    C = vertices[indices[i + 2]]
+                });
             }
 
-            builder.BuildDynamicCompound(out Buffer<CompoundChild> children, out BodyInertia inertia);
+            bufferPool.Take(triangles.Count, out Buffer<Triangle> buffer);
+            for (int i = 0; i < triangles.Count; i++)
+            {
+                buffer[i] = triangles[i];
+            }
+
+            var mesh = new Mesh(buffer, scale, bufferPool);
             physicsData = new ModelPhysicsData
             {
-                Shape = simulation.Shapes.Add(new Compound(children)),
-                Inertia = inertia
+                Index = simulation.Shapes.Add(mesh),
+                ComputeInertia = mesh.ComputeClosedInertia
             };
         }
 
@@ -366,7 +350,7 @@ namespace Ragdoll
                     var simulation = scene.Simulation;
                     foreach (var physicsData in model.PhysicsData.Values)
                     {
-                        simulation.Shapes.RecursivelyRemoveAndDispose(physicsData.Shape, simulation.BufferPool);
+                        simulation.Shapes.RecursivelyRemoveAndDispose(physicsData.Index, simulation.BufferPool);
                     }
                 }
             }
