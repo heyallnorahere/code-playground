@@ -66,6 +66,7 @@ namespace Ragdoll.Components
         public abstract void Edit();
         public abstract void Cleanup();
         public abstract void Update();
+        public abstract void Invalidate();
     }
 
     [RegisteredCollider(ColliderType.Box)]
@@ -114,7 +115,8 @@ namespace Ragdoll.Components
             }
         }
 
-        private void Invalidate(bool removeOld = true)
+        public override void Invalidate() => Invalidate(true);
+        private void Invalidate(bool removeOld)
         {
             using var invalidateEvent = OptickMacros.Event();
 
@@ -252,6 +254,7 @@ namespace Ragdoll.Components
             ImGui.PopID();
         }
 
+        public override void Invalidate() => Invalidate(force: true);
         private void Invalidate(Vector3? scale = null, int oldModel = -1, bool force = false)
         {
             using var invalidateEvent = OptickMacros.Event();
@@ -369,8 +372,8 @@ namespace Ragdoll.Components
             mColliderInitialized = false;
 
             mBodyType = BodyType.Dynamic;
-            Mass = 1f;
-            SleepThreshold = 0.01f;
+            mMass = 1f;
+            mSleepThreshold = 0.01f;
         }
 
         private void CleanupCollider()
@@ -419,11 +422,15 @@ namespace Ragdoll.Components
                     var body = simulation.Bodies[mBody];
                     body.SetShape(mShapeIndex);
                     body.SetLocalInertia(mComputeInertia.Invoke(Mass));
+
+                    body.UpdateBounds();
                 }
                 else
                 {
                     var staticRef = simulation.Statics[mStatic];
                     staticRef.SetShape(mShapeIndex);
+
+                    staticRef.UpdateBounds();
                 }
             }
         }
@@ -442,13 +449,24 @@ namespace Ragdoll.Components
         }
 
         private BodyInertia ComputeInertia(float mass) => mComputeInertia!.Invoke(mass);
+        private void UpdateMass()
+        {
+            if (mBodyType != BodyType.Dynamic)
+            {
+                return;
+            }
+
+            var inertia = ComputeInertia(mMass);
+            mScene!.Simulation.Bodies[mBody].SetLocalInertia(inertia);
+        }
+
         private RigidPose GetRigidPose()
         {
             mScene!.TryGetComponent(mEntity, out TransformComponent? transform);
             return new RigidPose
             {
                 Position = transform?.Translation ?? Vector3.Zero,
-                Orientation = transform?.Rotation ?? Quaternion.Zero
+                Orientation = transform?.RotationQuat ?? Quaternion.Zero
             };
         }
 
@@ -467,8 +485,8 @@ namespace Ragdoll.Components
 
         private void CreateBody()
         {
-            var collidable = new CollidableDescription(mShapeIndex, ContinuousDetection.Continuous());
-            var body = BodyDescription.CreateDynamic(GetRigidPose(), ComputeInertia(Mass), collidable, SleepThreshold);
+            var collidable = new CollidableDescription(mShapeIndex, ContinuousDetection.Passive);
+            var body = BodyDescription.CreateDynamic(GetRigidPose(), ComputeInertia(Mass), collidable, mSleepThreshold);
 
             var simulation = mScene!.Simulation;
             mBody = simulation.Bodies.Add(body);
@@ -476,7 +494,7 @@ namespace Ragdoll.Components
 
         private void CreateStatic()
         {
-            var staticDesc = new StaticDescription(GetRigidPose(), mShapeIndex, ContinuousDetection.Continuous());
+            var staticDesc = new StaticDescription(GetRigidPose(), mShapeIndex, ContinuousDetection.Passive);
 
             var simulation = mScene!.Simulation;
             mStatic = simulation.Statics.Add(staticDesc);
@@ -529,9 +547,7 @@ namespace Ragdoll.Components
         private void OnEdit()
         {
             using var editedEvent = OptickMacros.Event();
-
             var simulation = mScene!.Simulation;
-            var body = simulation.Bodies[mBody];
 
             var bodyTypes = Enum.GetValues<BodyType>().Select(type => type.ToString()).ToArray();
             int item = (int)mBodyType;
@@ -550,15 +566,15 @@ namespace Ragdoll.Components
                 ImGui.BeginDisabled();
             }
 
-            float threshold = SleepThreshold;
-            if (ImGui.InputFloat("Sleep threshold", ref threshold))
+            if (ImGui.InputFloat("Sleep threshold", ref mSleepThreshold))
             {
-                body.Activity.SleepThreshold = SleepThreshold = threshold;
+                simulation.Bodies[mBody].Activity.SleepThreshold = mSleepThreshold;
             }
 
-            bool awake = body.Awake;
+            bool awake = !isBody || simulation.Bodies[mBody].Awake;
             if (ImGui.Checkbox("Awake", ref awake))
             {
+                var body = simulation.Bodies[mBody];
                 body.Awake = awake;
             }
 
@@ -567,11 +583,9 @@ namespace Ragdoll.Components
                 ImGui.BeginDisabled();
             }
 
-            float mass = Mass;
-            if (ImGui.DragFloat("Mass", ref mass, 0.05f))
+            if (ImGui.DragFloat("Mass", ref mMass, 0.05f))
             {
-                Mass = mass;
-                body.SetLocalInertia(ComputeInertia(mass));
+                UpdateMass();
             }
 
             if (mBodyType != BodyType.Dynamic)
@@ -621,7 +635,7 @@ namespace Ragdoll.Components
                 {
                     ImGui.Indent();
 
-                    ref BodyVelocity velocity = ref body.Velocity;
+                    ref BodyVelocity velocity = ref simulation.Bodies[mBody].Velocity;
                     if (ImGui.Button("Reset"))
                     {
                         velocity.Linear = Vector3.Zero;
@@ -660,7 +674,7 @@ namespace Ragdoll.Components
             switch (BodyType)
             {
                 case BodyType.Dynamic:
-                    simulation.Bodies[mBody].SetLocalInertia(ComputeInertia(Mass));
+                    UpdateMass();
                     break;
                 case BodyType.Kinematic:
                     simulation.Bodies[mBody].BecomeKinematic();
@@ -681,8 +695,28 @@ namespace Ragdoll.Components
         }
 
         public Collider Collider => mCollider!;
-        public float Mass { get; set; }
-        public float SleepThreshold { get; set; }
+        public float Mass
+        {
+            get => mMass;
+            set
+            {
+                mMass = value;
+                UpdateMass();
+            }
+        }
+
+        public float SleepThreshold
+        {
+            get => mSleepThreshold;
+            set
+            {
+                mSleepThreshold = value;
+                if (mBodyType != BodyType.Static)
+                {
+                    mScene!.Simulation.Bodies[mBody].Activity.SleepThreshold = mSleepThreshold;
+                }
+            }
+        }
 
         public BodyHandle Handle => mBody;
 
@@ -698,7 +732,7 @@ namespace Ragdoll.Components
                     var body = simulation.Bodies[mBody];
 
                     body.Pose.Position = transform.Translation;
-                    body.Pose.Orientation = transform.Rotation;
+                    body.Pose.Orientation = transform.RotationQuat;
 
                     body.Awake = true;
                     body.UpdateBounds();
@@ -708,7 +742,7 @@ namespace Ragdoll.Components
                     var staticRef = simulation.Statics[mStatic];
 
                     staticRef.Pose.Position = transform.Translation;
-                    staticRef.Pose.Orientation = transform.Rotation;
+                    staticRef.Pose.Orientation = transform.RotationQuat;
 
                     staticRef.UpdateBounds();
                 }
@@ -734,7 +768,7 @@ namespace Ragdoll.Components
             var body = simulation.Bodies[mBody];
 
             transform.Translation = body.Pose.Position;
-            transform.Rotation = body.Pose.Orientation;
+            transform.RotationQuat = body.Pose.Orientation;
         }
 
         private readonly ColliderType mInitialColliderType;
@@ -746,7 +780,9 @@ namespace Ragdoll.Components
 
         private BodyHandle mBody;
         private StaticHandle mStatic;
+
         private BodyType mBodyType;
+        private float mMass, mSleepThreshold;
 
         private Scene? mScene;
         private ulong mEntity;

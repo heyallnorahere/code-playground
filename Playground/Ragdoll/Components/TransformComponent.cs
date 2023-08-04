@@ -12,9 +12,12 @@ namespace Ragdoll.Components
         public TransformComponent()
         {
             Translation = new Vector3(0f);
-            Rotation = Quaternion.Identity;
+            RotationQuat = Quaternion.Identity;
             Scale = new Vector3(1f);
         }
+
+        private Quaternion mQuat;
+        private Vector3 mEuler;
 
         /// <summary>
         /// The position of the object
@@ -22,9 +25,30 @@ namespace Ragdoll.Components
         public Vector3 Translation;
 
         /// <summary>
-        /// The rotation of the object
+        /// The rotation of the object as a quaternion
         /// </summary>
-        public Quaternion Rotation;
+        public Quaternion RotationQuat
+        {
+            get => mQuat;
+            set
+            {
+                mQuat = value;
+                mEuler = MatrixMath.EulerAngles(mQuat);
+            }
+        }
+
+        /// <summary>
+        /// The rotation of the object in radian Euler angles
+        /// </summary>
+        public Vector3 RotationEuler
+        {
+            get => mEuler;
+            set
+            {
+                mEuler = value;
+                mQuat = MatrixMath.Quaternion(mEuler);
+            }
+        }
 
         /// <summary>
         /// The scale of the object for the purposes of rendering and physics
@@ -40,16 +64,16 @@ namespace Ragdoll.Components
 
             ImGui.DragFloat3("Translation", ref Translation, 0.1f);
 
-            var quat = new Vector4(Rotation.X, Rotation.Y, Rotation.Z, Rotation.W);
+            var quat = new Vector4(mQuat.X, mQuat.Y, mQuat.Z, mQuat.W);
             if (ImGui.DragFloat4("Rotation (Quaternion)", ref quat, 0.05f))
             {
-                Rotation = new Quaternion(quat.X, quat.Y, quat.Z, quat.W);
+                RotationQuat = new Quaternion(quat.X, quat.Y, quat.Z, quat.W);
             }
 
-            var euler = MatrixMath.EulerAngles(Rotation) * 180f / MathF.PI;
-            if (ImGui.DragFloat3("Rotation (Euler angles)", ref euler, 1f))
+            var degrees = mEuler * 180f / MathF.PI;
+            if (ImGui.DragFloat3("Rotation (Euler angles)", ref degrees, 1f))
             {
-                Rotation = MatrixMath.Quaternion(euler * MathF.PI / 180f);
+                RotationEuler = degrees * MathF.PI / 180f;
             }
 
             ImGui.DragFloat3("Scale", ref Scale, 0.1f);
@@ -59,7 +83,7 @@ namespace Ragdoll.Components
         public static implicit operator Matrix4x4(TransformComponent transform)
         {
             return Matrix4x4.Transpose(Matrix4x4.CreateScale(transform.Scale) *
-                                       Matrix4x4.CreateFromQuaternion(transform.Rotation) *
+                                       Matrix4x4.CreateFromQuaternion(transform.mQuat) *
                                        Matrix4x4.CreateTranslation(transform.Translation));
         }
 
@@ -68,6 +92,18 @@ namespace Ragdoll.Components
         /// </summary>
         /// <param name="matrix">The input matrix</param>
         /// <returns>If the operation succeeded</returns>
-        public bool Decompose(Matrix4x4 matrix) => MatrixMath.Decompose(matrix, out Translation, out Rotation, out Scale);
+        public bool Decompose(Matrix4x4 matrix)
+        {
+            if (!MatrixMath.Decompose(matrix, out Vector3 translation, out Quaternion rotation, out Vector3 scale))
+            {
+                return false;
+            }
+
+            Translation = translation;
+            RotationQuat = rotation;
+            Scale = scale;
+
+            return true;
+        }
     }
 }

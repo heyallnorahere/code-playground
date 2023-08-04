@@ -376,7 +376,7 @@ namespace Ragdoll.Layers
                 collider.SetModel(modelId);
 
                 var transform = mScene.AddComponent<TransformComponent>(entity);
-                transform.Rotation = MatrixMath.Quaternion(Vector3.One * MathF.PI / 6f);
+                transform.RotationEuler = Vector3.One * MathF.PI / 6f;
                 transform.Scale = Vector3.One * 10f;
 
                 entity = mScene.NewEntity("Camera");
@@ -384,16 +384,17 @@ namespace Ragdoll.Layers
 
                 transform = mScene.AddComponent<TransformComponent>(entity);
                 transform.Translation = (Vector3.UnitY - Vector3.UnitZ) * 7.5f;
-                transform.Rotation = MatrixMath.Quaternion(Vector3.UnitX * MathF.PI / 4f);
+                transform.RotationEuler = Vector3.UnitX * MathF.PI / 4f;
 
                 modelId = LoadModel("../../../../VulkanTest/Resources/Models/cube.obj", "cube");
                 entity = mScene.NewEntity("Floor");
-                mScene.AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
-                mScene.AddComponent<RigidBodyComponent>(entity).BodyType = BodyType.Static;
 
                 transform = mScene.AddComponent<TransformComponent>(entity);
                 transform.Translation.Y = -5f;
-                transform.Scale = (Vector3.One - Vector3.UnitY) * 10f;
+                transform.Scale = (Vector3.One - Vector3.UnitY) * 10f + Vector3.UnitY;
+
+                mScene.AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
+                mScene.AddComponent<RigidBodyComponent>(entity).BodyType = BodyType.Static;
             }
 
             commandList.AddSemaphore(mFramebufferSemaphore, SemaphoreUsage.Signal);
@@ -475,7 +476,6 @@ namespace Ragdoll.Layers
             mSelectedEntity = Scene.Null;
         }
 
-        // this math is so fucking confusing...
         private static void ComputeCameraVectors(Vector3 angle, out Vector3 direction, out Vector3 up)
         {
             // +X - tilt camera up
@@ -579,7 +579,7 @@ namespace Ragdoll.Layers
                     float fov = cameraData.FOV * MathF.PI / 180f;
                     var projection = math.Perspective(fov, aspectRatio, 0.1f, 100f);
 
-                    ComputeCameraVectors(MatrixMath.EulerAngles(transform.Rotation), out Vector3 direction, out Vector3 up);
+                    ComputeCameraVectors(transform.RotationEuler, out Vector3 direction, out Vector3 up);
                     var view = math.LookAt(transform.Translation, transform.Translation + direction, up);
 
                     mCameraBuffer?.MapStructure(mReflectionView!, nameof(ModelShader.u_CameraBuffer), new CameraBufferData
