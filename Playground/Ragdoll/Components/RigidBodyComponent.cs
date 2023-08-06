@@ -265,7 +265,7 @@ namespace Ragdoll.Components
                 throw new InvalidOperationException();
             }
 
-            bool modelsDiffer = oldModel != mModel;
+            bool modelsDiffer = oldModel != mModel && oldModel >= 0;
             if (!force && !modelsDiffer &&
                 !(scale.HasValue && (scale.Value - mCurrentScale).Length() > float.Epsilon))
             {
@@ -273,7 +273,7 @@ namespace Ragdoll.Components
             }
 
             var simulation = mScene!.Simulation;
-            if (modelsDiffer && oldModel >= 0)
+            if (modelsDiffer)
             {
                 registry.RemoveEntityCollider(oldModel, mScene!, mEntity);
             }

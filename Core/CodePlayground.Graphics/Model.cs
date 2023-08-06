@@ -1,4 +1,5 @@
 ﻿using Silk.NET.Assimp;
+using Silk.NET.SDL;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -72,26 +73,7 @@ namespace CodePlayground.Graphics
             sAPI = Assimp.GetApi();
         }
 
-        public static Model? Load(string path, IModelImportContext importContext)
-        {
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read);
-
-            var buffer = new byte[stream.Length];
-            int totalRead = 0;
-            while (totalRead < buffer.Length)
-            {
-                totalRead += stream.Read(buffer, totalRead, buffer.Length - totalRead);
-            }
-
-            return Load(new ReadOnlySpan<byte>(buffer), path, true, importContext);
-        }
-
-        public static Model? Load(ReadOnlySpan<byte> data, string hintPath, IModelImportContext importContext)
-        {
-            return Load(data, hintPath, false, importContext);
-        }
-
-        private static unsafe Model? Load(ReadOnlySpan<byte> data, string path, bool loadedFromFile, IModelImportContext importContext)
+        private static PostProcessSteps GetImportFlags(IModelImportContext importContext)
         {
             var flags = PostProcessSteps.Triangulate | PostProcessSteps.GenerateNormals | PostProcessSteps.GenerateUVCoords | PostProcessSteps.JoinIdenticalVertices | PostProcessSteps.LimitBoneWeights;
 
@@ -106,16 +88,32 @@ namespace CodePlayground.Graphics
                 flags |= PostProcessSteps.MakeLeftHanded;
             }
 
+            return flags;
+        }
+
+        public static unsafe Model? Load(string path, IModelImportContext importContext)
+        {
+            var scene = sAPI.ImportFile(path, (uint)GetImportFlags(importContext));
+            return Load(scene, path, true, importContext);
+        }
+
+        public static unsafe Model? Load(ReadOnlySpan<byte> data, string hintPath, IModelImportContext importContext)
+        {
             fixed (byte* ptr = data)
             {
-                var scene = sAPI.ImportFileFromMemory(ptr, (uint)data.Length, (uint)flags, string.Empty);
-                if (scene is null || (scene->MFlags & Assimp.SceneFlagsIncomplete) != 0 || scene->MRootNode is null)
-                {
-                    return null;
-                }
-
-                return new Model(scene, path, loadedFromFile, importContext);
+                var scene = sAPI.ImportFileFromMemory(ptr, (uint)data.Length, (uint)GetImportFlags(importContext), string.Empty);
+                return Load(scene, hintPath, false, importContext);
             }
+        }
+
+        private static unsafe Model? Load(Scene* scene, string path, bool loadedFromFile, IModelImportContext importContext)
+        {
+            if (scene is null || (scene->MFlags & Assimp.SceneFlagsIncomplete) != 0 || scene->MRootNode is null)
+            {
+                return null;
+            }
+
+            return new Model(scene, path, loadedFromFile, importContext);
         }
 
         private unsafe Model(Scene* scene, string path, bool loadedFromFile, IModelImportContext importContext)

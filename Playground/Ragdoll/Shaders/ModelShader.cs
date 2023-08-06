@@ -41,7 +41,7 @@ namespace Ragdoll.Shaders
 
         public struct CameraBufferData
         {
-            public Matrix4x4<float> ViewProjection;
+            public Matrix4x4<float> Projection, View;
         }
 
         public const int MaxBones = 100;
@@ -102,7 +102,7 @@ namespace Ragdoll.Shaders
 
             return new VertexOut
             {
-                Position = u_CameraBuffer.ViewProjection * worldPosition,
+                Position = u_CameraBuffer.Projection * u_CameraBuffer.View * worldPosition,
                 Data = new FragmentIn
                 {
                     Normal = (new Matrix3x3<float>(transform).Inverse().Transpose() * input.Normal).Normalize(),

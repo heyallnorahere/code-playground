@@ -161,14 +161,38 @@ namespace Ragdoll.Layers
         // not much else...
     }
 
+    [StructLayout(LayoutKind.Explicit, Pack = 1, Size = sizeof(float) * Size * Size)]
+    internal struct PassedMatrix
+    {
+        public const int Size = 4;
+
+        [FieldOffset(0)]
+        public unsafe fixed float Data[Size * Size];
+
+        public static unsafe implicit operator PassedMatrix(Matrix4x4 src)
+        {
+            var dst = new PassedMatrix();
+            for (int c = 0; c < Size; c++)
+            {
+                for (int r = 0; r < Size; r++)
+                {
+                    // glsl is column-major
+                    dst.Data[c * Size + r] = src[r, c];
+                }
+            }
+
+            return dst;
+        }
+    }
+
     internal struct CameraBufferData
     {
-        public Matrix4x4 ViewProjection;
+        public PassedMatrix Projection, View;
     }
 
     internal struct PushConstantData
     {
-        public Matrix4x4 Model;
+        public PassedMatrix Model;
         public int BoneOffset;
     }
 
@@ -584,9 +608,8 @@ namespace Ragdoll.Layers
 
                     mCameraBuffer?.MapStructure(mReflectionView!, nameof(ModelShader.u_CameraBuffer), new CameraBufferData
                     {
-                        // GLSL matrices are column-major
-                        // System.Numerics uses row-major
-                        ViewProjection = Matrix4x4.Transpose(projection * view)
+                        Projection = projection,
+                        View = view
                     });
                 }
             }
@@ -643,9 +666,10 @@ namespace Ragdoll.Layers
                                         mapped =>
                     {
                         using var pushConstantsEvent = OptickMacros.Category("Push constants", Category.Rendering);
+
                         mReflectionView!.MapStructure(mapped, nameof(ModelShader.u_PushConstants), new PushConstantData
                         {
-                            Model = Matrix4x4.Transpose(transform), // see OnUpdate
+                            Model = transform.Matrix,
                             BoneOffset = renderedModel.BoneOffset
                         });
                     });

@@ -55,6 +55,10 @@ namespace Ragdoll.Components
         /// </summary>
         public Vector3 Scale;
 
+        public Matrix4x4 Matrix => Matrix4x4.Transpose(Matrix4x4.CreateScale(Scale) *
+                                                       Matrix4x4.CreateFromQuaternion(mQuat) *
+                                                       Matrix4x4.CreateTranslation(Translation));
+
         internal bool OnEvent(ComponentEventInfo eventInfo)
         {
             if (eventInfo.Event != ComponentEventID.Edited)
@@ -78,13 +82,6 @@ namespace Ragdoll.Components
 
             ImGui.DragFloat3("Scale", ref Scale, 0.1f);
             return true;
-        }
-
-        public static implicit operator Matrix4x4(TransformComponent transform)
-        {
-            return Matrix4x4.Transpose(Matrix4x4.CreateScale(transform.Scale) *
-                                       Matrix4x4.CreateFromQuaternion(transform.mQuat) *
-                                       Matrix4x4.CreateTranslation(transform.Translation));
         }
 
         /// <summary>
