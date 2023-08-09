@@ -33,6 +33,13 @@ namespace CodePlayground.Graphics.Shaders
         {
             throw new NotImplementedException();
         }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("discard", Keyword = true)]
+        public static void Discard()
+        {
+            throw new NotImplementedException();
+        }
     }
 
     [PrimitiveShaderType("vec2")]

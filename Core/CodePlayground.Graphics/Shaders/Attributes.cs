@@ -45,9 +45,11 @@ namespace CodePlayground.Graphics.Shaders
         public BuiltinShaderFunctionAttribute(string name)
         {
             Name = name;
+            Keyword = false;
         }
 
         public string Name { get; }
+        public bool Keyword { get; set; }
     }
 
     public enum ShaderOperatorType
@@ -104,13 +106,23 @@ namespace CodePlayground.Graphics.Shaders
             Name = name;
         }
 
-        public string Name { get; set; }
+        public string Name { get; }
+    }
+
+    public enum ShaderVariableID
+    {
+        OutputPosition
     }
 
     [AttributeUsage(AttributeTargets.ReturnValue | AttributeTargets.Field, AllowMultiple = false, Inherited = true)]
-    public sealed class OutputPositionAttribute : Attribute
+    public sealed class ShaderVariableAttribute : Attribute
     {
-        // nothing - literally just a flag
+        public ShaderVariableAttribute(ShaderVariableID id)
+        {
+            ID = id;
+        }
+
+        public ShaderVariableID ID { get; }
     }
 
     [AttributeUsage(AttributeTargets.Field, AllowMultiple = false, Inherited = true)]

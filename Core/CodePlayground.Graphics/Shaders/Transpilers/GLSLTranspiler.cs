@@ -13,6 +13,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         private const string EntrypointName = "main";
 
         private static readonly IReadOnlyDictionary<Type, string> sPrimitiveTypeNames;
+        private static readonly IReadOnlyDictionary<ShaderVariableID, string> sShaderVariableNames;
+
         static GLSLTranspiler()
         {
             sPrimitiveTypeNames = new Dictionary<Type, string>
@@ -23,6 +25,11 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 [typeof(float)] = "float",
                 [typeof(double)] = "double",
                 [typeof(void)] = "void"
+            };
+
+            sShaderVariableNames = new Dictionary<ShaderVariableID, string>
+            {
+                [ShaderVariableID.OutputPosition] = "gl_Position"
             };
         }
 
@@ -235,13 +242,23 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             return expressionString;
         }
 
-        private void ParseReturnStructure(Type type, ICustomAttributeProvider provider, string identifierExpression, Action<Type, string, string, int> callback)
+        private void ParseSignatureStructure(Type type, ICustomAttributeProvider provider, string identifierExpression, Action<Type, string, string, int> callback)
         {
             using var parseEvent = OptickMacros.Event();
+            OptickMacros.Tag("Parsed structure", type);
 
-            if (provider.GetCustomAttributes(typeof(OutputPositionAttribute), true).Length != 0)
+            var shaderVariableAttributes = provider.GetCustomAttributes(typeof(ShaderVariableAttribute), true);
+            if (shaderVariableAttributes.Length != 0)
             {
-                callback.Invoke(type, identifierExpression, "gl_Position", -1);
+                var attribute = (ShaderVariableAttribute)shaderVariableAttributes[0];
+                var id = attribute.ID;
+
+                if (!sShaderVariableNames.TryGetValue(id, out string? variableName))
+                {
+                    throw new ArgumentException($"Invalid GLSL shader variable: {id}");
+                }
+
+                callback.Invoke(type, identifierExpression, variableName, -1);
                 return;
             }
 
@@ -271,7 +288,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             foreach (var field in fields)
             {
                 var fieldName = GetFieldName(field, typeof(void)); // type doesnt really matter
-                ParseReturnStructure(field.FieldType, field, $"{identifierExpression}.{fieldName}", callback);
+                ParseSignatureStructure(field.FieldType, field, $"{identifierExpression}.{fieldName}", callback);
             }
         }
 
@@ -374,14 +391,42 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             var parameterNames = new List<string>();
             var parameters = method.GetParameters();
 
+            string returnTypeString, parameterString, functionName;
+            var inputFields = new Dictionary<string, string>();
+            var outputFields = new Dictionary<string, string>();
+
             for (int i = 0; i < parameters.Length; i++)
             {
-                var name = parameters[i].Name ?? $"param_{i}";
-                parameterNames.Add(name);
-            }
+                var parameter = parameters[i];
 
-            string returnTypeString, parameterString, functionName;
-            var outputFields = new Dictionary<string, string>();
+                var name = parameter.Name ?? $"param_{i}";
+                parameterNames.Add(name);
+
+                if (entrypoint)
+                {
+                    ParseSignatureStructure(parameter.ParameterType, parameter, name, (fieldType, expression, destination, location) =>
+                    {
+                        string inputName;
+                        if (location >= 0)
+                        {
+                            inputName = "_input_" + destination;
+                            mStageIO.Add(inputName, new StageIOField
+                            {
+                                Direction = StageIODirection.In,
+                                Location = location,
+                                TypeName = GetTypeName(fieldType, type, true)
+                            });
+                        }
+                        else
+                        {
+                            inputName = destination;
+                        }
+
+                        inputFields.Add(expression, inputName);
+                        ProcessType(fieldType, type);
+                    });
+                }
+            }
 
             using (var parseSignatureEvent = OptickMacros.Event("Parse shader function signature"))
             {
@@ -394,7 +439,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     var returnType = method.ReturnType;
                     var attributes = method.ReturnTypeCustomAttributes;
 
-                    ParseReturnStructure(returnType, attributes, string.Empty, (fieldType, expression, destination, location) =>
+                    ParseSignatureStructure(returnType, attributes, string.Empty, (fieldType, expression, destination, location) =>
                     {
                         string outputName;
                         if (location >= 0)
@@ -526,8 +571,9 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 }
                             }
 
+                            bool isKeyword = invokedMethod.GetCustomAttribute<BuiltinShaderFunctionAttribute>()?.Keyword ?? false;
                             string invokedFunctionName = GetFunctionName(invokedMethod, type);
-                            string invocationExpression = $"{invokedFunctionName}({expressionString})";
+                            string invocationExpression = isKeyword ? invokedFunctionName : $"{invokedFunctionName}({expressionString})";
 
                             if (invokedMethod.ReturnType != typeof(void))
                             {
@@ -588,37 +634,10 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 {
                                     var parentExpression = evaluationStack.Pop();
                                     expression = parentExpression != "this" ? $"{parentExpression}.{fieldName}" : fieldName;
-
-                                    if (entrypoint)
+                                    
+                                    if (inputFields.TryGetValue(expression, out string? inputName))
                                     {
-                                        if (layoutAttribute is not null && layoutAttribute.Location >= 0)
-                                        {
-                                            bool isInput = false;
-                                            foreach (var parameterName in parameterNames)
-                                            {
-                                                if (expression.Length > parameterName.Length ? expression.StartsWith(parameterName) : expression == parameterName)
-                                                {
-                                                    isInput = true;
-                                                    break;
-                                                }
-                                            }
-
-                                            if (isInput)
-                                            {
-                                                expression = "_input_" + expression.Replace('.', '_');
-                                                if (!mStageIO.ContainsKey(expression))
-                                                {
-                                                    mStageIO.Add(expression, new StageIOField
-                                                    {
-                                                        Direction = StageIODirection.In,
-                                                        Location = layoutAttribute.Location,
-                                                        TypeName = GetTypeName(field.FieldType, type, true)
-                                                    });
-
-                                                    ProcessType(field.FieldType, type);
-                                                }
-                                            }
-                                        }
+                                        expression = inputName;
                                     }
                                 }
                                 else
@@ -664,27 +683,9 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 else
                                 {
                                     expression = parameterNames[argumentIndex];
-                                    if (entrypoint)
+                                    if (inputFields.TryGetValue(expression, out string? inputName))
                                     {
-                                        var parameter = parameters[argumentIndex];
-                                        var parameterType = parameter.ParameterType;
-
-                                        var attribute = parameter.GetCustomAttribute<LayoutAttribute>();
-                                        if (attribute is not null && attribute.Location >= 0)
-                                        {
-                                            expression = "_input_" + expression;
-                                            if (!mStageIO.ContainsKey(expression))
-                                            {
-                                                mStageIO.Add(expression, new StageIOField
-                                                {
-                                                    Direction = StageIODirection.In,
-                                                    Location = attribute.Location,
-                                                    TypeName = GetTypeName(parameterType, type, true)
-                                                });
-
-                                                ProcessType(parameterType, type);
-                                            }
-                                        }
+                                        expression = inputName;
                                     }
                                 }
                             }
@@ -933,15 +934,15 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         var containingScope = FindContainingScope(jump.Offset);
                         if (containingScope is not null && jump.Destination > containingScope.EndOffset)
                         {
-                            var currentScope = containingScope;
-                            while (currentScope.Parent is not null && currentScope.Type != ScopeType.Loop)
+                            var currentLoop = containingScope;
+                            while (currentLoop is not null && currentLoop.Type != ScopeType.Loop)
                             {
-                                currentScope = currentScope.Parent;
+                                currentLoop = currentLoop.Parent;
                             }
 
-                            if (currentScope.Type == ScopeType.Loop && jump.Destination > currentScope.EndOffset)
+                            if (currentLoop?.Type == ScopeType.Loop && jump.Destination > currentLoop.EndOffset)
                             {
-                                var currentParent = currentScope.Parent;
+                                var currentParent = currentLoop.Parent;
                                 if (currentParent is not null && jump.Destination > currentParent.EndOffset)
                                 {
                                     throw new InvalidOperationException("Invalid break statement!");
@@ -1020,6 +1021,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private bool AddScope(Scope scope)
         {
+            using var addEvent = OptickMacros.Event();
             if (scope.Parent is not null)
             {
                 throw new InvalidOperationException("Scope already has a parent!");
@@ -1076,6 +1078,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private static void InsertCode(int instructionOffset, string code, StringBuilder source, SourceMapCollection mapCollection, int sourceOffset = 0)
         {
+            using var insertEvent = OptickMacros.Event();
+
             int insertOffset = mapCollection.SourceOffsets[instructionOffset];
             source.Insert(insertOffset + sourceOffset, code);
 

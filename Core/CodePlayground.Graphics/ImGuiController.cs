@@ -33,7 +33,7 @@ namespace CodePlayground.Graphics
 
         public struct VertexOut
         {
-            [OutputPosition]
+            [ShaderVariable(ShaderVariableID.OutputPosition)]
             public Vector4<float> Position;
             public FragmentIn Data;
         }
