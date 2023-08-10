@@ -300,6 +300,11 @@ namespace CodePlayground.Graphics.Vulkan
             var extensions = attributeExtDescs.Concat(windowExtDescs);
             foreach (var extension in extensions)
             {
+                if (extension.Level == VulkanExtensionLevel.Device && extension.Type == VulkanExtensionType.Layer)
+                {
+                    Console.WriteLine($"Warning for layer {extension.Name}: device layers are deprecated");
+                }
+
                 if (!mRequestedExtensions.ContainsKey(extension.Level))
                 {
                     mRequestedExtensions.Add(extension.Level, new Dictionary<VulkanExtensionType, Dictionary<string, bool>>());

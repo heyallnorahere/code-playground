@@ -35,6 +35,9 @@ namespace Ragdoll
             var context = CreateGraphicsContext();
             context.Swapchain.VSync = true;
 
+            // enable profiling
+            InitializeOptick();
+
             mRenderer = new Renderer(context);
             mModelRegistry = new ModelRegistry(context);
 

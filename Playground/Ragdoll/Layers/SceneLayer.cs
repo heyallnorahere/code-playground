@@ -658,8 +658,6 @@ namespace Ragdoll.Layers
                 var info = mLoadedModelInfo[renderedModel.ID];
                 foreach (var mesh in model.Submeshes)
                 {
-                    using var renderEvent = OptickMacros.GPUEvent("Render entity mesh");
-
                     var pipeline = info.Pipelines[mesh.MaterialIndex];
                     renderer.RenderMesh(model.VertexBuffer, model.IndexBuffer, pipeline,
                                         mesh.IndexOffset, mesh.IndexCount, DeviceBufferIndexType.UInt32,

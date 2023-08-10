@@ -1,6 +1,7 @@
 ﻿using Optick.NET;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -57,10 +58,6 @@ namespace CodePlayground
 
                     CopyBinaries(assemblyDir, copiedBinaries);
                 }
-
-#if DEBUG
-                instance.mOptickApp = new OptickApp(instance.Title);
-#endif
 
                 Console.WriteLine($"Running application {instance.Title} version {instance.Version}");
                 exitCode = instance.Run(args);
@@ -146,6 +143,12 @@ namespace CodePlayground
         protected virtual void Dispose(bool disposing)
         {
             // nothing
+        }
+
+        [Conditional("DEBUG")]
+        protected void InitializeOptick()
+        {
+            mOptickApp ??= new OptickApp(Title);
         }
 
         protected void ShutdownOptick()

@@ -1,4 +1,5 @@
 using CodePlayground.Graphics;
+using Optick.NET;
 using System;
 using System.Numerics;
 
@@ -117,6 +118,9 @@ namespace Ragdoll
             {
                 throw new InvalidOperationException("Cannot render right now!");
             }
+
+            using var renderEvent = OptickMacros.GPUEvent("Render mesh");
+            OptickMacros.Tag("Indices", indexCount);
 
             vertices.BindVertices(mFrameInfo.CommandList, 0);
             indices.BindIndices(mFrameInfo.CommandList, indexType);

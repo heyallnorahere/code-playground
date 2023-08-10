@@ -309,6 +309,9 @@ namespace VulkanTest
             var swapchain = context.Swapchain;
             swapchain.VSync = true; // enable vsync
 
+            // enable profiling
+            InitializeOptick();
+
             mShaderLibrary = new ShaderLibrary(context, GetType().Assembly);
             mRenderer = context.CreateRenderer();
 
