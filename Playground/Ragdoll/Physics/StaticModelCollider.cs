@@ -106,7 +106,7 @@ namespace Ragdoll.Physics
         }
 
         public override void Invalidate() => Invalidate(force: true);
-        private void Invalidate(Vector3? scale = null, int oldModel = -1, bool force = false)
+        private void Invalidate(Vector3? scale = null, int oldModel = -2, bool force = false)
         {
             using var invalidateEvent = OptickMacros.Event();
 
@@ -116,7 +116,7 @@ namespace Ragdoll.Physics
                 throw new InvalidOperationException();
             }
 
-            bool modelsDiffer = oldModel != mModel && oldModel >= 0;
+            bool modelsDiffer = oldModel != mModel && oldModel >= -1;
             if (!force && !modelsDiffer &&
                 !(scale.HasValue && (scale.Value - mCurrentScale).Length() > float.Epsilon))
             {
@@ -124,7 +124,7 @@ namespace Ragdoll.Physics
             }
 
             var simulation = mScene!.Simulation;
-            if (modelsDiffer)
+            if (modelsDiffer && oldModel >= 0)
             {
                 registry.RemoveEntityCollider(oldModel, mScene!, mEntity);
             }
