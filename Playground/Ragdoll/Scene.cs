@@ -260,7 +260,7 @@ namespace Ragdoll
                 using var physicsEvent = OptickMacros.Category("Update physics", Category.Physics);
                 var entityView = ViewEntities(typeof(RigidBodyComponent), typeof(TransformComponent));
 
-                using (var prePhysicsUpdateEvent = OptickMacros.Category("Pre-physics update", Category.Physics))
+                using (OptickMacros.Category("Pre-physics update", Category.Physics))
                 {
                     foreach (var entity in entityView)
                     {
@@ -269,8 +269,12 @@ namespace Ragdoll
                     }
                 }
 
-                mSimulation.Timestep((float)delta, null);
-                using (var postPhysicsUpdateEvent = OptickMacros.Category("Post-physics update", Category.Physics))
+                using (OptickMacros.Category("Physics calculations", Category.Physics))
+                {
+                    mSimulation.Timestep((float)delta, null);
+                }
+
+                using (OptickMacros.Category("Post-physics update", Category.Physics))
                 {
                     foreach (var entity in entityView)
                     {

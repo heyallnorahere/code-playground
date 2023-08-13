@@ -428,7 +428,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 }
             }
 
-            using (var parseSignatureEvent = OptickMacros.Event("Parse shader function signature"))
+            using (OptickMacros.Event("Parse shader function signature"))
             {
                 if (entrypoint)
                 {
@@ -488,7 +488,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             builder.AppendLine($"{returnTypeString} {functionName}({parameterString}) {{");
 
             var dependencies = new List<MethodInfo>();
-            using (var parseBodyEvent = OptickMacros.Event("Parse shader function body"))
+            using (OptickMacros.Event("Parse shader function body"))
             {
                 var localVariables = body.LocalVariables;
                 for (int i = 0; i < localVariables.Count; i++)
@@ -504,7 +504,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 var jumps = new List<JumpInstruction>();
 
                 var mapCollection = new SourceMapCollection(instructions);
-                using (var parseILEvent = OptickMacros.Event("Parse shader IL"))
+                using (OptickMacros.Event("Parse shader IL"))
                 {
                     for (int i = 0; i < instructions.Count; i++)
                     {
@@ -888,7 +888,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     }
                 }
 
-                using (var parseJumpEvent = OptickMacros.Event("Parse shader IL jumps"))
+                using (OptickMacros.Event("Parse shader IL jumps"))
                 {
                     var nonLoopJumps = new List<JumpInstruction>();
                     foreach (var jump in jumps)

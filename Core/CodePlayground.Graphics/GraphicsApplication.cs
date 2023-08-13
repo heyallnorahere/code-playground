@@ -211,7 +211,7 @@ namespace CodePlayground.Graphics
 
         private void OnRender(double delta)
         {
-            using (var renderEvent = OptickMacros.Category("Render", Category.Rendering))
+            using (OptickMacros.Category("Render", Category.Rendering))
             {
                 if (mGraphicsContext is null)
                 {
@@ -234,7 +234,7 @@ namespace CodePlayground.Graphics
                     var commandList = queue.Release();
                     commandList.Begin();
 
-                    using (var context = new GPUContextScope(commandList.Address))
+                    using (new GPUContextScope(commandList.Address))
                     {
                         Render?.Invoke(new FrameRenderInfo
                         {

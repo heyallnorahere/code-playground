@@ -2,6 +2,7 @@ using CodePlayground.Graphics;
 using ImGuiNET;
 using Optick.NET;
 using Ragdoll.Components;
+using Ragdoll.Physics;
 using Ragdoll.Shaders;
 using SixLabors.ImageSharp;
 using System;
