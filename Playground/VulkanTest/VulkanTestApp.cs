@@ -256,9 +256,9 @@ namespace VulkanTest
                                  Matrix4x4.CreateRotationY(rotation.Y) *
                                  Matrix4x4.CreateRotationZ(rotation.Z);
 
-            return Matrix4x4.CreateTranslation(transform.Translation) *
-                   rotationMatrix *
-                   Matrix4x4.CreateScale(transform.Scale);
+            return Matrix4x4.Transpose(Matrix4x4.CreateScale(transform.Scale) *
+                                       rotationMatrix *
+                                       Matrix4x4.CreateTranslation(transform.Translation));
         }
     }
 

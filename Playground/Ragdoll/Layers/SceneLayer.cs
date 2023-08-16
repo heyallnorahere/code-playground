@@ -2,13 +2,13 @@ using CodePlayground.Graphics;
 using ImGuiNET;
 using Optick.NET;
 using Ragdoll.Components;
-using Ragdoll.Physics;
 using Ragdoll.Shaders;
 using SixLabors.ImageSharp;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -401,16 +401,12 @@ namespace Ragdoll.Layers
 
             using (OptickMacros.Event("Test scene creation"))
             {
-                int modelId = LoadModel("../../../../VulkanTest/Resources/Models/sledge-hammer.fbx", "sledge-hammer");
+                int modelId = LoadModel("../../../../VulkanTest/Resources/Models/rigged-character.fbx", "rigged-character");
                 ulong entity = mScene.NewEntity("Model");
                 mScene.AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
 
-                var collider = (StaticModelCollider)mScene.AddComponent<RigidBodyComponent>(entity, ColliderType.StaticModel).Collider;
-                collider.SetModel(modelId);
-
                 var transform = mScene.AddComponent<TransformComponent>(entity);
-                transform.RotationEuler = Vector3.One * MathF.PI / 6f;
-                transform.Scale = Vector3.One * 10f;
+                transform.Scale = Vector3.One * 0.01f;
 
                 entity = mScene.NewEntity("Camera");
                 mScene.AddComponent<CameraComponent>(entity).MainCamera = true;
@@ -566,32 +562,13 @@ namespace Ragdoll.Layers
                 foreach (ulong entity in mScene.ViewEntities(typeof(RenderedModelComponent)))
                 {
                     var modelData = mScene.GetComponent<RenderedModelComponent>(entity);
-
-                    var skeleton = modelData.Model?.Skeleton;
-                    if (skeleton is null)
+                    if (modelData.ID < 0)
                     {
                         continue;
                     }
 
-                    var boneTransforms = new Matrix4x4[skeleton.BoneCount];
-                    var globalTransforms = new List<Matrix4x4>();
-                    for (int i = 0; i < boneTransforms.Length; i++)
-                    {
-                        int parent = skeleton.GetParent(i);
-                        var parentTransform = parent < 0 ? skeleton.GetParentTransform(i) : globalTransforms[parent];
-
-                        var nodeTransform = skeleton.GetTransform(i) * modelData.BoneTransforms![i];
-                        var globalTransform = parentTransform * nodeTransform;
-
-                        var offsetMatrix = skeleton.GetOffsetMatrix(i);
-                        var boneTransform = globalTransform * offsetMatrix;
-
-                        globalTransforms.Add(globalTransform);
-                        boneTransforms[i] = Matrix4x4.Transpose(boneTransform);
-                    }
-
                     var boneBuffer = registry.Models[modelData.ID].BoneBuffer;
-                    boneBuffer.CopyFromCPU(boneTransforms, modelData.BoneOffset * Marshal.SizeOf<Matrix4x4>());
+                    modelData.BoneController?.Update(boneTransforms => boneBuffer.CopyFromCPU(boneTransforms.Select(matrix => (PassedMatrix)matrix).ToArray(), modelData.BoneOffset * Marshal.SizeOf<Matrix4x4>()));
                 }
             }
 

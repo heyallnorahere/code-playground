@@ -1,4 +1,5 @@
 ﻿using CodePlayground.Graphics;
+using CodePlayground.Graphics.Animation;
 using ImGuiNET;
 using Ragdoll.Layers;
 using System;
@@ -14,12 +15,12 @@ namespace Ragdoll.Components
         {
             ID = -1;
             BoneOffset = 0;
-            BoneTransforms = null;
+            BoneController = null;
         }
 
         public int ID;
         public int BoneOffset;
-        public Matrix4x4[]? BoneTransforms;
+        public SkeletonController? BoneController;
 
         public Model? Model => ID < 0 ? null : App.Instance.ModelRegistry?.Models?[ID].Model;
 
@@ -27,19 +28,18 @@ namespace Ragdoll.Components
         {
             if (ID < 0)
             {
-                BoneTransforms = null;
+                BoneController = null;
                 return;
             }
 
             var skeleton = Model?.Skeleton;
             if (skeleton is null)
             {
-                BoneTransforms = null;
+                BoneController = null;
                 return;
             }
 
-            BoneTransforms = new Matrix4x4[skeleton.BoneCount];
-            Array.Fill(BoneTransforms, Matrix4x4.Identity);
+            BoneController = new SkeletonController(skeleton);
         }
 
         private void UpdateBoneOffset(int previous, ulong id)
