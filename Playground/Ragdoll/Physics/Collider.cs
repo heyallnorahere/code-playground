@@ -40,11 +40,7 @@ namespace Ragdoll.Physics
         public ColliderType Type { get; }
 
         public event Action<TypedIndex, Func<float, BodyInertia>>? OnChanged;
-
-        protected void TriggerOnChanged(TypedIndex index, Func<float, BodyInertia> computeInertia)
-        {
-            OnChanged?.Invoke(index, computeInertia);
-        }
+        protected void TriggerOnChanged(TypedIndex index, Func<float, BodyInertia> computeInertia) => OnChanged?.Invoke(index, computeInertia);
 
         public abstract void Initialize(Scene scene, ulong id);
         public abstract void Edit();

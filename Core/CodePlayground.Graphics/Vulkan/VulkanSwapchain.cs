@@ -82,6 +82,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         internal VulkanSwapchain(SurfaceKHR surface, VulkanContext context, Instance instance, IWindow window)
         {
+            using var constructorEvent = OptickMacros.Event();
+
             mDevice = context.Device;
             mAllocator = context.Allocator;
             mInstance = instance;
@@ -135,6 +137,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
+            using var disposeEvent = OptickMacros.Event();
             if (disposing)
             {
                 mWindow.FramebufferResize -= Resize;
@@ -184,6 +187,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         private SurfaceFormatKHR ChooseSurfaceFormat()
         {
+            using var chooseEvent = OptickMacros.Event();
+
             var formats = QuerySurfaceFormats(mSurfaceExtension, mDevice.PhysicalDevice, mSurface);
             foreach (var format in formats)
             {
@@ -199,6 +204,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         private PresentModeKHR ChoosePresentMode()
         {
+            using var chooseEvent = OptickMacros.Event();
+
             if (!mVSync)
             {
                 var presentModes = QuerySurfacePresentModes(mSurfaceExtension, mDevice.PhysicalDevice, mSurface);
@@ -216,6 +223,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         private static Extent2D ChooseExtent(Extent2D passedExtent, SurfaceCapabilitiesKHR capabilities)
         {
+            using var chooseEvent = OptickMacros.Event();
+
             if (capabilities.CurrentExtent.Width != uint.MaxValue)
             {
                 return capabilities.CurrentExtent;
@@ -289,11 +298,13 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             }
 
-            var depthStencilLayout = VulkanImage.GetLayout(DeviceImageLayoutName.DepthStencilAttachment).Layout;
-            mRenderPass ??= new VulkanRenderPass(mDevice, new VulkanRenderPassInfo
+            using (OptickMacros.Event("Create render pass"))
             {
-                ColorAttachments = new VulkanRenderPassAttachment[]
+                var depthStencilLayout = VulkanImage.GetLayout(DeviceImageLayoutName.DepthStencilAttachment).Layout;
+                mRenderPass ??= new VulkanRenderPass(mDevice, new VulkanRenderPassInfo
                 {
+                    ColorAttachments = new VulkanRenderPassAttachment[]
+                    {
                     new VulkanRenderPassAttachment
                     {
                         ImageFormat = mImageFormat,
@@ -306,31 +317,35 @@ namespace CodePlayground.Graphics.Vulkan
                         FinalLayout = ImageLayout.PresentSrcKhr,
                         Layout = ImageLayout.ColorAttachmentOptimal
                     }
-                },
-                DepthAttachment = new VulkanRenderPassAttachment
-                {
-                    ImageFormat = mDepthFormat,
-                    Samples = SampleCountFlags.Count1Bit,
-                    LoadOp = AttachmentLoadOp.Clear,
-                    StoreOp = AttachmentStoreOp.DontCare,
-                    StencilLoadOp = AttachmentLoadOp.DontCare,
-                    StencilStoreOp = AttachmentStoreOp.DontCare,
-                    InitialLayout = ImageLayout.Undefined,
-                    FinalLayout = depthStencilLayout,
-                    Layout = depthStencilLayout
-                },
-                SubpassDependency = new VulkanSubpassDependency
-                {
-                    SourceStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
-                    SourceAccessMask = 0,
-                    DestinationStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
-                    DestinationAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit
-                }
-            });
+                    },
+                    DepthAttachment = new VulkanRenderPassAttachment
+                    {
+                        ImageFormat = mDepthFormat,
+                        Samples = SampleCountFlags.Count1Bit,
+                        LoadOp = AttachmentLoadOp.Clear,
+                        StoreOp = AttachmentStoreOp.DontCare,
+                        StencilLoadOp = AttachmentLoadOp.DontCare,
+                        StencilStoreOp = AttachmentStoreOp.DontCare,
+                        InitialLayout = ImageLayout.Undefined,
+                        FinalLayout = depthStencilLayout,
+                        Layout = depthStencilLayout
+                    },
+                    SubpassDependency = new VulkanSubpassDependency
+                    {
+                        SourceStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
+                        SourceAccessMask = 0,
+                        DestinationStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
+                        DestinationAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit
+                    }
+                });
+            }
 
-            mSyncObjects ??= CreateSyncObjects();
-            mDepthBuffer = CreateDepthBuffer();
-            mFramebuffers = CreateFramebuffers();
+            using (OptickMacros.Event("Create other swapchain objects"))
+            {
+                mSyncObjects ??= CreateSyncObjects();
+                mDepthBuffer = CreateDepthBuffer();
+                mFramebuffers = CreateFramebuffers();
+            }
 
             mImageFences = new Fence[mFramebuffers.Length];
             Array.Fill(mImageFences, default);
@@ -458,6 +473,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void DestroyFramebuffers()
         {
+            using var destroyEvent = OptickMacros.Event();
+
             var api = VulkanContext.API;
             for (int i = 0; i < mFramebuffers.Length; i++)
             {
@@ -510,7 +527,6 @@ namespace CodePlayground.Graphics.Vulkan
         public unsafe void Present(ICommandQueue commandQueue, ICommandList commandList)
         {
             using var presentEvent = OptickMacros.Event();
-
             if (commandQueue is not VulkanQueue || commandList is not VulkanCommandBuffer)
             {
                 throw new ArgumentException("Must pass Vulkan objects!");

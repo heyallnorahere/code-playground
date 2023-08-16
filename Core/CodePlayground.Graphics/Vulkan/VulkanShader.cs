@@ -1,4 +1,5 @@
-﻿using shaderc;
+﻿using Optick.NET;
+using shaderc;
 using Silk.NET.Vulkan;
 using Spirzza.Interop.SpirvCross;
 using System;
@@ -72,6 +73,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Load()
         {
+            using var loadEvent = OptickMacros.Event();
             fixed (byte* ptr = mSPIRV)
             {
                 var createInfo = VulkanUtilities.Init<ShaderModuleCreateInfo>() with
@@ -93,6 +95,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Reflect()
         {
+            using var reflectEvent = OptickMacros.Event();
             mReflectionData = new ShaderReflectionResult
             {
                 StageIO = new List<ReflectedStageIOField>(),
@@ -124,24 +127,30 @@ namespace CodePlayground.Graphics.Vulkan
                 ProcessPushConstantBuffers(compiler, resourceList, resourceCount);
             }
 
-            foreach (var resourceType in sResourceTypeMap.Keys)
+            using (OptickMacros.Event("Shader resource reflection"))
             {
-                spvc_reflected_resource* resourceList;
-                nuint resourceCount;
-                spvc_resources_get_resource_list_for_type(resources, resourceType, &resourceList, &resourceCount).Assert();
+                foreach (var resourceType in sResourceTypeMap.Keys)
+                {
+                    spvc_reflected_resource* resourceList;
+                    nuint resourceCount;
+                    spvc_resources_get_resource_list_for_type(resources, resourceType, &resourceList, &resourceCount).Assert();
 
-                var typeFlags = sResourceTypeMap[resourceType];
-                ProcessResources(compiler, typeFlags, resourceList, resourceCount);
+                    var typeFlags = sResourceTypeMap[resourceType];
+                    ProcessResources(compiler, typeFlags, resourceList, resourceCount);
+                }
             }
 
-            foreach (var resourceType in sResourceTypeIODirections.Keys)
+            using (OptickMacros.Event("Shader I/O reflection"))
             {
-                spvc_reflected_resource* resourceList;
-                nuint resourceCount;
-                spvc_resources_get_resource_list_for_type(resources, resourceType, &resourceList, &resourceCount).Assert();
+                foreach (var resourceType in sResourceTypeIODirections.Keys)
+                {
+                    spvc_reflected_resource* resourceList;
+                    nuint resourceCount;
+                    spvc_resources_get_resource_list_for_type(resources, resourceType, &resourceList, &resourceCount).Assert();
 
-                var direction = sResourceTypeIODirections[resourceType];
-                ProcessStageIOFields(compiler, direction, resourceList, resourceCount);
+                    var direction = sResourceTypeIODirections[resourceType];
+                    ProcessStageIOFields(compiler, direction, resourceList, resourceCount);
+                }
             }
 
             spvc_context_destroy(context);
@@ -149,6 +158,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void ProcessStageIOFields(spvc_compiler* compiler, StageIODirection direction, spvc_reflected_resource* resources, nuint count)
         {
+            using var processEvent = OptickMacros.Event();
             for (nuint i = 0; i < count; i++)
             {
                 var resource = resources[i];
@@ -170,6 +180,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void ProcessResources(spvc_compiler* compiler, ShaderResourceTypeFlags typeFlags, spvc_reflected_resource* resources, nuint count)
         {
+            using var processEvent = OptickMacros.Event();
             for (nuint i = 0; i < count; i++)
             {
                 var resource = resources[i];
@@ -208,6 +219,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void ProcessPushConstantBuffers(spvc_compiler* compiler, spvc_reflected_resource* resources, nuint count)
         {
+            using var processEvent = OptickMacros.Event();
             for (nuint i = 0; i < count; i++)
             {
                 var resource = resources[i];
@@ -227,6 +239,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void ProcessType(spvc_compiler* compiler, uint type, uint? baseType)
         {
+            using var processEvent = OptickMacros.Event();
+            OptickMacros.Tag("Processed type", type);
+
             int typeId = (int)type;
             if (mReflectionData.Types.ContainsKey(typeId))
             {

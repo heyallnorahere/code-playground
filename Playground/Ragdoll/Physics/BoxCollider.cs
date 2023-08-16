@@ -20,6 +20,7 @@ namespace Ragdoll.Physics
 
         public override void Edit()
         {
+            using var editEvent = OptickMacros.Event();
             bool invalidate = false;
 
             const float speed = 0.05f;
@@ -35,12 +36,15 @@ namespace Ragdoll.Physics
 
         public override void Cleanup()
         {
+            using var cleanupEvent = OptickMacros.Event();
+
             var simulation = mScene!.Simulation;
             simulation.Shapes.RemoveAndDispose(mIndex, simulation.BufferPool);
         }
 
         public override void Update()
         {
+            using var updateEvent = OptickMacros.Event();
             if (!mScene!.TryGetComponent(mEntity, out TransformComponent? transform))
             {
                 return;

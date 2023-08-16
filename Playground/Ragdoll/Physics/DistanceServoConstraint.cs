@@ -1,6 +1,7 @@
 using BepuPhysics;
 using BepuPhysics.Constraints;
 using ImGuiNET;
+using Optick.NET;
 using System.Numerics;
 
 namespace Ragdoll.Physics
@@ -29,6 +30,7 @@ namespace Ragdoll.Physics
 
         public override void Create(Simulation simulation, BodyHandle bodyA, BodyHandle bodyB)
         {
+            using var createEvent = OptickMacros.Event();
             if (mConstraintExists)
             {
                 Destroy();
@@ -46,12 +48,14 @@ namespace Ragdoll.Physics
                 return;
             }
 
+            using var destroyEvent = OptickMacros.Event();
             mSimulation!.Solver.Remove(mHandle);
             mConstraintExists = false;
         }
 
         public override void Edit()
         {
+            using var editEvent = OptickMacros.Event();
             bool changed = false;
 
             changed |= ImGui.DragFloat3("Local offset A", ref mConstraint.LocalOffsetA, 0.05f);
@@ -73,6 +77,7 @@ namespace Ragdoll.Physics
                 return;
             }
 
+            using var updateEvent = OptickMacros.Event();
             mSimulation!.Solver.ApplyDescription(mHandle, mConstraint);
         }
 

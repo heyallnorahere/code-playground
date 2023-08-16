@@ -1,5 +1,5 @@
 using CodePlayground.Graphics;
-using ImGuiNET;
+using Optick.NET;
 using Silk.NET.Input;
 using Silk.NET.Windowing;
 using System;
@@ -23,6 +23,7 @@ namespace Ragdoll.Layers
 
         public override void OnPushed()
         {
+            using var pushedEvent = OptickMacros.Event();
             mController = new ImGuiController(mGraphicsContext, mInputContext, mWindow, mRenderTarget, Renderer.FrameCount);
 
             mUseSemaphore = true;
@@ -42,6 +43,8 @@ namespace Ragdoll.Layers
 
         public override void OnPopped()
         {
+            using var poppedEvent = OptickMacros.Event();
+
             mController?.Dispose();
             mSemaphore?.Dispose();
 
@@ -50,11 +53,14 @@ namespace Ragdoll.Layers
 
         public override void OnUpdate(double delta)
         {
+            using var updateEvent = OptickMacros.Event();
             mController?.NewFrame(delta);
         }
 
         public override void OnRender(Renderer renderer)
         {
+            using var renderEvent = OptickMacros.Event();
+
             var frameInfo = renderer.FrameInfo;
             var commandList = frameInfo.CommandList;
 

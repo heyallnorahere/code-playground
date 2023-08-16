@@ -64,6 +64,7 @@ namespace Ragdoll.Layers
 
         public void Render(bool enableVisibility = true)
         {
+            using var renderEvent = OptickMacros.Event();
             if (!mVisible)
             {
                 return;
@@ -244,6 +245,8 @@ namespace Ragdoll.Layers
 
         private int LoadModel(string path, string name)
         {
+            using var loadModelEvent = OptickMacros.Event(category: Category.IO);
+
             var app = App.Instance;
             var library = app.Renderer!.Library;
             var registry = app.ModelRegistry!;
@@ -286,6 +289,8 @@ namespace Ragdoll.Layers
 
         private IReadOnlyList<ImGuiMenu> LoadMenus()
         {
+            using var loadMenusEvent = OptickMacros.Event();
+
             var methods = GetType().GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic);
             var menus = new Dictionary<string, ImGuiMenuInfo>();
 
@@ -358,6 +363,8 @@ namespace Ragdoll.Layers
 
         public override void OnPushed()
         {
+            using var pushedEvent = OptickMacros.Event();
+
             var app = App.Instance;
             var graphicsContext = app.GraphicsContext!;
 
@@ -392,6 +399,7 @@ namespace Ragdoll.Layers
                 UpdatePhysics = false
             };
 
+            using (OptickMacros.Event("Test scene creation"))
             {
                 int modelId = LoadModel("../../../../VulkanTest/Resources/Models/sledge-hammer.fbx", "sledge-hammer");
                 ulong entity = mScene.NewEntity("Model");
@@ -429,6 +437,8 @@ namespace Ragdoll.Layers
 
         private void CreateFramebufferAttachments(int width, int height, ICommandList commandList)
         {
+            using var createEvent = OptickMacros.Event();
+
             var graphicsContext = App.Instance.GraphicsContext!;
             var colorImage = graphicsContext.CreateDeviceImage(new DeviceImageInfo
             {
@@ -472,6 +482,8 @@ namespace Ragdoll.Layers
 
         private void DestroyFramebuffer()
         {
+            using var destroyEvent = OptickMacros.Event();
+
             mFramebuffer?.Dispose();
             mViewportTexture?.Dispose();
 
@@ -483,6 +495,8 @@ namespace Ragdoll.Layers
 
         public override void OnPopped()
         {
+            using var poppedEvent = OptickMacros.Event();
+
             mCameraBuffer?.Dispose();
             foreach (var modelData in mLoadedModelInfo.Values)
             {
@@ -503,6 +517,8 @@ namespace Ragdoll.Layers
 
         private static void ComputeCameraVectors(Vector3 angle, out Vector3 direction, out Vector3 up)
         {
+            using var computeCameraVectorsEvent = OptickMacros.Event();
+
             // +X - tilt camera up
             // +Y - rotate view to the right
             // +Z - roll camera counterclockwise
@@ -626,6 +642,7 @@ namespace Ragdoll.Layers
 
         public override void PreRender(Renderer renderer)
         {
+            using var preRenderEvent = OptickMacros.Event(category: Category.Rendering);
             if (mScene is null)
             {
                 return;
@@ -684,6 +701,7 @@ namespace Ragdoll.Layers
 
         private void RecreateFramebuffer(int width, int height)
         {
+            using var recreateEvent = OptickMacros.Event();
             if (width <= 0 || height <= 0)
             {
                 return;
@@ -720,6 +738,7 @@ namespace Ragdoll.Layers
         [ImGuiMenu("Dockspace/Viewport", NoPadding = true)]
         private void Viewport(IEnumerable<ImGuiMenu> children)
         {
+            using var viewportEvent = OptickMacros.Event();
             var imageSize = ImGui.GetContentRegionAvail();
 
             int width = (int)imageSize.X;
@@ -743,6 +762,7 @@ namespace Ragdoll.Layers
         [ImGuiMenu("Dockspace/Scene")]
         private unsafe void SceneMenu(IEnumerable<ImGuiMenu> children)
         {
+            using var sceneMenuEvent = OptickMacros.Event();
             if (mScene is null)
             {
                 ImGui.Text("No scene is associated with the scene layer");
@@ -768,36 +788,39 @@ namespace Ragdoll.Layers
             var deletedEntities = new HashSet<ulong>();
             bool entityHovered = false;
 
-            foreach (ulong id in mScene.Entities)
+            using (OptickMacros.Event("Entity list"))
             {
-                string tag = mScene.GetDisplayedEntityTag(id);
-
-                ImGui.PushID($"entity-{id}");
-                if (ImGui.Selectable(tag, mSelectedEntity == id))
+                foreach (ulong id in mScene.Entities)
                 {
-                    mSelectedEntity = id;
-                }
+                    string tag = mScene.GetDisplayedEntityTag(id);
 
-                entityHovered |= ImGui.IsItemHovered();
-                if (ImGui.BeginPopupContextItem())
-                {
-                    if (ImGui.MenuItem("Delete entity"))
+                    ImGui.PushID($"entity-{id}");
+                    if (ImGui.Selectable(tag, mSelectedEntity == id))
                     {
-                        deletedEntities.Add(id);
-                        mSelectedEntity = Scene.Null;
+                        mSelectedEntity = id;
                     }
 
-                    ImGui.EndPopup();
-                }
+                    entityHovered |= ImGui.IsItemHovered();
+                    if (ImGui.BeginPopupContextItem())
+                    {
+                        if (ImGui.MenuItem("Delete entity"))
+                        {
+                            deletedEntities.Add(id);
+                            mSelectedEntity = Scene.Null;
+                        }
 
-                if (ImGui.BeginDragDropSource())
-                {
-                    ImGui.Text(tag);
-                    ImGui.SetDragDropPayload(Scene.EntityDragDropID, (nint)(void*)&id, sizeof(ulong));
-                    ImGui.EndDragDropSource();
-                }
+                        ImGui.EndPopup();
+                    }
 
-                ImGui.PopID();
+                    if (ImGui.BeginDragDropSource())
+                    {
+                        ImGui.Text(tag);
+                        ImGui.SetDragDropPayload(Scene.EntityDragDropID, (nint)(void*)&id, sizeof(ulong));
+                        ImGui.EndDragDropSource();
+                    }
+
+                    ImGui.PopID();
+                }
             }
 
             foreach (ulong id in deletedEntities)
@@ -834,6 +857,7 @@ namespace Ragdoll.Layers
         [ImGuiMenu("Dockspace/Editor")]
         private void Editor(IEnumerable<ImGuiMenu> children)
         {
+            using var editorEvent = OptickMacros.Event();
             if (mSelectedEntity == Scene.Null || mScene is null)
             {
                 ImGui.Text("No entity selected");
@@ -846,92 +870,106 @@ namespace Ragdoll.Layers
                 ImGui.OpenPopup(addComponentId);
             }
 
-            if (ImGui.BeginPopup(addComponentId))
+            using (OptickMacros.Event("Add component"))
             {
-                foreach (var componentType in sComponentTypes)
+                if (ImGui.BeginPopup(addComponentId))
                 {
-                    if (ImGui.MenuItem(componentType.DisplayName) && !mScene.HasComponent(mSelectedEntity, componentType.Type))
+                    foreach (var componentType in sComponentTypes)
                     {
-                        mScene.AddComponent(mSelectedEntity, componentType.Type);
-                    }
-                }
-
-                ImGui.EndPopup();
-            }
-
-            var style = ImGui.GetStyle();
-            var font = ImGui.GetFont();
-
-            var removedComponents = new List<Type>();
-            foreach (var component in mScene.ViewComponents(mSelectedEntity))
-            {
-                var type = component.GetType();
-                var fullName = type.FullName ?? type.Name;
-
-                var componentTypeId = fullName.Replace('.', '-');
-                ImGui.PushID($"{componentTypeId}-header");
-
-                var attribute = type.GetCustomAttribute<RegisteredComponentAttribute>();
-                var displayName = attribute?.DisplayName;
-
-                if (string.IsNullOrEmpty(displayName))
-                {
-                    displayName = type.Name;
-                }
-
-                ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(4f));
-                float lineHeight = font.FontSize + style.FramePadding.Y * 2f;
-
-                var regionAvailable = ImGui.GetContentRegionAvail();
-                float xOffset = regionAvailable.X - lineHeight / 2f;
-
-                bool open = ImGui.TreeNodeEx(displayName, ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.Framed |
-                                                          ImGuiTreeNodeFlags.SpanAvailWidth | ImGuiTreeNodeFlags.AllowItemOverlap |
-                                                          ImGuiTreeNodeFlags.FramePadding);
-
-                ImGui.PopStyleVar();
-                ImGui.SameLine(xOffset);
-
-                const string componentSettingsId = "component-settings";
-                if (ImGui.Button("+", new Vector2(lineHeight)))
-                {
-                    ImGui.OpenPopup(componentSettingsId);
-                }
-
-                if (ImGui.BeginPopup(componentSettingsId))
-                {
-                    if (ImGui.MenuItem("Remove"))
-                    {
-                        removedComponents.Add(type);
+                        if (ImGui.MenuItem(componentType.DisplayName) && !mScene.HasComponent(mSelectedEntity, componentType.Type))
+                        {
+                            mScene.AddComponent(mSelectedEntity, componentType.Type);
+                        }
                     }
 
                     ImGui.EndPopup();
                 }
+            }
 
-                if (open)
+            var removedComponents = new List<Type>();
+            using (OptickMacros.Event("Component list"))
+            {
+                var style = ImGui.GetStyle();
+                var font = ImGui.GetFont();
+
+                foreach (var component in mScene.ViewComponents(mSelectedEntity))
                 {
-                    ImGui.PushID(componentTypeId);
-                    if (!mScene.InvokeComponentEvent(component, mSelectedEntity, ComponentEventID.Edited))
+                    using var componentEvent = OptickMacros.Event("Edited component");
+
+                    var type = component.GetType();
+                    var fullName = type.FullName ?? type.Name;
+                    OptickMacros.Tag("Component type", fullName);
+
+                    var componentTypeId = fullName.Replace('.', '-');
+                    ImGui.PushID($"{componentTypeId}-header");
+
+                    var attribute = type.GetCustomAttribute<RegisteredComponentAttribute>();
+                    var displayName = attribute?.DisplayName;
+
+                    if (string.IsNullOrEmpty(displayName))
                     {
-                        ImGui.Text("This component is not editable");
+                        displayName = type.Name;
+                    }
+
+                    ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(4f));
+                    float lineHeight = font.FontSize + style.FramePadding.Y * 2f;
+
+                    var regionAvailable = ImGui.GetContentRegionAvail();
+                    float xOffset = regionAvailable.X - lineHeight / 2f;
+
+                    bool open = ImGui.TreeNodeEx(displayName, ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.Framed |
+                                                              ImGuiTreeNodeFlags.SpanAvailWidth | ImGuiTreeNodeFlags.AllowItemOverlap |
+                                                              ImGuiTreeNodeFlags.FramePadding);
+
+                    ImGui.PopStyleVar();
+                    ImGui.SameLine(xOffset);
+
+                    const string componentSettingsId = "component-settings";
+                    if (ImGui.Button("+", new Vector2(lineHeight)))
+                    {
+                        ImGui.OpenPopup(componentSettingsId);
+                    }
+
+                    if (ImGui.BeginPopup(componentSettingsId))
+                    {
+                        if (ImGui.MenuItem("Remove"))
+                        {
+                            removedComponents.Add(type);
+                        }
+
+                        ImGui.EndPopup();
+                    }
+
+                    if (open)
+                    {
+                        ImGui.PushID(componentTypeId);
+                        if (!mScene.InvokeComponentEvent(component, mSelectedEntity, ComponentEventID.Edited))
+                        {
+                            ImGui.Text("This component is not editable");
+                        }
+
+                        ImGui.PopID();
+                        ImGui.TreePop();
                     }
 
                     ImGui.PopID();
-                    ImGui.TreePop();
                 }
-
-                ImGui.PopID();
             }
 
-            foreach (var type in removedComponents)
+            using (OptickMacros.Event("Removing components"))
             {
-                mScene.RemoveComponent(mSelectedEntity, type);
+                foreach (var type in removedComponents)
+                {
+                    mScene.RemoveComponent(mSelectedEntity, type);
+                }
             }
         }
 
         [ImGuiMenu("Dockspace/Model registry")]
         private unsafe void ModelRegistryMenu(IEnumerable<ImGuiMenu> children)
         {
+            using var modelRegistryEvent = OptickMacros.Event();
+
             var registry = App.Instance.ModelRegistry;
             if (registry is null)
             {
@@ -945,6 +983,7 @@ namespace Ragdoll.Layers
 
             if (ImGui.Button("Load model"))
             {
+                using var loadModelEvent = OptickMacros.Event();
                 if (string.IsNullOrEmpty(mModelPath))
                 {
                     mModelError = "No path provided!";
@@ -999,6 +1038,8 @@ namespace Ragdoll.Layers
         [ImGuiMenu("Dockspace", Fullscreen = true, NoPadding = true, Flags = ImGuiWindowFlags.MenuBar | ImGuiWindowFlags.NoDocking)]
         private void Dockspace(IEnumerable<ImGuiMenu> children)
         {
+            using var dockspaceEvent = OptickMacros.Event();
+
             var io = ImGui.GetIO();
             if (io.ConfigFlags.HasFlag(ImGuiConfigFlags.DockingEnable))
             {

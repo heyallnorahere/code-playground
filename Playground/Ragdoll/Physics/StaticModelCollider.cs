@@ -45,6 +45,7 @@ namespace Ragdoll.Physics
 
         public unsafe override void Edit()
         {
+            using var editEvent = OptickMacros.Event();
             var registry = App.Instance.ModelRegistry;
 
             var style = ImGui.GetStyle();
@@ -58,28 +59,12 @@ namespace Ragdoll.Physics
             ImGui.PushID("collision-mesh-id");
             ImGui.InputText("Collision mesh", ref name, 512, ImGuiInputTextFlags.ReadOnly);
 
-            if (ImGui.BeginDragDropTarget())
+            if (ImGuiUtilities.DragDropTarget(ModelRegistry.RegisteredModelID, out int modelId, model => registry.Models[model].Model.Skeleton is null))
             {
-                var payload = ImGui.AcceptDragDropPayload(ModelRegistry.RegisteredModelID, ImGuiDragDropFlags.AcceptPeekOnly);
-                if (payload.NativePtr != null)
-                {
-                    int modelId = Marshal.PtrToStructure<int>(payload.Data);
-                    var model = registry.Models[modelId];
+                int oldModel = mModel;
+                mModel = modelId;
 
-                    if (model.Model.Skeleton is null)
-                    {
-                        payload = ImGui.AcceptDragDropPayload(ModelRegistry.RegisteredModelID);
-                        if (payload.NativePtr != null)
-                        {
-                            int oldModel = mModel;
-                            mModel = modelId;
-
-                            Invalidate(oldModel: oldModel);
-                        }
-                    }
-                }
-
-                ImGui.EndDragDropTarget();
+                Invalidate(oldModel: oldModel);
             }
 
             bool disabled = mModel < 0;
@@ -109,12 +94,7 @@ namespace Ragdoll.Physics
         private void Invalidate(Vector3? scale = null, int oldModel = -2, bool force = false)
         {
             using var invalidateEvent = OptickMacros.Event();
-
-            var registry = App.Instance.ModelRegistry;
-            if (registry is null)
-            {
-                throw new InvalidOperationException();
-            }
+            var registry = App.Instance.ModelRegistry ?? throw new InvalidOperationException();
 
             bool modelsDiffer = oldModel != mModel && oldModel >= -1;
             if (!force && !modelsDiffer &&
