@@ -370,6 +370,9 @@ namespace Ragdoll.Components
                     simulation.Bodies[mBody].BecomeKinematic();
                     break;
             }
+
+            bool isBody = mBodyType != BodyType.Static;
+            BodyTypeChanged?.Invoke(isBody ? mBody : null, isBody ? null : mStatic, mBodyType);
         }
 
         public BodyType BodyType
@@ -377,6 +380,11 @@ namespace Ragdoll.Components
             get => mBodyType;
             set
             {
+                if (mBodyType == value)
+                {
+                    return;
+                }
+
                 var previous = mBodyType;
                 mBodyType = value;
 
@@ -408,7 +416,9 @@ namespace Ragdoll.Components
             }
         }
 
-        public BodyHandle Handle => mBody;
+        public BodyHandle Body => mBodyType != BodyType.Static ? mBody : throw new InvalidOperationException();
+        public StaticHandle Static => mBodyType == BodyType.Static ? mStatic : throw new InvalidOperationException();
+        public event Action<BodyHandle?, StaticHandle?, BodyType>? BodyTypeChanged;
 
         public void PrePhysicsUpdate()
         {

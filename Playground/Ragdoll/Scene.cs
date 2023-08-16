@@ -195,9 +195,15 @@ namespace Ragdoll
         private readonly Scene mScene;
     }
 
+    internal struct EntityCallbackData
+    {
+        public Dictionary<ulong, Action<object, bool>> Callbacks { get; set; }
+    }
+
     public sealed class Scene : IDisposable
     {
         public const ulong Null = Registry.Null;
+        public const string EntityDragDropID = "scene-entity";
 
         public Scene()
         {
@@ -205,6 +211,9 @@ namespace Ragdoll
 
             mDisposed = true;
             mRegistry = new Registry();
+
+            mCallbackData = new Dictionary<ulong, EntityCallbackData>();
+            mCurrentCallbackID = 0;
 
             mUpdatePhysics = true;
             mGravity = Vector3.UnitY * -10f;
@@ -320,8 +329,12 @@ namespace Ragdoll
         public ulong NewEntity(string tag = "Entity")
         {
             ulong id = mRegistry.New();
-            AddComponent<TagComponent>(id, tag);
+            mCallbackData.Add(id, new EntityCallbackData
+            {
+                Callbacks = new Dictionary<ulong, Action<object, bool>>()
+            });
 
+            AddComponent<TagComponent>(id, tag);
             return id;
         }
 
@@ -333,6 +346,7 @@ namespace Ragdoll
                 RemoveComponent(id, type);
             }
 
+            mCallbackData.Remove(id);
             mRegistry.Destroy(id);
         }
 
@@ -354,8 +368,14 @@ namespace Ragdoll
         {
             var component = mRegistry.Add(id, type, args);
 
-            using var registryLock = Lock();
-            InvokeComponentEvent(component, id, ComponentEventID.Added);
+            using (Lock())
+            {
+                InvokeComponentEvent(component, id, ComponentEventID.Added);
+                foreach (var callback in mCallbackData[id].Callbacks.Values)
+                {
+                    callback.Invoke(component, true);
+                }
+            }
 
             return component;
         }
@@ -368,12 +388,46 @@ namespace Ragdoll
                 return;
             }
 
-            using (var registryLock = Lock())
+            using (Lock())
             {
                 InvokeComponentEvent(component, id, ComponentEventID.Removed);
+                foreach (var callback in mCallbackData[id].Callbacks.Values)
+                {
+                    callback.Invoke(component, false);
+                }
             }
 
             mRegistry.Remove(id, type);
+        }
+
+        public ulong AddEntityComponentListener(ulong entity, Action<object, bool> callback)
+        {
+            ulong id = mCurrentCallbackID++;
+            mCallbackData[entity].Callbacks.Add(id, callback);
+
+            return id;
+        }
+
+        public bool RemoveEntityComponentListener(ulong entity, ulong callback)
+        {
+            var callbacks = mCallbackData[entity].Callbacks;
+            if (!callbacks.ContainsKey(callback))
+            {
+                return false;
+            }
+
+            callbacks.Remove(callback);
+            return true;
+        }
+
+        public string GetDisplayedEntityTag(ulong id)
+        {
+            if (TryGetComponent(id, out TagComponent? tag))
+            {
+                return tag.Tag;
+            }
+
+            return $"<no tag:{id}>";
         }
 
         public ref bool UpdatePhysics => ref mUpdatePhysics;
@@ -389,6 +443,9 @@ namespace Ragdoll
 
         private Vector3 mGravity;
         private VelocityDamping mVelocityDamping;
+
+        private readonly Dictionary<ulong, EntityCallbackData> mCallbackData;
+        private ulong mCurrentCallbackID;
 
         private readonly Registry mRegistry;
         private bool mDisposed;

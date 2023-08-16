@@ -741,7 +741,7 @@ namespace Ragdoll.Layers
         }
 
         [ImGuiMenu("Dockspace/Scene")]
-        private void SceneMenu(IEnumerable<ImGuiMenu> children)
+        private unsafe void SceneMenu(IEnumerable<ImGuiMenu> children)
         {
             if (mScene is null)
             {
@@ -770,7 +770,7 @@ namespace Ragdoll.Layers
 
             foreach (ulong id in mScene.Entities)
             {
-                string tag = mScene.TryGetComponent(id, out TagComponent? component) ? component.Tag : $"<no tag:{id}>";
+                string tag = mScene.GetDisplayedEntityTag(id);
 
                 ImGui.PushID($"entity-{id}");
                 if (ImGui.Selectable(tag, mSelectedEntity == id))
@@ -788,6 +788,13 @@ namespace Ragdoll.Layers
                     }
 
                     ImGui.EndPopup();
+                }
+
+                if (ImGui.BeginDragDropSource())
+                {
+                    ImGui.Text(tag);
+                    ImGui.SetDragDropPayload(Scene.EntityDragDropID, (nint)(void*)&id, sizeof(ulong));
+                    ImGui.EndDragDropSource();
                 }
 
                 ImGui.PopID();
@@ -860,7 +867,9 @@ namespace Ragdoll.Layers
             {
                 var type = component.GetType();
                 var fullName = type.FullName ?? type.Name;
-                ImGui.PushID(fullName.Replace('.', '-'));
+
+                var componentTypeId = fullName.Replace('.', '-');
+                ImGui.PushID($"{componentTypeId}-header");
 
                 var attribute = type.GetCustomAttribute<RegisteredComponentAttribute>();
                 var displayName = attribute?.DisplayName;
@@ -901,11 +910,13 @@ namespace Ragdoll.Layers
 
                 if (open)
                 {
+                    ImGui.PushID(componentTypeId);
                     if (!mScene.InvokeComponentEvent(component, mSelectedEntity, ComponentEventID.Edited))
                     {
                         ImGui.Text("This component is not editable");
                     }
 
+                    ImGui.PopID();
                     ImGui.TreePop();
                 }
 
