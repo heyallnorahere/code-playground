@@ -295,6 +295,9 @@ namespace CodePlayground.Graphics
         public void ClearQueues();
     }
 
+    /// <summary>
+    /// For all calls referencing ICommandList: when using Optick, make sure a GPUContextScope is initialized
+    /// </summary>
     public interface ICommandList
     {
         public bool IsRecording { get; }

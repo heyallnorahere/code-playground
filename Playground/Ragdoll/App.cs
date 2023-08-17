@@ -1,5 +1,6 @@
 using CodePlayground;
 using CodePlayground.Graphics;
+using Optick.NET;
 using Ragdoll.Layers;
 using System.Numerics;
 
@@ -37,6 +38,7 @@ namespace Ragdoll
 
             // enable profiling
             InitializeOptick();
+            var loadEvent = OptickMacros.Event();
 
             mRenderer = new Renderer(context);
             mModelRegistry = new ModelRegistry(context);
@@ -48,6 +50,8 @@ namespace Ragdoll
         private void OnInputReady() => InitializeImGui();
         private void InitializeImGui()
         {
+            var initializeEvent = OptickMacros.Event();
+
             var graphicsContext = GraphicsContext;
             var inputContext = InputContext;
             var window = RootWindow;
@@ -66,6 +70,8 @@ namespace Ragdoll
 
         private void OnClose()
         {
+            var closeEvent = OptickMacros.Event();
+
             var device = GraphicsContext?.Device;
             device?.ClearQueues();
 

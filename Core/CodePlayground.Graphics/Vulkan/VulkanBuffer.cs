@@ -1,4 +1,5 @@
-﻿using Silk.NET.Vulkan;
+﻿using Optick.NET;
+using Silk.NET.Vulkan;
 using System;
 using VMASharp;
 
@@ -20,6 +21,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe VulkanBuffer(VulkanDevice device, VulkanMemoryAllocator allocator, DeviceBufferUsage usage, int size)
         {
+            using var constructorEvent = OptickMacros.Event();
+
             mDevice = device;
             mAllocator = allocator;
             mID = VulkanPipeline.GenerateID();
@@ -47,38 +50,44 @@ namespace CodePlayground.Graphics.Vulkan
             };
 
             var api = VulkanContext.API;
-            fixed (uint* indexPtr = indices)
+            using (OptickMacros.Event("Device buffer creation"))
             {
-                if (graphics != transfer)
+                fixed (uint* indexPtr = indices)
                 {
-                    createInfo.SharingMode = SharingMode.Concurrent;
-                    createInfo.QueueFamilyIndexCount = (uint)indices.Length; // 2
-                    createInfo.PQueueFamilyIndices = indexPtr;
-                }
-                else
-                {
-                    createInfo.SharingMode = SharingMode.Exclusive;
-                }
+                    if (graphics != transfer)
+                    {
+                        createInfo.SharingMode = SharingMode.Concurrent;
+                        createInfo.QueueFamilyIndexCount = (uint)indices.Length; // 2
+                        createInfo.PQueueFamilyIndices = indexPtr;
+                    }
+                    else
+                    {
+                        createInfo.SharingMode = SharingMode.Exclusive;
+                    }
 
-                fixed (Silk.NET.Vulkan.Buffer* buffer = &mBuffer)
-                {
-                    api.CreateBuffer(device.Device, &createInfo, null, buffer).Assert();
+                    fixed (Silk.NET.Vulkan.Buffer* buffer = &mBuffer)
+                    {
+                        api.CreateBuffer(device.Device, &createInfo, null, buffer).Assert();
+                    }
                 }
             }
 
-            mAllocation = allocator.AllocateMemoryForBuffer(mBuffer, new AllocationCreateInfo
+            using (OptickMacros.Event("Memory allocation"))
             {
-                Usage = usage switch
+                mAllocation = allocator.AllocateMemoryForBuffer(mBuffer, new AllocationCreateInfo
                 {
-                    DeviceBufferUsage.Vertex => MemoryUsage.GPU_Only,
-                    DeviceBufferUsage.Index => MemoryUsage.GPU_Only,
-                    DeviceBufferUsage.Uniform => MemoryUsage.CPU_To_GPU,
-                    DeviceBufferUsage.Staging => MemoryUsage.CPU_Only,
-                    _ => throw new ArgumentException("Invalid buffer usage!")
-                }
-            });
+                    Usage = usage switch
+                    {
+                        DeviceBufferUsage.Vertex => MemoryUsage.GPU_Only,
+                        DeviceBufferUsage.Index => MemoryUsage.GPU_Only,
+                        DeviceBufferUsage.Uniform => MemoryUsage.CPU_To_GPU,
+                        DeviceBufferUsage.Staging => MemoryUsage.CPU_Only,
+                        _ => throw new ArgumentException("Invalid buffer usage!")
+                    }
+                });
 
-            mAllocation.BindBufferMemory(mBuffer).Assert();
+                mAllocation.BindBufferMemory(mBuffer).Assert();
+            }
         }
 
         ~VulkanBuffer()
@@ -145,6 +154,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void CopyBuffers(VulkanCommandBuffer commandBuffer, VulkanBuffer destination, int size, int srcOffset = 0, int dstOffset = 0)
         {
+            using var copyEvent = OptickMacros.Event();
+            using var gpuEvent = OptickMacros.GPUEvent("Buffer-to-buffer copy");
+
             var region = VulkanUtilities.Init<BufferCopy>() with
             {
                 SrcOffset = (ulong)srcOffset,
@@ -168,6 +180,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void BindVertices(VulkanCommandBuffer commandBuffer, int index)
         {
+            using var bindEvent = OptickMacros.Event();
+            using var gpuBindEvent = OptickMacros.GPUEvent("Bind vertex buffer");
+
             var api = VulkanContext.API;
             api.CmdBindVertexBuffers(commandBuffer.Buffer, (uint)index, 1, mBuffer, 0);
         }
@@ -184,6 +199,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void BindIndices(VulkanCommandBuffer commandBuffer, DeviceBufferIndexType indexType)
         {
+            using var bindEvent = OptickMacros.Event();
+            using var gpuBindEvent = OptickMacros.GPUEvent("Bind index buffer");
+
             var api = VulkanContext.API;
             api.CmdBindIndexBuffer(commandBuffer.Buffer, mBuffer, 0, indexType switch
             {
@@ -195,6 +213,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
         {
+            using var bindEvent = OptickMacros.Event();
+
             var bufferInfo = VulkanUtilities.Init<DescriptorBufferInfo>() with
             {
                 Buffer = mBuffer,
@@ -224,7 +244,7 @@ namespace CodePlayground.Graphics.Vulkan
             api.UpdateDescriptorSets(mDevice.Device, writes, 0, null);
         }
 
-        public void Unbind(int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
+        void IBindableVulkanResource.Unbind(int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
         {
             // nothing, we don't have to do any rebinding
         }

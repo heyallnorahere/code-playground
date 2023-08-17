@@ -12,6 +12,7 @@ using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Optick.NET;
 
 namespace Ragdoll
 {
@@ -51,7 +52,6 @@ namespace Ragdoll
         public ModelRegistry(IGraphicsContext context)
         {
             mCommandList = null;
-            mStagingBuffers = new List<IDeviceBuffer>();
 
             mCurrentModelID = 0;
             mModels = new Dictionary<int, LoadedModel>();
@@ -93,6 +93,7 @@ namespace Ragdoll
 
         unsafe IDeviceBuffer IModelImportContext.CreateVertexBuffer(IReadOnlyList<ModelVertex> vertices)
         {
+            using var createEvent = OptickMacros.Event();
             BeginCommandList();
 
             var bufferVertices = new Vertex[vertices.Count];
@@ -122,14 +123,18 @@ namespace Ragdoll
             var buffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Vertex, bufferSize);
 
             stagingBuffer.CopyFromCPU(bufferVertices);
-            stagingBuffer.CopyBuffers(mCommandList, buffer, bufferSize);
+            using (new GPUContextScope(mCommandList.Address))
+            {
+                stagingBuffer.CopyBuffers(mCommandList, buffer, bufferSize);
+            }
 
-            mStagingBuffers.Add(stagingBuffer);
+            mCommandList.PushStagingObject(stagingBuffer);
             return buffer;
         }
 
         IDeviceBuffer IModelImportContext.CreateIndexBuffer(IReadOnlyList<uint> indices)
         {
+            using var createEvent = OptickMacros.Event();
             BeginCommandList();
 
             var bufferIndices = indices.ToArray();
@@ -139,16 +144,18 @@ namespace Ragdoll
             var stagingBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Staging, bufferSize);
 
             stagingBuffer.CopyFromCPU(bufferIndices);
-            stagingBuffer.CopyBuffers(mCommandList, buffer, bufferSize);
+            using (new GPUContextScope(mCommandList.Address))
+            {
+                stagingBuffer.CopyBuffers(mCommandList, buffer, bufferSize);
+            }
 
-            mStagingBuffers.Add(stagingBuffer);
+            mCommandList.PushStagingObject(stagingBuffer);
             return buffer;
         }
 
         ITexture IModelImportContext.CreateTexture(ReadOnlySpan<byte> data, int width, int height, DeviceImageFormat format)
         {
-            BeginCommandList();
-
+            using var createEvent = OptickMacros.Event();
             var image = mContext.CreateDeviceImage(new DeviceImageInfo
             {
                 Size = new Size(width, height),
@@ -157,19 +164,25 @@ namespace Ragdoll
             });
 
             var stagingBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Staging, data.Length);
-            stagingBuffer.CopyFromCPU(data);
-
             var newLayout = image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
-            image.TransitionLayout(mCommandList, image.Layout, newLayout);
-            image.CopyFromBuffer(mCommandList, stagingBuffer, newLayout);
-            image.Layout = newLayout;
 
-            mStagingBuffers.Add(stagingBuffer);
+            stagingBuffer.CopyFromCPU(data);
+            BeginCommandList();
+
+            using (new GPUContextScope(mCommandList.Address))
+            {
+                image.TransitionLayout(mCommandList, image.Layout, newLayout);
+                image.CopyFromBuffer(mCommandList, stagingBuffer, newLayout);
+                image.Layout = newLayout;
+            }
+
+            mCommandList.PushStagingObject(stagingBuffer);
             return image.CreateTexture(true);
         }
 
         ITexture IModelImportContext.LoadTexture(string texturePath, string modelPath, bool loadedFromFile, ISamplerSettings samplerSettings)
         {
+            using var loadEvent = OptickMacros.Event();
             if (!loadedFromFile)
             {
                 throw new NotImplementedException();
@@ -189,20 +202,25 @@ namespace Ragdoll
             image.CopyPixelDataTo(pixelData);
 
             var stagingBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Staging, pixelData.Length * Marshal.SizeOf<Rgba32>());
-            stagingBuffer.CopyFromCPU(pixelData);
-
             var newLayout = deviceImage.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
-            BeginCommandList();
-            deviceImage.TransitionLayout(mCommandList, deviceImage.Layout, newLayout);
-            deviceImage.CopyFromBuffer(mCommandList, stagingBuffer, newLayout);
-            deviceImage.Layout = newLayout;
 
-            mStagingBuffers.Add(stagingBuffer);
+            stagingBuffer.CopyFromCPU(pixelData);
+            BeginCommandList();
+
+            using (new GPUContextScope(mCommandList.Address))
+            {
+                deviceImage.TransitionLayout(mCommandList, deviceImage.Layout, newLayout);
+                deviceImage.CopyFromBuffer(mCommandList, stagingBuffer, newLayout);
+                deviceImage.Layout = newLayout;
+            }
+
+            mCommandList.PushStagingObject(stagingBuffer);
             return deviceImage.CreateTexture(true);
         }
 
         void IModelImportContext.CopyBuffers()
         {
+            using var copyBuffersEvent = OptickMacros.Event();
             if (mCommandList is null)
             {
                 return;
@@ -212,9 +230,6 @@ namespace Ragdoll
 
             var queue = mContext.Device.GetQueue(CommandQueueFlags.Transfer);
             queue.Submit(mCommandList, true);
-
-            mStagingBuffers.ForEach(buffer => buffer.Dispose());
-            mStagingBuffers.Clear();
 
             mCommandList = null;
         }
@@ -227,6 +242,8 @@ namespace Ragdoll
         public int Load<T>(string path, string name, string bufferName) where T : class => Load(path, name, typeof(T), bufferName);
         public int Load(string path, string name, Type shader, string bufferName)
         {
+            using var loadEvent = OptickMacros.Event();
+
             var model = Model.Load(path, this);
             if (model is null)
             {
@@ -255,6 +272,8 @@ namespace Ragdoll
 
         public void SetEntityColliderScale(int model, Scene scene, ulong entity, Vector3 scale)
         {
+            using var setColliderScaleEvent = OptickMacros.Event();
+
             var modelData = mModels[model];
             if (modelData.PhysicsData.TryGetValue(entity, out ModelPhysicsData physicsData))
             {
@@ -268,6 +287,8 @@ namespace Ragdoll
 
         public void RemoveEntityCollider(int model, Scene scene, ulong entity)
         {
+            using var removeColliderEvent = OptickMacros.Event();
+
             var modelData = mModels[model];
             if (!modelData.PhysicsData.TryGetValue(entity, out ModelPhysicsData physicsData))
             {
@@ -282,6 +303,7 @@ namespace Ragdoll
 
         private static void CreateCompoundShape(Model model, Scene scene, Vector3 scale, out ModelPhysicsData physicsData)
         {
+            using var createShapeEvent = OptickMacros.Event();
             model.GetMeshData(out Vector3[] vertices, out int[] indices);
 
             var simulation = scene.Simulation;
@@ -314,6 +336,8 @@ namespace Ragdoll
 
         public int CreateBoneOffset(int model, ulong entity)
         {
+            using var createOffsetEvent = OptickMacros.Event();
+
             var data = mModels[model];
             int boneCount = data.Model.Skeleton?.BoneCount ?? 0;
             if (boneCount == 0)
@@ -337,6 +361,8 @@ namespace Ragdoll
 
         public void Clear()
         {
+            using var clearEvent = OptickMacros.Event();
+
             var appLayers = App.Instance.LayerView;
             var scene = appLayers.FindLayer<SceneLayer>()?.Scene;
 
@@ -371,7 +397,6 @@ namespace Ragdoll
         #endregion
 
         private ICommandList? mCommandList;
-        private readonly List<IDeviceBuffer> mStagingBuffers;
 
         private int mCurrentModelID;
         private readonly Dictionary<int, LoadedModel> mModels;

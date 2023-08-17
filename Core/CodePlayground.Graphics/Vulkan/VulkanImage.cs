@@ -5,6 +5,9 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using VMASharp;
 
+using GPUContextScope = Optick.NET.GPUContextScope;
+using OptickMacros = Optick.NET.OptickMacros;
+
 namespace CodePlayground.Graphics.Vulkan
 {
     public struct VulkanImageLayout
@@ -71,6 +74,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public VulkanImage(VulkanDevice device, VulkanMemoryAllocator allocator, VulkanImageCreateInfo info)
         {
+            using var constructorEvent = OptickMacros.Event();
+
             Usage = info.Usage;
             Size = info.Size;
             ImageFormat = info.Format;
@@ -176,6 +181,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void CreateImage()
         {
+            using var createEvent = OptickMacros.Event();
             var createInfo = VulkanUtilities.Init<ImageCreateInfo>() with
             {
                 Flags = ImageCreateFlags.None,
@@ -229,6 +235,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void CreateView()
         {
+            using var createEvent = OptickMacros.Event();
             var createInfo = VulkanUtilities.Init<ImageViewCreateInfo>() with
             {
                 Flags = ImageViewCreateFlags.None,
@@ -255,6 +262,7 @@ namespace CodePlayground.Graphics.Vulkan
         [MemberNotNull(nameof(mAllocation))]
         private void AllocateMemory()
         {
+            using var allocateEvent = OptickMacros.Event();
             mAllocation = mAllocator.AllocateMemoryForImage(mImage, new AllocationCreateInfo
             {
                 Usage = MemoryUsage.GPU_Only
@@ -266,6 +274,7 @@ namespace CodePlayground.Graphics.Vulkan
         object IDeviceImage.GetLayout(DeviceImageLayoutName name) => GetLayout(name);
         public static VulkanImageLayout GetLayout(DeviceImageLayoutName name)
         {
+            using var getLayoutEvent = OptickMacros.Event();
             return name switch
             {
                 DeviceImageLayoutName.Undefined => new VulkanImageLayout
@@ -310,6 +319,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void Load<T>(Image<T> image) where T : unmanaged, IPixel<T>
         {
+            using var loadEvent = OptickMacros.Event();
+
             var data = new T[Size.Width * Size.Height];
             image.CopyPixelDataTo(data);
 
@@ -318,6 +329,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void Load<T>(T[] data) where T : unmanaged
         {
+            using var loadEvent = OptickMacros.Event();
+
             using var stagingBuffer = new VulkanBuffer(mDevice, mAllocator, DeviceBufferUsage.Staging, data.Length * sizeof(T));
             fixed (T* ptr = data)
             {
@@ -326,11 +339,14 @@ namespace CodePlayground.Graphics.Vulkan
 
             var queue = mDevice.GetQueue(CommandQueueFlags.Transfer);
             var commandBuffer = queue.Release();
-
             commandBuffer.Begin();
-            CopyFromBuffer(commandBuffer, stagingBuffer, Layout);
-            commandBuffer.End();
 
+            using (new GPUContextScope(commandBuffer.Address))
+            {
+                CopyFromBuffer(commandBuffer, stagingBuffer, Layout);
+            }
+
+            commandBuffer.End();
             queue.Submit(commandBuffer, wait: true);
         }
 
@@ -346,6 +362,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void CopyFromBuffer(VulkanCommandBuffer commandBuffer, VulkanBuffer source, VulkanImageLayout currentLayout)
         {
+            using var copyEvent = OptickMacros.Event();
+            using var gpuCopyEvent = OptickMacros.GPUEvent("Buffer-to-image copy");
+
             var api = VulkanContext.API;
             var transferDst = GetLayout(DeviceImageLayoutName.CopyDestination);
             var transferSrc = GetLayout(DeviceImageLayoutName.CopySource);
@@ -440,6 +459,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void CopyToBuffer(VulkanCommandBuffer commandBuffer, VulkanBuffer destination, VulkanImageLayout currentLayout)
         {
+            using var copyEvent = OptickMacros.Event();
+            using var gpuCopyEvent = OptickMacros.GPUEvent("Image-to-buffer copy");
+
             var api = VulkanContext.API;
             var transferDst = GetLayout(DeviceImageLayoutName.CopyDestination);
 
@@ -481,6 +503,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void TransitionLayout(VulkanCommandBuffer commandBuffer, VulkanImageLayout sourceLayout, VulkanImageLayout destinationLayout, int baseMipLevel, int levelCount)
         {
+            using var transitionEvent = OptickMacros.Event();
+            using var barrierEvent = OptickMacros.GPUEvent("Image pipeline barrier");
+
             var barrier = VulkanUtilities.Init<ImageMemoryBarrier>() with
             {
                 SrcAccessMask = sourceLayout.AccessMask,

@@ -1,3 +1,4 @@
+using Optick.NET;
 using Silk.NET.Core;
 using Silk.NET.Core.Attributes;
 using Silk.NET.Core.Native;
@@ -122,6 +123,7 @@ namespace CodePlayground.Graphics.Vulkan
         internal unsafe delegate void StringArrayCallback(byte** result);
         internal unsafe static void CreateNativeStringArray(this IEnumerable<string> data, StringArrayCallback callback, StringMarshal? marshal = null)
         {
+            using var createStringArrayEvent = OptickMacros.Event();
             var usedMarshal = marshal ?? new StringMarshal();
 
             var list = new List<string>(data);
@@ -145,6 +147,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         private static string GetExtensionName<T>()
         {
+            using var getNameEvent = OptickMacros.Event();
+
             var extensionType = typeof(T);
             var extensionAttribute = extensionType.GetCustomAttribute<ExtensionAttribute>();
 
@@ -158,6 +162,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public static T GetInstanceExtension<T>(this Vk api, Instance instance) where T : NativeExtension<Vk>
         {
+            using var getExtensionEvent = OptickMacros.Event();
+
             string extensionName = GetExtensionName<T>();
             if (!api.TryGetInstanceExtension(instance, out T extension))
             {
@@ -169,6 +175,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public static T GetDeviceExtension<T>(this Vk api, Instance instance, Device device) where T : NativeExtension<Vk>
         {
+            using var getExtensionEvent = OptickMacros.Event();
+
             string extensionName = GetExtensionName<T>();
             if (!api.TryGetDeviceExtension(instance, device, out T extension))
             {
@@ -180,6 +188,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe static T? GetProcAddress<T>(Func<string, PfnVoidFunction> api) where T : Delegate
         {
+            using var getAddressEvent = OptickMacros.Event();
             const string prefix = "PFN_";
 
             var name = typeof(T).Name;
@@ -213,6 +222,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public static bool HasStencil(this Format format)
         {
+            using var hasStencilEvent = OptickMacros.Event();
+
             var formatName = format.ToString();
             return formatName.EndsWith(nameof(Format.S8Uint));
         }

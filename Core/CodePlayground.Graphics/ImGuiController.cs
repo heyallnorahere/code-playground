@@ -455,13 +455,16 @@ namespace CodePlayground.Graphics
             var transferList = transferQueue.Release();
             transferList.Begin();
 
-            foreach (var bufferData in frameData.Buffers.Values)
-            {
-                bufferData.StagingBuffer.CopyBuffers(transferList, bufferData.RenderBuffer, bufferData.Size);
-            }
-
             transferList.AddSemaphore(frameData.Semaphore, SemaphoreUsage.Signal);
             commandList.AddSemaphore(frameData.Semaphore, SemaphoreUsage.Wait);
+
+            using (new GPUContextScope(transferList.Address))
+            {
+                foreach (var bufferData in frameData.Buffers.Values)
+                {
+                    bufferData.StagingBuffer.CopyBuffers(transferList, bufferData.RenderBuffer, bufferData.Size);
+                }
+            }
 
             transferList.End();
             transferQueue.Submit(transferList);
@@ -514,6 +517,8 @@ namespace CodePlayground.Graphics
 
         private void UpdateProjectionBuffer()
         {
+            using var updateEvent = OptickMacros.Event();
+
             var math = new MatrixMath(mGraphicsContext);
             var projection = math.Orthographic(0f, mWindowWidth, mWindowHeight, 0f, -1f, 1f);
 

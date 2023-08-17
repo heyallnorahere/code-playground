@@ -1,4 +1,5 @@
-﻿using Silk.NET.Vulkan;
+﻿using Optick.NET;
+using Silk.NET.Vulkan;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,6 +18,8 @@ namespace CodePlayground.Graphics.Vulkan
     {
         internal unsafe VulkanFramebuffer(VulkanDevice device, VulkanFramebufferInfo info)
         {
+            using var constructorEvent = OptickMacros.Event();
+
             if (!info.Attachments.Any())
             {
                 throw new ArgumentException("No attachments provided!");
@@ -77,6 +80,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
+            using var disposeEvent = OptickMacros.Event();
+
             var api = VulkanContext.API;
             api.DestroyFramebuffer(mDevice.Device, mFramebuffer, null);
         }

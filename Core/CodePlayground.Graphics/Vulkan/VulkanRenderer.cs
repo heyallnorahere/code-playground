@@ -1,4 +1,5 @@
-﻿using Silk.NET.Vulkan;
+﻿using Optick.NET;
+using Silk.NET.Vulkan;
 using System;
 
 namespace CodePlayground.Graphics.Vulkan
@@ -15,8 +16,11 @@ namespace CodePlayground.Graphics.Vulkan
             SetScissor((VulkanCommandBuffer)commandList, index, x, y, width, height);
         }
 
-        public void SetScissor(VulkanCommandBuffer commandBuffer, int index, int x, int y, int width, int height)
+        public static void SetScissor(VulkanCommandBuffer commandBuffer, int index, int x, int y, int width, int height)
         {
+            using var setScissorEvent = OptickMacros.Event();
+            using var gpuSetScissorEvent = OptickMacros.GPUEvent("Set scissor");
+
             var api = VulkanContext.API;
             api.CmdSetScissor(commandBuffer.Buffer, (uint)index, 1, new Rect2D
             {
@@ -43,8 +47,11 @@ namespace CodePlayground.Graphics.Vulkan
             RenderIndexed((VulkanCommandBuffer)commandList, indexOffset, indexCount);
         }
 
-        public void RenderIndexed(VulkanCommandBuffer commandBuffer, int indexOffset, int indexCount)
+        public static void RenderIndexed(VulkanCommandBuffer commandBuffer, int indexOffset, int indexCount)
         {
+            using var renderEvent = OptickMacros.Event();
+            using var gpuRenderEvent = OptickMacros.GPUEvent("Render indexed");
+
             var api = VulkanContext.API;
             api.CmdDrawIndexed(commandBuffer.Buffer, (uint)indexCount, 1, (uint)indexOffset, 0, 0);
         }

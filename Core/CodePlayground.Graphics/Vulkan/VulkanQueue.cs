@@ -1,4 +1,5 @@
-﻿using Silk.NET.Vulkan;
+﻿using Optick.NET;
+using Silk.NET.Vulkan;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,6 +16,8 @@ namespace CodePlayground.Graphics.Vulkan
     {
         public VulkanCommandBuffer(CommandPool pool, Device device, CommandQueueFlags queueUsage)
         {
+            using var constructorEvent = OptickMacros.Event();
+
             mDisposed = false;
             mRecording = false;
 
@@ -58,6 +61,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private void Dispose(bool disposing)
         {
+            using var disposeEvent = OptickMacros.Event();
             if (disposing)
             {
                 Clean();
@@ -69,6 +73,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void Begin()
         {
+            using var beginEvent = OptickMacros.Event();
+
             var beginInfo = VulkanUtilities.Init<CommandBufferBeginInfo>();
             var api = VulkanContext.API;
             api.BeginCommandBuffer(mBuffer, beginInfo).Assert();
@@ -76,6 +82,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void End()
         {
+            using var endEvent = OptickMacros.Event();
+
             var api = VulkanContext.API;
             api.EndCommandBuffer(mBuffer).Assert();
         }
@@ -92,6 +100,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void AddSemaphore(VulkanSemaphore semaphore, SemaphoreUsage usage)
         {
+            using var addSemaphoreEvent = OptickMacros.Event();
             mSemaphores.Add(new VulkanSemaphoreInfo
             {
                 Semaphore = semaphore,
@@ -106,6 +115,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         internal void Reset()
         {
+            using var resetEvent = OptickMacros.Event();
+
             var api = VulkanContext.API;
             api.ResetCommandBuffer(mBuffer, CommandBufferResetFlags.None);
 
@@ -115,6 +126,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private void Clean()
         {
+            using var cleanEvent = OptickMacros.Event();
             if (!mStagingObjects.Any())
             {
                 return;
@@ -167,6 +179,8 @@ namespace CodePlayground.Graphics.Vulkan
     {
         internal unsafe VulkanQueue(int queueFamily, CommandQueueFlags usage, VulkanDevice device)
         {
+            using var constructorEvent = OptickMacros.Event();
+
             var api = VulkanContext.API;
             mDevice = device.Device;
             mQueue = api.GetDeviceQueue(mDevice, (uint)queueFamily, 0);
@@ -178,15 +192,18 @@ namespace CodePlayground.Graphics.Vulkan
             mBufferCap = -1;
             mDisposed = false;
 
-            var createInfo = VulkanUtilities.Init<CommandPoolCreateInfo>() with
+            using (OptickMacros.Event("Command pool creation"))
             {
-                Flags = CommandPoolCreateFlags.TransientBit | CommandPoolCreateFlags.ResetCommandBufferBit,
-                QueueFamilyIndex = (uint)queueFamily
-            };
+                var createInfo = VulkanUtilities.Init<CommandPoolCreateInfo>() with
+                {
+                    Flags = CommandPoolCreateFlags.TransientBit | CommandPoolCreateFlags.ResetCommandBufferBit,
+                    QueueFamilyIndex = (uint)queueFamily
+                };
 
-            fixed (CommandPool* ptr = &mPool)
-            {
-                api.CreateCommandPool(mDevice, &createInfo, null, ptr).Assert();
+                fixed (CommandPool* ptr = &mPool)
+                {
+                    api.CreateCommandPool(mDevice, &createInfo, null, ptr).Assert();
+                }
             }
         }
 
@@ -212,6 +229,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
+            using var disposeEvent = OptickMacros.Event();
             ClearCache();
 
             var api = VulkanContext.API;
@@ -363,6 +381,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void ClearCache()
         {
+            using var clearEvent = OptickMacros.Event();
             Wait();
 
             var api = VulkanContext.API;

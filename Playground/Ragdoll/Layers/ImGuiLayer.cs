@@ -32,10 +32,14 @@ namespace Ragdoll.Layers
             var device = mGraphicsContext.Device;
             var queue = device.GetQueue(CommandQueueFlags.Transfer);
             var commandList = queue.Release();
-            commandList.Begin();
 
-            mController.LoadFontAtlas(commandList);
+            commandList.Begin();
             commandList.AddSemaphore(mSemaphore, SemaphoreUsage.Signal);
+
+            using (new GPUContextScope(commandList.Address))
+            {
+                mController.LoadFontAtlas(commandList);
+            }
 
             commandList.End();
             queue.Submit(commandList);

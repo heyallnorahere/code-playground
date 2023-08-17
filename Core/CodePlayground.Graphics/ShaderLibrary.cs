@@ -1,4 +1,5 @@
 using CodePlayground.Graphics.Shaders;
+using Optick.NET;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -35,6 +36,8 @@ namespace CodePlayground.Graphics
         public static string GetShaderID<T>() where T : class => GetShaderID(typeof(T));
         public static string GetShaderID(Type type)
         {
+            using var getIdEvent = OptickMacros.Event();
+
             var attribute = type.GetCustomAttribute<CompiledShaderAttribute>();
             if (attribute is null)
             {
@@ -46,6 +49,8 @@ namespace CodePlayground.Graphics
 
         private void Load(Assembly assembly)
         {
+            using var loadEvent = OptickMacros.Event();
+
             using var compiler = mContext.CreateCompiler();
             var transpiler = ShaderTranspiler.Create(compiler.PreferredLanguage);
 
@@ -115,6 +120,8 @@ namespace CodePlayground.Graphics
 
         public IReadOnlyDictionary<ShaderStage, IShader> GetStages(string prefix)
         {
+            using var getStagesEvent = OptickMacros.Event();
+
             var stages = new Dictionary<ShaderStage, IShader>();
             foreach (var id in mShaders.Keys)
             {
@@ -140,6 +147,8 @@ namespace CodePlayground.Graphics
 
         public IReflectionView CreateReflectionView(string prefix)
         {
+            using var createViewEvent = OptickMacros.Event();
+
             var stages = GetStages(prefix);
             if (stages.Count == 0)
             {
@@ -172,6 +181,8 @@ namespace CodePlayground.Graphics
 
         public void LoadPipeline(string prefix, IPipeline pipeline)
         {
+            using var loadEvent = OptickMacros.Event();
+
             var stages = GetStages(prefix);
             if (stages.Count == 0)
             {

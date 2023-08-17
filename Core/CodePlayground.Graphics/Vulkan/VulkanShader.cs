@@ -105,20 +105,24 @@ namespace CodePlayground.Graphics.Vulkan
             };
 
             spvc_context* context;
-            spvc_context_create(&context).Assert();
-
             spvc_parsed_ir* ir;
-            fixed (byte* spirv = mSPIRV)
+            spvc_compiler* compiler;
+            spvc_resources* resources;
+
+            using (OptickMacros.Event("Shader SPIRV reflection"))
             {
-                spvc_context_parse_spirv(context, (SpvId*)spirv, (nuint)(mSPIRV.Length / sizeof(SpvId)), &ir).Assert();
+                spvc_context_create(&context).Assert();
+
+                fixed (byte* spirv = mSPIRV)
+                {
+                    spvc_context_parse_spirv(context, (SpvId*)spirv, (nuint)(mSPIRV.Length / sizeof(SpvId)), &ir).Assert();
+                }
+
+                spvc_context_create_compiler(context, spvc_backend.SPVC_BACKEND_GLSL, ir, spvc_capture_mode.SPVC_CAPTURE_MODE_COPY, &compiler).Assert();
+                spvc_compiler_create_shader_resources(compiler, &resources).Assert();
             }
 
-            spvc_compiler* compiler;
-            spvc_context_create_compiler(context, spvc_backend.SPVC_BACKEND_GLSL, ir, spvc_capture_mode.SPVC_CAPTURE_MODE_COPY, &compiler).Assert();
-
-            spvc_resources* resources;
-            spvc_compiler_create_shader_resources(compiler, &resources).Assert();
-
+            using (OptickMacros.Event("Shader push constant buffer reflection"))
             {
                 spvc_reflected_resource* resourceList;
                 nuint resourceCount;
@@ -692,6 +696,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public byte[] Compile(string source, string path, ShaderLanguage language, ShaderStage stage, string entrypoint)
         {
+            using var compileEvent = OptickMacros.Event();
             lock (mCompiler)
             {
                 mCompiler.Options.SourceLanguage = language switch

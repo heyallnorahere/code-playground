@@ -24,6 +24,8 @@ namespace Ragdoll
 
         public Renderer(IGraphicsContext context)
         {
+            using var constructorEvent = OptickMacros.Event();
+
             //! does NOT own context
             mContext = context;
             mRenderer = mContext.CreateRenderer();
@@ -55,6 +57,7 @@ namespace Ragdoll
 
         private void Dispose(bool disposing)
         {
+            using var disposeEvent = OptickMacros.Event();
             if (disposing)
             {
                 mLibrary.Dispose();
@@ -63,6 +66,8 @@ namespace Ragdoll
 
         public void BeginFrame(ICommandList commandList)
         {
+            using var beginFrameEvent = OptickMacros.Event();
+
             if (mFrameInfo.RenderInfo is not null)
             {
                 throw new InvalidOperationException("Cannot start a new frame while rendering!");
@@ -84,6 +89,8 @@ namespace Ragdoll
 
         public void BeginRender(IRenderTarget renderTarget, IFramebuffer framebuffer, Vector4 clearColor)
         {
+            using var beginRenderEvent = OptickMacros.Event();
+
             VerifyFrame();
             if (mFrameInfo.RenderInfo is not null)
             {
@@ -100,6 +107,8 @@ namespace Ragdoll
 
         public void EndRender()
         {
+            using var endRenderEvent = OptickMacros.Event();
+
             VerifyFrame();
             if (mFrameInfo.RenderInfo is null)
             {

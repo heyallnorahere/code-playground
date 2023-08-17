@@ -2,6 +2,8 @@ using Silk.NET.Vulkan;
 using System;
 using System.Collections.Generic;
 
+using OptickMacros = Optick.NET.OptickMacros;
+
 namespace CodePlayground.Graphics.Vulkan
 {
     internal struct BoundPipelineData
@@ -25,6 +27,8 @@ namespace CodePlayground.Graphics.Vulkan
     {
         public VulkanTexture(VulkanImage image, bool ownsImage, ISamplerSettings? samplerSettings)
         {
+            using var constructorEvent = OptickMacros.Event();
+
             mDisposed = false;
             mDevice = image.Device;
             mBoundPipelines = new Dictionary<ulong, BoundPipelineData>();
@@ -66,6 +70,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
+            using var disposeEvent = OptickMacros.Event();
+
             foreach (var pipelineData in mBoundPipelines.Values)
             {
                 foreach (nint id in pipelineData.DynamicIDs)
@@ -92,6 +98,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private void Rebind()
         {
+            using var rebindEvent = OptickMacros.Event();
             foreach (var pipelineId in mBoundPipelines.Keys)
             {
                 var pipelineData = mBoundPipelines[pipelineId];
@@ -119,12 +126,15 @@ namespace CodePlayground.Graphics.Vulkan
 
         private void OnLayoutChanged(VulkanImageLayout layout)
         {
+            using var changedEvent = OptickMacros.Event();
+
             mImageInfo.ImageLayout = layout.Layout;
             Rebind();
         }
 
         public unsafe void InvalidateSampler()
         {
+            using var invalidateEvent = OptickMacros.Event();
             if (mImageInfo.Sampler.Handle != 0)
             {
                 var api = VulkanContext.API;
@@ -182,6 +192,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         private void AddBindingIndex(int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
         {
+            using var addBindingIndexEvent = OptickMacros.Event();
+
             ulong id = pipeline.ID;
             if (!mBoundPipelines.TryGetValue(id, out BoundPipelineData pipelineData))
             {
@@ -220,6 +232,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
         {
+            using var bindEvent = OptickMacros.Event();
             AddBindingIndex(set, binding, index, pipeline, dynamicId);
 
             fixed (DescriptorImageInfo* imageInfo = &mImageInfo)
@@ -243,8 +256,10 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        public void Unbind(int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
+        void IBindableVulkanResource.Unbind(int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
         {
+            using var unbindEvent = OptickMacros.Event();
+
             ulong id = pipeline.ID;
             if (!mBoundPipelines.TryGetValue(id, out BoundPipelineData pipelineData))
             {

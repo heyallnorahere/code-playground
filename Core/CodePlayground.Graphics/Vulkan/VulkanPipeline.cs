@@ -1,4 +1,5 @@
-﻿using Silk.NET.Vulkan;
+﻿using Optick.NET;
+using Silk.NET.Vulkan;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -90,6 +91,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe VulkanPipeline(VulkanContext context, PipelineDescription description)
         {
+            using var constructorEvent = OptickMacros.Event();
+
             mDesc = description;
             mReflectionView = null;
             mPushConstantBufferOffsets = new Dictionary<string, int>();
@@ -105,33 +108,36 @@ namespace CodePlayground.Graphics.Vulkan
             mLoaded = false;
             mDisposed = false;
 
-            const uint maxSets = 50; // placeholder value
-            const uint descriptorTypeCount = 10; // see VkDescriptorType
-
-            var poolSizes = new DescriptorPoolSize[descriptorTypeCount];
-            for (uint i = 0; i < descriptorTypeCount; i++)
+            using (OptickMacros.Event("Descriptor pool creation"))
             {
-                poolSizes[i] = new DescriptorPoolSize
-                {
-                    Type = (DescriptorType)i,
-                    DescriptorCount = maxSets * 16 // just to be safe
-                };
-            }
+                const uint maxSets = 50; // placeholder value
+                const uint descriptorTypeCount = 10; // see VkDescriptorType
 
-            fixed (DescriptorPoolSize* poolSizePtr = poolSizes)
-            {
-                var createInfo = VulkanUtilities.Init<DescriptorPoolCreateInfo>() with
+                var poolSizes = new DescriptorPoolSize[descriptorTypeCount];
+                for (uint i = 0; i < descriptorTypeCount; i++)
                 {
-                    Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
-                    MaxSets = maxSets,
-                    PoolSizeCount = descriptorTypeCount,
-                    PPoolSizes = poolSizePtr
-                };
+                    poolSizes[i] = new DescriptorPoolSize
+                    {
+                        Type = (DescriptorType)i,
+                        DescriptorCount = maxSets * 16 // just to be safe
+                    };
+                }
 
-                fixed (DescriptorPool* pool = &mDescriptorPool)
+                fixed (DescriptorPoolSize* poolSizePtr = poolSizes)
                 {
-                    var api = VulkanContext.API;
-                    api.CreateDescriptorPool(mDevice.Device, &createInfo, null, pool).Assert();
+                    var createInfo = VulkanUtilities.Init<DescriptorPoolCreateInfo>() with
+                    {
+                        Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
+                        MaxSets = maxSets,
+                        PoolSizeCount = descriptorTypeCount,
+                        PPoolSizes = poolSizePtr
+                    };
+
+                    fixed (DescriptorPool* pool = &mDescriptorPool)
+                    {
+                        var api = VulkanContext.API;
+                        api.CreateDescriptorPool(mDevice.Device, &createInfo, null, pool).Assert();
+                    }
                 }
             }
         }
@@ -158,6 +164,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
+            using var disposeEvent = OptickMacros.Event();
+
             if (disposing)
             {
                 foreach (int set in mBoundResources.Keys)
@@ -189,6 +197,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Cleanup()
         {
+            using var cleanupEvent = OptickMacros.Event();
             if (!mLoaded)
             {
                 return;
@@ -235,6 +244,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void Bind(VulkanCommandBuffer commandBuffer, int frame)
         {
+            using var bindEvent = OptickMacros.Event();
+            using var gpuBindEvent = OptickMacros.GPUEvent("Bind pipeline");
+
             AssertLoaded();
 
             var api = VulkanContext.API;
@@ -247,15 +259,18 @@ namespace CodePlayground.Graphics.Vulkan
             };
 
             api.CmdBindPipeline(buffer, bindPoint, mPipeline);
-            foreach (int set in mDescriptorSets.Keys)
+            using (OptickMacros.GPUEvent("Bind pipeline descriptor sets"))
             {
-                if (!mBoundResources.ContainsKey(set))
+                foreach (int set in mDescriptorSets.Keys)
                 {
-                    continue;
-                }
+                    if (!mBoundResources.ContainsKey(set))
+                    {
+                        continue;
+                    }
 
-                var setData = mDescriptorSets[set];
-                api.CmdBindDescriptorSets(buffer, bindPoint, mLayout, (uint)set, 1, setData.Sets[frame], 0, 0);
+                    var setData = mDescriptorSets[set];
+                    api.CmdBindDescriptorSets(buffer, bindPoint, mLayout, (uint)set, 1, setData.Sets[frame], 0, 0);
+                }
             }
         }
 
@@ -271,6 +286,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void Bind(VulkanCommandBuffer commandBuffer, nint id)
         {
+            using var bindEvent = OptickMacros.Event();
+            using var gpuBindEvent = OptickMacros.Event("Bind pipeline dynamic ID descriptor set");
+
             if (!mDynamicIDs.TryGetValue(id, out DynamicID data))
             {
                 throw new ArgumentException($"Invalid ID: 0x{id:X}");
@@ -299,6 +317,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void PushConstants(VulkanCommandBuffer commandBuffer, BufferMapCallback callback)
         {
+            using var pushConstantsEvent = OptickMacros.Event();
+            using var gpuPushConstantsEvent = OptickMacros.GPUEvent("Push constants");
+
             mReflectionView!.ProcessPushConstantBuffers(out int size, out ShaderStageFlags stages);
 
             var buffer = new byte[size];
@@ -315,8 +336,9 @@ namespace CodePlayground.Graphics.Vulkan
         bool IPipeline.Bind(IDeviceBuffer buffer, string name, int index) => BindObject(buffer, name, index, Bind);
         bool IPipeline.Bind(ITexture texture, string name, int index) => BindObject(texture, name, index, Bind);
 
-        private T BindObject<T>(object passedObject, string name, int index, Func<IBindableVulkanResource, string, int, T> callback)
+        private static T BindObject<T>(object passedObject, string name, int index, Func<IBindableVulkanResource, string, int, T> callback)
         {
+            using var bindEvent = OptickMacros.Event();
             if (passedObject is IBindableVulkanResource resource)
             {
                 return callback.Invoke(resource, name, index);
@@ -329,6 +351,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public bool Bind(IBindableVulkanResource resource, string name, int index)
         {
+            using var bindEvent = OptickMacros.Event();
+
             AssertLoaded();
             if (!mReflectionView!.FindResource(name, out _, out int set, out int binding))
             {
@@ -341,6 +365,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private void BindResource(int set, int binding, int index, IBindableVulkanResource resource)
         {
+            using var bindResourceEvent = OptickMacros.Event();
             if (!mBoundResources.TryGetValue(set, out DescriptorSetPipelineResources setData))
             {
                 mBoundResources.Add(set, setData = new DescriptorSetPipelineResources
@@ -372,6 +397,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void Bind(IBindableVulkanResource resource, int set, int binding, int index)
         {
+            using var bindEvent = OptickMacros.Event();
+
             AssertLoaded();
             BindResource(set, binding, index, resource);
 
@@ -384,6 +411,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe DescriptorSet AllocateDescriptorSet(int set)
         {
+            using var allocateEvent = OptickMacros.Event();
             if (!mDescriptorSets.TryGetValue(set, out VulkanPipelineDescriptorSet setData))
             {
                 return default;
@@ -404,6 +432,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public nint CreateDynamicID(IBindableVulkanResource resource, string name, int index)
         {
+            using var createEvent = OptickMacros.Event();
             foreach (nint existingId in mDynamicIDs.Keys)
             {
                 var existingData = mDynamicIDs[existingId];
@@ -442,6 +471,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void UpdateDynamicID(nint id)
         {
+            using var updateEvent = OptickMacros.Event();
             if (!mDynamicIDs.ContainsKey(id))
             {
                 throw new ArgumentException($"No such ID: 0x{id:X}");
@@ -453,6 +483,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void DestroyDynamicID(nint id)
         {
+            using var destroyEvent = OptickMacros.Event();
             if (!mDynamicIDs.ContainsKey(id))
             {
                 return;
@@ -472,6 +503,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void Load(IReadOnlyDictionary<ShaderStage, IShader> shaders)
         {
+            using var loadEvent = OptickMacros.Event();
             Cleanup();
 
             var filteredStages = shaders.Keys.Where(stage => mDesc.Type switch
@@ -511,136 +543,148 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void CreateDescriptorSets()
         {
+            using var createEvent = OptickMacros.Event();
+
             var layoutBindings = new Dictionary<int, List<DescriptorSetLayoutBinding>>();
             var reflectionData = mReflectionView!.ReflectionData;
 
-            foreach (var stage in reflectionData.Keys)
+            using (OptickMacros.Event("Parse reflection data"))
             {
-                var stageReflectionData = reflectionData[stage];
-                foreach (int set in stageReflectionData.Resources.Keys)
+                foreach (var stage in reflectionData.Keys)
                 {
-                    if (!layoutBindings.ContainsKey(set))
+                    var stageReflectionData = reflectionData[stage];
+                    foreach (int set in stageReflectionData.Resources.Keys)
                     {
-                        layoutBindings.Add(set, new List<DescriptorSetLayoutBinding>());
-                    }
-
-                    var bindingList = layoutBindings[set];
-                    var setBindings = stageReflectionData.Resources[set];
-
-                    foreach (int binding in setBindings.Keys)
-                    {
-                        var resource = setBindings[binding];
-                        var typeData = stageReflectionData.Types[resource.Type];
-
-                        uint descriptorCount = 1;
-                        if (typeData.ArrayDimensions is not null)
+                        if (!layoutBindings.ContainsKey(set))
                         {
-                            foreach (var dimension in typeData.ArrayDimensions)
+                            layoutBindings.Add(set, new List<DescriptorSetLayoutBinding>());
+                        }
+
+                        var bindingList = layoutBindings[set];
+                        var setBindings = stageReflectionData.Resources[set];
+
+                        foreach (int binding in setBindings.Keys)
+                        {
+                            var resource = setBindings[binding];
+                            var typeData = stageReflectionData.Types[resource.Type];
+
+                            uint descriptorCount = 1;
+                            if (typeData.ArrayDimensions is not null)
                             {
-                                descriptorCount *= (uint)dimension;
+                                foreach (var dimension in typeData.ArrayDimensions)
+                                {
+                                    descriptorCount *= (uint)dimension;
+                                }
+                            }
+
+                            var bindingData = VulkanUtilities.Init<DescriptorSetLayoutBinding>() with
+                            {
+                                Binding = (uint)binding,
+                                DescriptorType = resource.ResourceType switch
+                                {
+                                    ShaderResourceTypeFlags.Image | ShaderResourceTypeFlags.Sampler => DescriptorType.CombinedImageSampler,
+                                    ShaderResourceTypeFlags.Image => DescriptorType.SampledImage,
+                                    ShaderResourceTypeFlags.Sampler => DescriptorType.Sampler,
+                                    ShaderResourceTypeFlags.UniformBuffer => DescriptorType.UniformBuffer,
+                                    ShaderResourceTypeFlags.StorageBuffer => DescriptorType.StorageBuffer,
+                                    _ => throw new InvalidOperationException($"Flag combination not implemented: {resource.ResourceType}")
+                                },
+                                DescriptorCount = descriptorCount,
+                                StageFlags = ShaderStageFlags.All
+                            };
+
+                            int existingIndex = bindingList.FindIndex(desc => desc.Binding == binding);
+                            if (existingIndex < 0)
+                            {
+                                bindingList.Add(bindingData);
+                            }
+                            else if (bindingList[existingIndex].DescriptorType != bindingData.DescriptorType)
+                            {
+                                throw new InvalidOperationException($"Duplicate resource in set {set} binding {binding}!");
                             }
                         }
+                    }
+                }
+            }
 
-                        var bindingData = VulkanUtilities.Init<DescriptorSetLayoutBinding>() with
+            using (OptickMacros.Event("Allocate main sets"))
+            {
+                mDescriptorSets.Clear();
+                foreach (int set in layoutBindings.Keys)
+                {
+                    var setData = new VulkanPipelineDescriptorSet
+                    {
+                        Sets = new DescriptorSet[mDesc.FrameCount]
+                    };
+
+                    var api = VulkanContext.API;
+                    var bindings = layoutBindings[set].ToArray();
+                    fixed (DescriptorSetLayoutBinding* bindingPtr = bindings)
+                    {
+                        var createInfo = VulkanUtilities.Init<DescriptorSetLayoutCreateInfo>() with
                         {
-                            Binding = (uint)binding,
-                            DescriptorType = resource.ResourceType switch
-                            {
-                                ShaderResourceTypeFlags.Image | ShaderResourceTypeFlags.Sampler => DescriptorType.CombinedImageSampler,
-                                ShaderResourceTypeFlags.Image => DescriptorType.SampledImage,
-                                ShaderResourceTypeFlags.Sampler => DescriptorType.Sampler,
-                                ShaderResourceTypeFlags.UniformBuffer => DescriptorType.UniformBuffer,
-                                ShaderResourceTypeFlags.StorageBuffer => DescriptorType.StorageBuffer,
-                                _ => throw new InvalidOperationException($"Flag combination not implemented: {resource.ResourceType}")
-                            },
-                            DescriptorCount = descriptorCount,
-                            StageFlags = ShaderStageFlags.All
+                            Flags = DescriptorSetLayoutCreateFlags.None,
+                            BindingCount = (uint)bindings.Length,
+                            PBindings = bindingPtr
                         };
 
-                        int existingIndex = bindingList.FindIndex(desc => desc.Binding == binding);
-                        if (existingIndex < 0)
+                        api.CreateDescriptorSetLayout(mDevice.Device, &createInfo, null, &setData.Layout).Assert();
+                    }
+
+                    var layouts = new DescriptorSetLayout[mDesc.FrameCount];
+                    Array.Fill(layouts, setData.Layout);
+
+                    fixed (DescriptorSetLayout* layoutPtr = layouts)
+                    {
+                        var allocInfo = VulkanUtilities.Init<DescriptorSetAllocateInfo>() with
                         {
-                            bindingList.Add(bindingData);
-                        }
-                        else if (bindingList[existingIndex].DescriptorType != bindingData.DescriptorType)
+                            DescriptorPool = mDescriptorPool,
+                            DescriptorSetCount = (uint)mDesc.FrameCount,
+                            PSetLayouts = layoutPtr
+                        };
+
+                        fixed (DescriptorSet* setPtr = setData.Sets)
                         {
-                            throw new InvalidOperationException($"Duplicate resource in set {set} binding {binding}!");
+                            api.AllocateDescriptorSets(mDevice.Device, &allocInfo, setPtr).Assert();
                         }
                     }
+
+                    mDescriptorSets.Add(set, setData);
                 }
             }
 
-            mDescriptorSets.Clear();
-            foreach (int set in layoutBindings.Keys)
+            using (OptickMacros.Event("Reallocate dynamic ID sets"))
             {
-                var setData = new VulkanPipelineDescriptorSet
+                var destroyedIds = new HashSet<nint>();
+                foreach (nint id in mDynamicIDs.Keys)
                 {
-                    Sets = new DescriptorSet[mDesc.FrameCount]
-                };
+                    var data = mDynamicIDs[id];
 
-                var api = VulkanContext.API;
-                var bindings = layoutBindings[set].ToArray();
-                fixed (DescriptorSetLayoutBinding* bindingPtr = bindings)
-                {
-                    var createInfo = VulkanUtilities.Init<DescriptorSetLayoutCreateInfo>() with
+                    var set = AllocateDescriptorSet(data.Set);
+                    if (set.Handle == 0)
                     {
-                        Flags = DescriptorSetLayoutCreateFlags.None,
-                        BindingCount = (uint)bindings.Length,
-                        PBindings = bindingPtr
-                    };
-
-                    api.CreateDescriptorSetLayout(mDevice.Device, &createInfo, null, &setData.Layout).Assert();
-                }
-
-                var layouts = new DescriptorSetLayout[mDesc.FrameCount];
-                Array.Fill(layouts, setData.Layout);
-
-                fixed (DescriptorSetLayout* layoutPtr = layouts)
-                {
-                    var allocInfo = VulkanUtilities.Init<DescriptorSetAllocateInfo>() with
-                    {
-                        DescriptorPool = mDescriptorPool,
-                        DescriptorSetCount = (uint)mDesc.FrameCount,
-                        PSetLayouts = layoutPtr
-                    };
-
-                    fixed (DescriptorSet* setPtr = setData.Sets)
-                    {
-                        api.AllocateDescriptorSets(mDevice.Device, &allocInfo, setPtr).Assert();
+                        // just destroy the ID and move on
+                        destroyedIds.Add(id);
+                        data.DescriptorSet = default;
                     }
+                    else
+                    {
+                        data.DescriptorSet = set;
+                    }
+
+                    mDynamicIDs[id] = data;
                 }
 
-                mDescriptorSets.Add(set, setData);
-            }
-
-            var destroyedIds = new HashSet<nint>();
-            foreach (nint id in mDynamicIDs.Keys)
-            {
-                var data = mDynamicIDs[id];
-
-                var set = AllocateDescriptorSet(data.Set);
-                if (set.Handle == 0)
+                foreach (nint id in destroyedIds)
                 {
-                    // just destroy the ID and move on
-                    destroyedIds.Add(id);
-                    data.DescriptorSet = default;
+                    DestroyDynamicID(id);
                 }
-                else
-                {
-                    data.DescriptorSet = set;
-                }
-
-                mDynamicIDs[id] = data;
-            }
-
-            foreach (nint id in destroyedIds)
-            {
-                DestroyDynamicID(id);
             }
         }
 
         private unsafe void CreatePipelineLayout()
         {
+            using var createEvent = OptickMacros.Event();
             mPushConstantBufferOffsets.Clear();
 
             var setIndices = mDescriptorSets.Keys.ToList();
@@ -652,40 +696,43 @@ namespace CodePlayground.Graphics.Vulkan
                 setLayouts[set] = mDescriptorSets[set].Layout;
             }
 
-            int currentOffset = 0;
             var pushConstantRanges = new Dictionary<string, PushConstantRange>();
-
-            var reflectionData = mReflectionView!.ReflectionData;
-            foreach (var stage in reflectionData.Keys)
+            using (OptickMacros.Event("Process push constant ranges"))
             {
-                var data = reflectionData[stage];
-                foreach (var pushConstantBuffer in data.PushConstantBuffers)
+                int currentOffset = 0;
+                var reflectionData = mReflectionView!.ReflectionData;
+
+                foreach (var stage in reflectionData.Keys)
                 {
-                    var name = pushConstantBuffer.Name;
-                    var typeData = data.Types[pushConstantBuffer.Type];
-                    var size = typeData.TotalSize;
-
-                    if (!pushConstantRanges.ContainsKey(name))
+                    var data = reflectionData[stage];
+                    foreach (var pushConstantBuffer in data.PushConstantBuffers)
                     {
-                        pushConstantRanges.Add(name, new PushConstantRange
+                        var name = pushConstantBuffer.Name;
+                        var typeData = data.Types[pushConstantBuffer.Type];
+                        var size = typeData.TotalSize;
+
+                        if (!pushConstantRanges.ContainsKey(name))
                         {
-                            StageFlags = ConvertStage(stage),
-                            Offset = (uint)currentOffset,
-                            Size = (uint)size
-                        });
+                            pushConstantRanges.Add(name, new PushConstantRange
+                            {
+                                StageFlags = ConvertStage(stage),
+                                Offset = (uint)currentOffset,
+                                Size = (uint)size
+                            });
 
-                        mPushConstantBufferOffsets.Add(name, currentOffset);
-                        currentOffset += size;
-                    }
-                    else if (pushConstantRanges[name].Size != (uint)size)
-                    {
-                        throw new InvalidOperationException("Mismatching push constant buffer sizes!");
-                    }
-                    else
-                    {
-                        var range = pushConstantRanges[name];
-                        range.StageFlags |= ConvertStage(stage);
-                        pushConstantRanges[name] = range;
+                            mPushConstantBufferOffsets.Add(name, currentOffset);
+                            currentOffset += size;
+                        }
+                        else if (pushConstantRanges[name].Size != (uint)size)
+                        {
+                            throw new InvalidOperationException("Mismatching push constant buffer sizes!");
+                        }
+                        else
+                        {
+                            var range = pushConstantRanges[name];
+                            range.StageFlags |= ConvertStage(stage);
+                            pushConstantRanges[name] = range;
+                        }
                     }
                 }
             }
@@ -715,6 +762,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private static Format GetAttributeFormat(ReflectedShaderType attributeType)
         {
+            using var getFormatEvent = OptickMacros.Event();
             if (attributeType.Columns != 1 || (attributeType.ArrayDimensions?.Any() ?? false))
             {
                 throw new InvalidOperationException("Every vertex attribute must be a single vector!");
@@ -741,6 +789,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void CreateGraphicsPipeline(IReadOnlyDictionary<ShaderStage, IShader> shaders)
         {
+            using var createEvent = OptickMacros.Event();
             if (!shaders.ContainsKey(ShaderStage.Vertex) || !shaders.ContainsKey(ShaderStage.Fragment))
             {
                 throw new ArgumentException("A graphics pipeline must consist of both a vertex & fragment shader!");
@@ -755,22 +804,25 @@ namespace CodePlayground.Graphics.Vulkan
             var shaderStageInfo = new PipelineShaderStageCreateInfo[stages.Count];
 
             using var marshal = new StringMarshal();
-            for (int i = 0; i < stages.Count; i++)
+            using (OptickMacros.Event("Pipeline shader modules"))
             {
-                var stage = stages[i];
-                if (shaders[stage] is VulkanShader shader)
+                for (int i = 0; i < stages.Count; i++)
                 {
-                    shaderStageInfo[i] = VulkanUtilities.Init<PipelineShaderStageCreateInfo>() with
+                    var stage = stages[i];
+                    if (shaders[stage] is VulkanShader shader)
                     {
-                        Flags = PipelineShaderStageCreateFlags.None,
-                        Stage = ConvertStage(stage),
-                        Module = shader.Module,
-                        PName = marshal.MarshalString(shader.Entrypoint)
-                    };
-                }
-                else
-                {
-                    throw new ArgumentException($"The passed {stage.ToString().ToLower()} shader is not a Vulkan shader!");
+                        shaderStageInfo[i] = VulkanUtilities.Init<PipelineShaderStageCreateInfo>() with
+                        {
+                            Flags = PipelineShaderStageCreateFlags.None,
+                            Stage = ConvertStage(stage),
+                            Module = shader.Module,
+                            PName = marshal.MarshalString(shader.Entrypoint)
+                        };
+                    }
+                    else
+                    {
+                        throw new ArgumentException($"The passed {stage.ToString().ToLower()} shader is not a Vulkan shader!");
+                    }
                 }
             }
 
@@ -783,20 +835,23 @@ namespace CodePlayground.Graphics.Vulkan
             int vertexSize = 0;
             var attributes = new VertexInputAttributeDescription[inputs.Count];
 
-            for (int i = 0; i < inputs.Count; i++)
+            using (OptickMacros.Event("Pipeline vertex input attributes"))
             {
-                var input = inputs[i];
-                var type = vertexReflectionData.Types[input.Type];
-
-                attributes[i] = VulkanUtilities.Init<VertexInputAttributeDescription>() with
+                for (int i = 0; i < inputs.Count; i++)
                 {
-                    Location = (uint)input.Location,
-                    Binding = 0,
-                    Format = GetAttributeFormat(type),
-                    Offset = (uint)vertexSize
-                };
+                    var input = inputs[i];
+                    var type = vertexReflectionData.Types[input.Type];
 
-                vertexSize += type.TotalSize;
+                    attributes[i] = VulkanUtilities.Init<VertexInputAttributeDescription>() with
+                    {
+                        Location = (uint)input.Location,
+                        Binding = 0,
+                        Format = GetAttributeFormat(type),
+                        Offset = (uint)vertexSize
+                    };
+
+                    vertexSize += type.TotalSize;
+                }
             }
 
             var spec = mDesc.Specification;
@@ -887,44 +942,47 @@ namespace CodePlayground.Graphics.Vulkan
                             ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit
                         };
 
-                        if (blendMode != PipelineBlendMode.None)
+                        using (OptickMacros.Event("Pipeline color blend settings"))
                         {
-                            colorBlendAttachment.BlendEnable = true;
-                            colorBlendAttachment.ColorBlendOp = BlendOp.Add;
-                            colorBlendAttachment.AlphaBlendOp = BlendOp.Add;
-
-                            switch (blendMode)
+                            if (blendMode != PipelineBlendMode.None)
                             {
-                                case PipelineBlendMode.Default:
-                                    colorBlendAttachment.SrcColorBlendFactor = BlendFactor.SrcAlpha;
-                                    colorBlendAttachment.DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha;
+                                colorBlendAttachment.BlendEnable = true;
+                                colorBlendAttachment.ColorBlendOp = BlendOp.Add;
+                                colorBlendAttachment.AlphaBlendOp = BlendOp.Add;
 
-                                    colorBlendAttachment.SrcAlphaBlendFactor = BlendFactor.SrcAlpha;
-                                    colorBlendAttachment.DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha;
-                                    break;
-                                case PipelineBlendMode.Additive:
-                                    colorBlendAttachment.SrcColorBlendFactor = BlendFactor.One;
-                                    colorBlendAttachment.DstColorBlendFactor = BlendFactor.One;
+                                switch (blendMode)
+                                {
+                                    case PipelineBlendMode.Default:
+                                        colorBlendAttachment.SrcColorBlendFactor = BlendFactor.SrcAlpha;
+                                        colorBlendAttachment.DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha;
 
-                                    colorBlendAttachment.SrcAlphaBlendFactor = BlendFactor.One;
-                                    colorBlendAttachment.DstAlphaBlendFactor = BlendFactor.One;
-                                    break;
-                                case PipelineBlendMode.OneZero:
-                                    colorBlendAttachment.SrcColorBlendFactor = BlendFactor.One;
-                                    colorBlendAttachment.DstColorBlendFactor = BlendFactor.Zero;
+                                        colorBlendAttachment.SrcAlphaBlendFactor = BlendFactor.SrcAlpha;
+                                        colorBlendAttachment.DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha;
+                                        break;
+                                    case PipelineBlendMode.Additive:
+                                        colorBlendAttachment.SrcColorBlendFactor = BlendFactor.One;
+                                        colorBlendAttachment.DstColorBlendFactor = BlendFactor.One;
 
-                                    colorBlendAttachment.SrcAlphaBlendFactor = BlendFactor.One;
-                                    colorBlendAttachment.DstAlphaBlendFactor = BlendFactor.Zero;
-                                    break;
-                                case PipelineBlendMode.ZeroSourceColor:
-                                    colorBlendAttachment.SrcColorBlendFactor = BlendFactor.Zero;
-                                    colorBlendAttachment.DstColorBlendFactor = BlendFactor.SrcColor;
+                                        colorBlendAttachment.SrcAlphaBlendFactor = BlendFactor.One;
+                                        colorBlendAttachment.DstAlphaBlendFactor = BlendFactor.One;
+                                        break;
+                                    case PipelineBlendMode.OneZero:
+                                        colorBlendAttachment.SrcColorBlendFactor = BlendFactor.One;
+                                        colorBlendAttachment.DstColorBlendFactor = BlendFactor.Zero;
 
-                                    colorBlendAttachment.SrcAlphaBlendFactor = BlendFactor.Zero;
-                                    colorBlendAttachment.DstAlphaBlendFactor = BlendFactor.SrcColor;
-                                    break;
-                                default:
-                                    throw new ArgumentException("Unsupported blend mode!");
+                                        colorBlendAttachment.SrcAlphaBlendFactor = BlendFactor.One;
+                                        colorBlendAttachment.DstAlphaBlendFactor = BlendFactor.Zero;
+                                        break;
+                                    case PipelineBlendMode.ZeroSourceColor:
+                                        colorBlendAttachment.SrcColorBlendFactor = BlendFactor.Zero;
+                                        colorBlendAttachment.DstColorBlendFactor = BlendFactor.SrcColor;
+
+                                        colorBlendAttachment.SrcAlphaBlendFactor = BlendFactor.Zero;
+                                        colorBlendAttachment.DstAlphaBlendFactor = BlendFactor.SrcColor;
+                                        break;
+                                    default:
+                                        throw new ArgumentException("Unsupported blend mode!");
+                                }
                             }
                         }
 
@@ -962,10 +1020,13 @@ namespace CodePlayground.Graphics.Vulkan
                             BasePipelineIndex = 0
                         };
 
-                        fixed (Pipeline* pipeline = &mPipeline)
+                        using (OptickMacros.Event("Pipeline creation"))
                         {
-                            var api = VulkanContext.API;
-                            api.CreateGraphicsPipelines(mDevice.Device, default, 1, &createInfo, null, pipeline).Assert();
+                            fixed (Pipeline* pipeline = &mPipeline)
+                            {
+                                var api = VulkanContext.API;
+                                api.CreateGraphicsPipelines(mDevice.Device, default, 1, &createInfo, null, pipeline).Assert();
+                            }
                         }
                     }
                 }
@@ -974,6 +1035,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void CreateComputePipeline(IShader shader)
         {
+            using var createEvent = OptickMacros.Event();
+
             using var marshal = new StringMarshal();
             if (shader is VulkanShader vulkanShader)
             {

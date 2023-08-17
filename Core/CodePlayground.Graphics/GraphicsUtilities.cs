@@ -1,4 +1,5 @@
-﻿using SixLabors.ImageSharp;
+﻿using Optick.NET;
+using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.Reflection;
@@ -59,11 +60,15 @@ namespace CodePlayground.Graphics
         {
             var queue = context.Device.GetQueue(CommandQueueFlags.Transfer);
             var commandList = queue.Release();
-
             commandList.Begin();
-            var texture = context.LoadTexture(image, format, commandList);
-            commandList.End();
 
+            ITexture texture;
+            using (new GPUContextScope(commandList.Address))
+            {
+                texture = context.LoadTexture(image, format, commandList);
+            }
+
+            commandList.End();
             queue.Submit(commandList, true);
             return texture;
         }

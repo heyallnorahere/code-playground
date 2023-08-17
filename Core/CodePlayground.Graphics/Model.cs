@@ -1,4 +1,5 @@
-﻿using Silk.NET.Assimp;
+﻿using Optick.NET;
+using Silk.NET.Assimp;
 using Silk.NET.SDL;
 using System;
 using System.Collections.Generic;
@@ -93,12 +94,16 @@ namespace CodePlayground.Graphics
 
         public static unsafe Model? Load(string path, IModelImportContext importContext)
         {
+            using var loadEvent = OptickMacros.Event();
+
             var scene = sAPI.ImportFile(path, (uint)GetImportFlags(importContext));
             return Load(scene, path, true, importContext);
         }
 
         public static unsafe Model? Load(ReadOnlySpan<byte> data, string hintPath, IModelImportContext importContext)
         {
+            using var loadEvent = OptickMacros.Event();
+
             fixed (byte* ptr = data)
             {
                 var scene = sAPI.ImportFileFromMemory(ptr, (uint)data.Length, (uint)GetImportFlags(importContext), string.Empty);
@@ -108,6 +113,7 @@ namespace CodePlayground.Graphics
 
         private static unsafe Model? Load(Scene* scene, string path, bool loadedFromFile, IModelImportContext importContext)
         {
+            using var loadEvent = OptickMacros.Event();
             if (scene is null || (scene->MFlags & Assimp.SceneFlagsIncomplete) != 0 || scene->MRootNode is null)
             {
                 return null;
@@ -118,6 +124,7 @@ namespace CodePlayground.Graphics
 
         private unsafe Model(Scene* scene, string path, bool loadedFromFile, IModelImportContext importContext)
         {
+            using var constructorEvent = OptickMacros.Event();
             mDisposed = false;
 
             mScene = scene;
@@ -150,6 +157,8 @@ namespace CodePlayground.Graphics
 
         private unsafe void Load()
         {
+            using var loadEvent = OptickMacros.Event();
+
             ProcessNode(mScene->MRootNode, mInverseRootTransform);
             for (uint i = 0; i < mScene->MNumMaterials; i++)
             {
@@ -182,6 +191,7 @@ namespace CodePlayground.Graphics
 
         private unsafe void Dispose(bool disposing)
         {
+            using var disposeEvent = OptickMacros.Event();
             if (disposing)
             {
                 mVertexBuffer.Dispose();
@@ -204,6 +214,8 @@ namespace CodePlayground.Graphics
 
         private unsafe Node* FindNode(string name, Node* currentNode = null)
         {
+            using var findNodeEvent = OptickMacros.Event();
+
             var node = currentNode is null ? mScene->MRootNode : currentNode;
             if (node->MName == name)
             {
@@ -224,6 +236,8 @@ namespace CodePlayground.Graphics
 
         private static unsafe Matrix4x4 CalculateAbsoluteTransform(Node* node)
         {
+            using var calculateEvent = OptickMacros.Event();
+
             var transform = node->MTransformation;
             var currentParent = node->MParent;
 
@@ -238,6 +252,7 @@ namespace CodePlayground.Graphics
 
         private unsafe bool ProcessBones(Mesh* mesh, int vertexOffset)
         {
+            using var processBonesEvent = OptickMacros.Event();
             if (mesh->MNumBones == 0)
             {
                 return false;
@@ -334,6 +349,7 @@ namespace CodePlayground.Graphics
 
         private unsafe Submesh ProcessMesh(Node* node, Mesh* mesh, Matrix4x4 transform)
         {
+            using var processMeshEvent = OptickMacros.Event();
             var submesh = new Submesh
             {
                 VertexOffset = mVertices.Count,
@@ -383,6 +399,8 @@ namespace CodePlayground.Graphics
 
         private unsafe void ProcessNode(Node* node, Matrix4x4 parentTransform)
         {
+            using var processNodeEvent = OptickMacros.Event();
+
             var nodeTransform = node->MTransformation;
             var transform = parentTransform * nodeTransform;
 
@@ -404,6 +422,8 @@ namespace CodePlayground.Graphics
 
         private unsafe void ProcessMaterialTextures(Silk.NET.Assimp.Material* assimpMaterial, Material material)
         {
+            using var processTexturesEvent = OptickMacros.Event();
+
             var textureTypes = Enum.GetValues<MaterialTexture>();
             foreach (var textureType in textureTypes)
             {
@@ -449,6 +469,8 @@ namespace CodePlayground.Graphics
 
         private unsafe Material ProcessMaterial(Silk.NET.Assimp.Material* assimpMaterial)
         {
+            using var processMaterialEvent = OptickMacros.Event();
+
             AssimpString name;
             if (sAPI.GetMaterialString(assimpMaterial, "$mat.name", 0, 0, &name) != Return.Success)
             {
@@ -525,6 +547,8 @@ namespace CodePlayground.Graphics
 
         public void GetMeshData(out Vector3[] vertices, out int[] indices)
         {
+            using var getMeshDataEvent = OptickMacros.Event();
+
             vertices = mVertices.Select(vertex => vertex.Position).ToArray();
             indices = mIndices.Select(index => (int)index).ToArray();
         }

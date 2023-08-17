@@ -1,4 +1,5 @@
-﻿using Silk.NET.Vulkan;
+﻿using Optick.NET;
+using Silk.NET.Vulkan;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -38,6 +39,8 @@ namespace CodePlayground.Graphics.Vulkan
     {
         internal unsafe VulkanRenderPass(VulkanDevice device, VulkanRenderPassInfo info)
         {
+            using var constructorEvent = OptickMacros.Event();
+
             int colorAttachmentCount = info.ColorAttachments?.Count ?? 0;
             int depthAttachmentCount = info.DepthAttachment is null ? 0 : 1;
 
@@ -176,6 +179,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void BeginRender(VulkanCommandBuffer commandBuffer, VulkanFramebuffer framebuffer, Vector4 clearColor, bool flipViewport = true)
         {
+            using var beginRenderEvent = OptickMacros.Event();
+            using var renderPassEvent = OptickMacros.GPUEvent("Begin render pass");
+
             var clearValues = new ClearValue[mAttachmentTypes.Count];
             for (int i = 0; i < clearValues.Length; i++)
             {
@@ -233,16 +239,19 @@ namespace CodePlayground.Graphics.Vulkan
                 api.CmdBeginRenderPass(buffer, beginInfo, SubpassContents.Inline);
             }
 
-            api.CmdSetScissor(buffer, 0, 1, scissor);
-            api.CmdSetViewport(buffer, 0, 1, VulkanUtilities.Init<Viewport>() with
+            using (OptickMacros.GPUEvent("Set scissor and viewport"))
             {
-                X = 0f,
-                Y = flipViewport ? height : 0f,
-                Width = width,
-                Height = height * (flipViewport ? -1f : 1f),
-                MinDepth = 0f,
-                MaxDepth = 1f
-            });
+                api.CmdSetScissor(buffer, 0, 1, scissor);
+                api.CmdSetViewport(buffer, 0, 1, VulkanUtilities.Init<Viewport>() with
+                {
+                    X = 0f,
+                    Y = flipViewport ? height : 0f,
+                    Width = width,
+                    Height = height * (flipViewport ? -1f : 1f),
+                    MinDepth = 0f,
+                    MaxDepth = 1f
+                });
+            }
         }
 
         public void EndRender(ICommandList commandList)

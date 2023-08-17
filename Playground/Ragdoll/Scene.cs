@@ -8,6 +8,7 @@ using Optick.NET;
 using Ragdoll.Components;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Numerics;
@@ -253,6 +254,7 @@ namespace Ragdoll
 
         private void Dispose(bool disposing)
         {
+            using var disposeEvent = OptickMacros.Event();
             if (disposing)
             {
                 mSimulation.Dispose();
@@ -328,6 +330,8 @@ namespace Ragdoll
         public IDisposable Lock() => mRegistry.Lock();
         public ulong NewEntity(string tag = "Entity")
         {
+            using var newEvent = OptickMacros.Event();
+
             ulong id = mRegistry.New();
             mCallbackData.Add(id, new EntityCallbackData
             {
@@ -340,6 +344,8 @@ namespace Ragdoll
 
         public void DestroyEntity(ulong id)
         {
+            using var destroyEvent = OptickMacros.Event();
+
             var types = ViewComponents(id).Select(component => component.GetType());
             foreach (var type in types)
             {
@@ -366,6 +372,7 @@ namespace Ragdoll
         public T AddComponent<T>(ulong id, params object?[] args) where T : class => (T)AddComponent(id, typeof(T), args);
         public object AddComponent(ulong id, Type type, params object?[] args)
         {
+            using var addEvent = OptickMacros.Event();
             var component = mRegistry.Add(id, type, args);
 
             using (Lock())
@@ -383,6 +390,7 @@ namespace Ragdoll
         public void RemoveComponent<T>(ulong id) where T : class => RemoveComponent(id, typeof(T));
         public void RemoveComponent(ulong id, Type type)
         {
+            using var removeEvent = OptickMacros.Event();
             if (!TryGetComponent(id, type, out object? component))
             {
                 return;
@@ -402,6 +410,8 @@ namespace Ragdoll
 
         public ulong AddEntityComponentListener(ulong entity, Action<object, bool> callback)
         {
+            using var addListenerEvent = OptickMacros.Event();
+
             ulong id = mCurrentCallbackID++;
             mCallbackData[entity].Callbacks.Add(id, callback);
 
@@ -410,6 +420,8 @@ namespace Ragdoll
 
         public bool RemoveEntityComponentListener(ulong entity, ulong callback)
         {
+            using var removeListenerEvent = OptickMacros.Event();
+
             var callbacks = mCallbackData[entity].Callbacks;
             if (!callbacks.ContainsKey(callback))
             {
@@ -422,6 +434,7 @@ namespace Ragdoll
 
         public string GetDisplayedEntityTag(ulong id)
         {
+            using var getTagEvent = OptickMacros.Event();
             if (TryGetComponent(id, out TagComponent? tag))
             {
                 return tag.Tag;

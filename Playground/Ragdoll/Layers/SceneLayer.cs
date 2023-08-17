@@ -373,25 +373,32 @@ namespace Ragdoll.Layers
             var commandList = queue.Release();
             commandList.Begin();
 
-            mReflectionView = app.Renderer!.Library.CreateReflectionView<ModelShader>();
-            int bufferSize = mReflectionView.GetBufferSize(nameof(ModelShader.u_CameraBuffer));
-            if (bufferSize < 0)
+            using (new GPUContextScope(commandList.Address))
             {
-                throw new InvalidOperationException("Failed to find camera buffer!");
+                mReflectionView = app.Renderer!.Library.CreateReflectionView<ModelShader>();
+                int bufferSize = mReflectionView.GetBufferSize(nameof(ModelShader.u_CameraBuffer));
+                if (bufferSize < 0)
+                {
+                    throw new InvalidOperationException("Failed to find camera buffer!");
+                }
+
+                mCameraBuffer = graphicsContext.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize);
+                mFramebufferSemaphore = graphicsContext.CreateSemaphore();
+                mFramebufferRecreated = true;
+
+                var size = app.RootWindow!.FramebufferSize;
+                CreateFramebufferAttachments(size.X, size.Y, commandList);
+                mFramebuffer = graphicsContext.CreateFramebuffer(new FramebufferInfo
+                {
+                    Width = size.X,
+                    Height = size.Y,
+                    Attachments = mFramebufferAttachments
+                }, out mRenderTarget);
             }
 
-            mCameraBuffer = graphicsContext.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize);
-            mFramebufferSemaphore = graphicsContext.CreateSemaphore();
-            mFramebufferRecreated = true;
-
-            var size = app.RootWindow!.FramebufferSize;
-            CreateFramebufferAttachments(size.X, size.Y, commandList);
-            mFramebuffer = graphicsContext.CreateFramebuffer(new FramebufferInfo
-            {
-                Width = size.X,
-                Height = size.Y,
-                Attachments = mFramebufferAttachments
-            }, out mRenderTarget);
+            commandList.AddSemaphore(mFramebufferSemaphore, SemaphoreUsage.Signal);
+            commandList.End();
+            queue.Submit(commandList);
 
             // test scene
             mScene = new Scene
@@ -425,10 +432,6 @@ namespace Ragdoll.Layers
                 mScene.AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
                 mScene.AddComponent<RigidBodyComponent>(entity).BodyType = BodyType.Static;
             }
-
-            commandList.AddSemaphore(mFramebufferSemaphore, SemaphoreUsage.Signal);
-            commandList.End();
-            queue.Submit(commandList);
         }
 
         private void CreateFramebufferAttachments(int width, int height, ICommandList commandList)
@@ -692,20 +695,23 @@ namespace Ragdoll.Layers
             var commandList = queue.Release();
             commandList.Begin();
 
-            DestroyFramebuffer();
-            CreateFramebufferAttachments(width, height, commandList);
-
-            mFramebuffer = graphicsContext.CreateFramebuffer(new FramebufferInfo
+            using (new GPUContextScope(commandList.Address))
             {
-                Width = width,
-                Height = height,
-                Attachments = mFramebufferAttachments
-            }, mRenderTarget!);
+                DestroyFramebuffer();
+                CreateFramebufferAttachments(width, height, commandList);
 
-            if (!mFramebufferRecreated)
-            {
-                mFramebufferRecreated = true;
-                commandList.AddSemaphore(mFramebufferSemaphore!, SemaphoreUsage.Signal);
+                mFramebuffer = graphicsContext.CreateFramebuffer(new FramebufferInfo
+                {
+                    Width = width,
+                    Height = height,
+                    Attachments = mFramebufferAttachments
+                }, mRenderTarget!);
+
+                if (!mFramebufferRecreated)
+                {
+                    mFramebufferRecreated = true;
+                    commandList.AddSemaphore(mFramebufferSemaphore!, SemaphoreUsage.Signal);
+                }
             }
 
             commandList.End();
