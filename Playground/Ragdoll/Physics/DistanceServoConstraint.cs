@@ -72,12 +72,12 @@ namespace Ragdoll.Physics
 
         public override void Update()
         {
+            using var updateEvent = OptickMacros.Event();
             if (!mConstraintExists)
             {
                 return;
             }
 
-            using var updateEvent = OptickMacros.Event();
             mSimulation!.Solver.ApplyDescription(mHandle, mConstraint);
         }
 

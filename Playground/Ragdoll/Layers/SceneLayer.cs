@@ -4,6 +4,7 @@ using Optick.NET;
 using Ragdoll.Components;
 using Ragdoll.Shaders;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -236,11 +237,27 @@ namespace Ragdoll.Layers
         {
             mSelectedEntity = Scene.Null;
             mMenus = LoadMenus();
+
             mModelPath = mModelName = mModelError = string.Empty;
             mLoadedModelInfo = new Dictionary<int, LoadedModelInfo>();
+
             mFramebufferAttachments = new FramebufferAttachmentInfo[2];
+
             mCameraBuffer = null;
             mReflectionView = null;
+
+            mAttached = false;
+            App.Instance.OptickStateChanged += OnOptickStateChanged;
+        }
+
+        private void OnOptickStateChanged(State state)
+        {
+            if (state != State.STOP_CAPTURE || !mAttached)
+            {
+                return;
+            }
+
+            AttachOptickScreenshots();
         }
 
         private int LoadModel(string path, string name)
@@ -432,6 +449,8 @@ namespace Ragdoll.Layers
                 mScene.AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
                 mScene.AddComponent<RigidBodyComponent>(entity).BodyType = BodyType.Static;
             }
+
+            mAttached = true;
         }
 
         private void CreateFramebufferAttachments(int width, int height, ICommandList commandList)
@@ -442,7 +461,7 @@ namespace Ragdoll.Layers
             var colorImage = graphicsContext.CreateDeviceImage(new DeviceImageInfo
             {
                 Size = new Size(width, height),
-                Usage = DeviceImageUsageFlags.Render | DeviceImageUsageFlags.ColorAttachment,
+                Usage = DeviceImageUsageFlags.Render | DeviceImageUsageFlags.ColorAttachment | DeviceImageUsageFlags.CopySource,
                 Format = DeviceImageFormat.RGBA8_UNORM,
                 MipLevels = 1
             });
@@ -495,6 +514,7 @@ namespace Ragdoll.Layers
         public override void OnPopped()
         {
             using var poppedEvent = OptickMacros.Event();
+            mAttached = false;
 
             mCameraBuffer?.Dispose();
             foreach (var modelData in mLoadedModelInfo.Values)
@@ -505,13 +525,76 @@ namespace Ragdoll.Layers
                 }
             }
 
+            AttachOptickScreenshots();
             DestroyFramebuffer();
+
             mRenderTarget?.Dispose();
             mFramebufferSemaphore?.Dispose();
 
             mScene?.Dispose();
             mScene = null;
             mSelectedEntity = Scene.Null;
+        }
+
+        private void AttachOptickScreenshots()
+        {
+            using var attachScreenshotsEvent = OptickMacros.Event();
+
+            // currently only need one
+            CreateOptickScreenshot(mFramebufferAttachments[0].Image, "viewport.png");
+        }
+
+        private unsafe void CreateOptickScreenshot(IDeviceImage image, string filename)
+        {
+            using var createScreenshotEvent = OptickMacros.Event();
+
+            var context = App.Instance.GraphicsContext!;
+            var device = context.Device;
+            var queue = device.GetQueue(CommandQueueFlags.Transfer);
+
+            var commandList = queue.Release();
+            commandList.Begin();
+
+            int width = image.Size.Width;
+            int height = image.Size.Height;
+            int bufferSize = width * height * 4; // RGBA8_UNORM
+
+            var stagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, bufferSize);
+            commandList.PushStagingObject(stagingBuffer);
+
+            using (new GPUContextScope(commandList.Address))
+            {
+                image.CopyToBuffer(commandList, stagingBuffer, image.Layout);
+            }
+
+            commandList.End();
+            queue.Submit(commandList, true);
+
+            var imageBuffer = new byte[bufferSize];
+            stagingBuffer.CopyToCPU(imageBuffer);
+
+            var loadedImage = Image.LoadPixelData<Rgba32>(imageBuffer, width, height);
+            using var stream = new MemoryStream();
+            loadedImage.SaveAsPng(stream);
+
+            stream.Position = 0;
+            var fileBuffer = new byte[stream.Length];
+
+            while (true)
+            {
+                int position = (int)stream.Position;
+                int count = stream.Read(fileBuffer, position, fileBuffer.Length - position);
+
+                if (count <= 0)
+                {
+                    break;
+                }
+            }
+
+            fixed (void* fileData = fileBuffer)
+            {
+                OptickImports.AttachFile(FileType.OPTICK_IMAGE, filename, fileData, (uint)fileBuffer.Length);
+            }
         }
 
         private static void ComputeCameraVectors(Vector3 angle, out Vector3 direction, out Vector3 up)
@@ -1071,5 +1154,7 @@ namespace Ragdoll.Layers
 
         private IDeviceBuffer? mCameraBuffer;
         private IReflectionView? mReflectionView;
+
+        private bool mAttached;
     }
 }

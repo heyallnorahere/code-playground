@@ -463,7 +463,7 @@ namespace CodePlayground.Graphics.Vulkan
             using var gpuCopyEvent = OptickMacros.GPUEvent("Image-to-buffer copy");
 
             var api = VulkanContext.API;
-            var transferDst = GetLayout(DeviceImageLayoutName.CopyDestination);
+            var transferDst = GetLayout(DeviceImageLayoutName.CopySource);
 
             var copyRegion = VulkanUtilities.Init<BufferImageCopy>() with
             {

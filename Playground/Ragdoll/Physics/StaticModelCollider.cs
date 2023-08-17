@@ -4,7 +4,6 @@ using Optick.NET;
 using Ragdoll.Components;
 using System;
 using System.Numerics;
-using System.Runtime.InteropServices;
 
 namespace Ragdoll.Physics
 {
@@ -13,6 +12,8 @@ namespace Ragdoll.Physics
     {
         public override void Initialize(Scene scene, ulong id)
         {
+            using var initializeEvent = OptickMacros.Event();
+
             mScene = scene;
             mEntity = id;
 
@@ -25,6 +26,8 @@ namespace Ragdoll.Physics
 
         public override void Cleanup()
         {
+            using var cleanupEvent = OptickMacros.Event();
+
             if (mModel >= 0)
             {
                 var registry = App.Instance.ModelRegistry;
@@ -39,6 +42,8 @@ namespace Ragdoll.Physics
 
         public override void Update()
         {
+            using var updateEvent = OptickMacros.Event();
+
             mScene!.TryGetComponent(mEntity, out TransformComponent? transform);
             Invalidate(transform?.Scale);
         }
@@ -139,6 +144,8 @@ namespace Ragdoll.Physics
 
         public bool SetModel(int modelId)
         {
+            using var setModelEvent = OptickMacros.Event();
+
             var registry = App.Instance.ModelRegistry;
             var model = registry!.Models[modelId];
 

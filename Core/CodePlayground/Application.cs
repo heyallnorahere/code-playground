@@ -148,12 +148,26 @@ namespace CodePlayground
         [Conditional("DEBUG")]
         protected void InitializeOptick()
         {
+            StateCallback callback = OnStateChanged;
+            OptickImports.SetStateChangedCallback(callback);
+
+            mOptickCallbackHandle?.Free();
+            mOptickCallbackHandle = GCHandle.Alloc(callback);
+
             mOptickApp ??= new OptickApp(Title);
+        }
+
+        private bool OnStateChanged(State state)
+        {
+            OptickStateChanged?.Invoke(state);
+            return true;
         }
 
         protected void ShutdownOptick()
         {
             mOptickApp?.Dispose();
+            mOptickCallbackHandle?.Free();
+
             if (mOptickApp is not null)
             {
                 OptickImports.Shutdown();
@@ -162,6 +176,7 @@ namespace CodePlayground
             mOptickApp = null;
         }
 
+        public event Action<State>? OptickStateChanged;
         public string Title { get; internal set; }
         public Version Version { get; internal set; }
         public abstract bool IsRunning { get; }
@@ -189,5 +204,6 @@ namespace CodePlayground
 
         private bool mDisposed;
         private OptickApp? mOptickApp;
+        private GCHandle? mOptickCallbackHandle;
     }
 }

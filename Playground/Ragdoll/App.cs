@@ -70,12 +70,12 @@ namespace Ragdoll
 
         private void OnClose()
         {
-            var closeEvent = OptickMacros.Event();
+            using var closeEvent = OptickMacros.Event();
+            mLayerStack.Clear();
 
             var device = GraphicsContext?.Device;
             device?.ClearQueues();
 
-            mLayerStack.Clear();
             mModelRegistry?.Dispose();
             mRenderer?.Dispose();
         }
