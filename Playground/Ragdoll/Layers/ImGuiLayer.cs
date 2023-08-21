@@ -36,7 +36,7 @@ namespace Ragdoll.Layers
             commandList.Begin();
             commandList.AddSemaphore(mSemaphore, SemaphoreUsage.Signal);
 
-            using (new GPUContextScope(commandList.Address))
+            using (commandList.Context(GPUQueueType.Transfer))
             {
                 mController.LoadFontAtlas(commandList);
             }

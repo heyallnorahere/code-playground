@@ -390,7 +390,7 @@ namespace Ragdoll.Layers
             var commandList = queue.Release();
             commandList.Begin();
 
-            using (new GPUContextScope(commandList.Address))
+            using (commandList.Context(GPUQueueType.Transfer))
             {
                 mReflectionView = app.Renderer!.Library.CreateReflectionView<ModelShader>();
                 int bufferSize = mReflectionView.GetBufferSize(nameof(ModelShader.u_CameraBuffer));
@@ -562,7 +562,7 @@ namespace Ragdoll.Layers
             var stagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, bufferSize);
             commandList.PushStagingObject(stagingBuffer);
 
-            using (new GPUContextScope(commandList.Address))
+            using (commandList.Context(GPUQueueType.Transfer))
             {
                 image.CopyToBuffer(commandList, stagingBuffer, image.Layout);
             }
@@ -778,7 +778,7 @@ namespace Ragdoll.Layers
             var commandList = queue.Release();
             commandList.Begin();
 
-            using (new GPUContextScope(commandList.Address))
+            using (commandList.Context(GPUQueueType.Transfer))
             {
                 DestroyFramebuffer();
                 CreateFramebufferAttachments(width, height, commandList);

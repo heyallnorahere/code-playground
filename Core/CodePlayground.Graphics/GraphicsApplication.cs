@@ -234,7 +234,7 @@ namespace CodePlayground.Graphics
                     var commandList = queue.Release();
                     commandList.Begin();
 
-                    using (new GPUContextScope(commandList.Address))
+                    using (commandList.Context())
                     {
                         Render?.Invoke(new FrameRenderInfo
                         {

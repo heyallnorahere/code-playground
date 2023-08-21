@@ -123,7 +123,7 @@ namespace Ragdoll
             var buffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Vertex, bufferSize);
 
             stagingBuffer.CopyFromCPU(bufferVertices);
-            using (new GPUContextScope(mCommandList.Address))
+            using (mCommandList.Context(GPUQueueType.Transfer))
             {
                 stagingBuffer.CopyBuffers(mCommandList, buffer, bufferSize);
             }
@@ -144,7 +144,7 @@ namespace Ragdoll
             var stagingBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Staging, bufferSize);
 
             stagingBuffer.CopyFromCPU(bufferIndices);
-            using (new GPUContextScope(mCommandList.Address))
+            using (mCommandList.Context(GPUQueueType.Transfer))
             {
                 stagingBuffer.CopyBuffers(mCommandList, buffer, bufferSize);
             }
@@ -169,7 +169,7 @@ namespace Ragdoll
             stagingBuffer.CopyFromCPU(data);
             BeginCommandList();
 
-            using (new GPUContextScope(mCommandList.Address))
+            using (mCommandList.Context(GPUQueueType.Transfer))
             {
                 image.TransitionLayout(mCommandList, image.Layout, newLayout);
                 image.CopyFromBuffer(mCommandList, stagingBuffer, newLayout);
@@ -207,7 +207,7 @@ namespace Ragdoll
             stagingBuffer.CopyFromCPU(pixelData);
             BeginCommandList();
 
-            using (new GPUContextScope(mCommandList.Address))
+            using (mCommandList.Context(GPUQueueType.Transfer))
             {
                 deviceImage.TransitionLayout(mCommandList, deviceImage.Layout, newLayout);
                 deviceImage.CopyFromBuffer(mCommandList, stagingBuffer, newLayout);

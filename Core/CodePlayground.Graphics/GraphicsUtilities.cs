@@ -63,7 +63,7 @@ namespace CodePlayground.Graphics
             commandList.Begin();
 
             ITexture texture;
-            using (new GPUContextScope(commandList.Address))
+            using (commandList.Context(GPUQueueType.Transfer))
             {
                 texture = context.LoadTexture(image, format, commandList);
             }
@@ -188,6 +188,11 @@ namespace CodePlayground.Graphics
             }
 
             return result;
+        }
+
+        public static GPUContextScope Context(this ICommandList commandList, GPUQueueType queueType = GPUQueueType.Graphics, int node = 0)
+        {
+            return new GPUContextScope(commandList.Address, queueType, node);
         }
     }
 }

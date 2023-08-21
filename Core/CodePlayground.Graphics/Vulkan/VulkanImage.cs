@@ -5,7 +5,7 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using VMASharp;
 
-using GPUContextScope = Optick.NET.GPUContextScope;
+using GPUQueueType = Optick.NET.GPUQueueType;
 using OptickMacros = Optick.NET.OptickMacros;
 
 namespace CodePlayground.Graphics.Vulkan
@@ -341,7 +341,7 @@ namespace CodePlayground.Graphics.Vulkan
             var commandBuffer = queue.Release();
             commandBuffer.Begin();
 
-            using (new GPUContextScope(commandBuffer.Address))
+            using (commandBuffer.Context(GPUQueueType.Transfer))
             {
                 CopyFromBuffer(commandBuffer, stagingBuffer, Layout);
             }

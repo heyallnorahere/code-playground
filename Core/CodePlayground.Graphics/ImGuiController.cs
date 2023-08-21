@@ -458,7 +458,7 @@ namespace CodePlayground.Graphics
             transferList.AddSemaphore(frameData.Semaphore, SemaphoreUsage.Signal);
             commandList.AddSemaphore(frameData.Semaphore, SemaphoreUsage.Wait);
 
-            using (new GPUContextScope(transferList.Address))
+            using (transferList.Context(GPUQueueType.Transfer))
             {
                 foreach (var bufferData in frameData.Buffers.Values)
                 {
