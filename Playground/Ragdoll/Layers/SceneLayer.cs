@@ -645,6 +645,16 @@ namespace Ragdoll.Layers
             if (registry is not null)
             {
                 using var boneUpdateEvent = OptickMacros.Category("Bone update", Category.Animation);
+                using (OptickMacros.Event("Pre-bone update"))
+                {
+                    var entityView = mScene.ViewEntities(typeof(BoneControllerComponent), typeof(TransformComponent));
+                    foreach (var entity in entityView)
+                    {
+                        var boneControllerComponent = mScene.GetComponent<BoneControllerComponent>(entity);
+                        mScene.InvokeComponentEvent(boneControllerComponent, entity, ComponentEventID.PreBoneUpdate);
+                    }
+                }
+
                 foreach (ulong entity in mScene.ViewEntities(typeof(RenderedModelComponent)))
                 {
                     var modelData = mScene.GetComponent<RenderedModelComponent>(entity);
@@ -654,7 +664,7 @@ namespace Ragdoll.Layers
                     }
 
                     var boneBuffer = registry.Models[modelData.ID].BoneBuffer;
-                    modelData.BoneController?.Update(boneTransforms => boneBuffer.CopyFromCPU(boneTransforms.Select(matrix => (PassedMatrix)matrix).ToArray(), modelData.BoneOffset * Marshal.SizeOf<Matrix4x4>()));
+                    modelData.BoneController?.Update(boneTransforms => boneBuffer.CopyFromCPU(boneTransforms.Select(matrix => (PassedMatrix)matrix).ToArray(), modelData.BoneOffset * Marshal.SizeOf<PassedMatrix>()));
                 }
             }
 
@@ -748,7 +758,7 @@ namespace Ragdoll.Layers
 
                         mReflectionView!.MapStructure(mapped, nameof(ModelShader.u_PushConstants), new PushConstantData
                         {
-                            Model = transform.Matrix,
+                            Model = transform.CreateMatrix(),
                             BoneOffset = renderedModel.BoneOffset
                         });
                     });

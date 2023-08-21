@@ -8,7 +8,6 @@ using Optick.NET;
 using Ragdoll.Components;
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Numerics;
@@ -23,7 +22,8 @@ namespace Ragdoll
         Edited,
         Collision,
         PrePhysicsUpdate,
-        PostPhysicsUpdate
+        PostPhysicsUpdate,
+        PreBoneUpdate
     }
 
     public struct ComponentEventInfo

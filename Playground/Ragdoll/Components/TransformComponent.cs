@@ -6,6 +6,17 @@ using System.Numerics;
 
 namespace Ragdoll.Components
 {
+    [Flags]
+    public enum TransformComponents
+    {
+        Translation = 0x1,
+        Rotation = 0x2,
+        Scale = 0x4,
+
+        NonDeformative = Translation | Rotation,
+        All = Translation | Rotation | Scale
+    }
+
     [RegisteredComponent(DisplayName = "Transform")]
     public sealed class TransformComponent
     {
@@ -55,9 +66,26 @@ namespace Ragdoll.Components
         /// </summary>
         public Vector3 Scale;
 
-        public Matrix4x4 Matrix => Matrix4x4.Transpose(Matrix4x4.CreateScale(Scale) *
-                                                       Matrix4x4.CreateFromQuaternion(mQuat) *
-                                                       Matrix4x4.CreateTranslation(Translation));
+        public Matrix4x4 CreateMatrix(TransformComponents components = TransformComponents.All)
+        {
+            var result = Matrix4x4.Identity;
+            if (components.HasFlag(TransformComponents.Translation))
+            {
+                result = Matrix4x4.CreateTranslation(Translation);
+            }
+
+            if (components.HasFlag(TransformComponents.Rotation))
+            {
+                result = Matrix4x4.CreateFromQuaternion(mQuat) * result;
+            }
+
+            if (components.HasFlag(TransformComponents.Scale))
+            {
+                result = Matrix4x4.CreateScale(Scale) * result;
+            }
+
+            return Matrix4x4.Transpose(result);
+        }
 
         internal bool OnEvent(ComponentEventInfo eventInfo)
         {
