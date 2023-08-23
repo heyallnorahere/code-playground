@@ -24,6 +24,13 @@ namespace CodePlayground.Graphics.Shaders
         public ShaderStage Stage { get; }
     }
 
+    public enum PrimitiveShaderTypeClass
+    {
+        Value,
+        Sampler,
+        Image
+    }
+
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
     public sealed class PrimitiveShaderTypeAttribute : Attribute
     {
@@ -31,12 +38,12 @@ namespace CodePlayground.Graphics.Shaders
         {
             Name = name;
             Instantiable = true;
-            IsSampler = false;
+            TypeClass = PrimitiveShaderTypeClass.Value;
         }
 
         public string Name { get; }
         public bool Instantiable { get; set; }
-        public bool IsSampler { get; set; }
+        public PrimitiveShaderTypeClass TypeClass { get; set; }
     }
 
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
@@ -80,6 +87,18 @@ namespace CodePlayground.Graphics.Shaders
         StorageBuffer
     }
 
+    public enum ShaderImageFormat
+    {
+        // todo: add more image formats
+        R8,
+        RG8,
+        RGBA8,
+
+        R16,
+        RG16,
+        RGBA16,
+    }
+
     [AttributeUsage(AttributeTargets.ReturnValue | AttributeTargets.Parameter | AttributeTargets.Field, AllowMultiple = false, Inherited = false)]
     public sealed class LayoutAttribute : Attribute
     {
@@ -88,6 +107,7 @@ namespace CodePlayground.Graphics.Shaders
             Location = -1;
             Set = Binding = 0;
             ResourceType = ShaderResourceType.Uniform;
+            Format = ShaderImageFormat.RGBA8;
             PushConstants = false;
         }
 
@@ -95,6 +115,7 @@ namespace CodePlayground.Graphics.Shaders
         public int Set { get; set; }
         public int Binding { get; set; }
         public ShaderResourceType ResourceType { get; set; }
+        public ShaderImageFormat Format { get; set; }
         public bool PushConstants { get; set; }
     }
 
@@ -111,10 +132,19 @@ namespace CodePlayground.Graphics.Shaders
 
     public enum ShaderVariableID
     {
-        OutputPosition
+        // vertex shader
+        OutputPosition,
+
+        // compute shader
+        WorkGroupCount,
+        WorkGroupID,
+        WorkGroupSize,
+        LocalInvocationID,
+        GlobalInvocationID,
+        LocalInvocationIndex
     }
 
-    [AttributeUsage(AttributeTargets.ReturnValue | AttributeTargets.Field, AllowMultiple = false, Inherited = true)]
+    [AttributeUsage(AttributeTargets.ReturnValue | AttributeTargets.Field | AttributeTargets.Parameter, AllowMultiple = false, Inherited = true)]
     public sealed class ShaderVariableAttribute : Attribute
     {
         public ShaderVariableAttribute(ShaderVariableID id)
@@ -128,11 +158,26 @@ namespace CodePlayground.Graphics.Shaders
     [AttributeUsage(AttributeTargets.Field, AllowMultiple = false, Inherited = true)]
     public sealed class ArraySizeAttribute : Attribute
     {
-        public ArraySizeAttribute(int length)
+        public ArraySizeAttribute(uint length)
         {
             Length = length;
         }
 
-        public int Length { get; }
+        public uint Length { get; }
+    }
+
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
+    public sealed class NumThreadsAttribute : Attribute
+    {
+        public NumThreadsAttribute(uint x, uint y, uint z)
+        {
+            X = x;
+            Y = y;
+            Z = z;
+        }
+
+        public uint X { get; }
+        public uint Y { get; }
+        public uint Z { get; }
     }
 }

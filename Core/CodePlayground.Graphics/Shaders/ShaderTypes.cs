@@ -35,6 +35,20 @@ namespace CodePlayground.Graphics.Shaders
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("dot")]
+        public static float Dot<T>(T lhs, T rhs) where T : Vector2<float>
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("clamp")]
+        public static float Clamp(float value, float min, float max)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
         [BuiltinShaderFunction("discard", Keyword = true)]
         public static void Discard()
         {
@@ -45,6 +59,11 @@ namespace CodePlayground.Graphics.Shaders
     [PrimitiveShaderType("vec2")]
     public class Vector2<T> where T : unmanaged
     {
+        public Vector2(T scalar)
+        {
+            throw new NotImplementedException();
+        }
+
         public Vector2(T x, T y)
         {
             throw new NotImplementedException();
@@ -144,6 +163,17 @@ namespace CodePlayground.Graphics.Shaders
         {
             throw new NotImplementedException();
         }
+
+        public T this[int index]
+        {
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            [ShaderOperator(ShaderOperatorType.Index)]
+            get => throw new NotImplementedException();
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            [ShaderOperator(ShaderOperatorType.Index)]
+            set => throw new NotImplementedException();
+        }
         #endregion
 
         // todo: swizzles
@@ -152,6 +182,11 @@ namespace CodePlayground.Graphics.Shaders
     [PrimitiveShaderType("vec3")]
     public class Vector3<T> : Vector2<T> where T : unmanaged
     {
+        public Vector3(T scalar) : base(scalar)
+        {
+            throw new NotImplementedException();
+        }
+
         public Vector3(T x, T y, T z) : base(x, y)
         {
             throw new NotImplementedException();
@@ -264,6 +299,11 @@ namespace CodePlayground.Graphics.Shaders
     [PrimitiveShaderType("vec4")]
     public class Vector4<T> : Vector3<T> where T : unmanaged
     {
+        public Vector4(T scalar) : base(scalar)
+        {
+            throw new NotImplementedException();
+        }
+
         public Vector4(T x, T y, T z, T w) : base(x, y, z)
         {
             throw new NotImplementedException();
@@ -383,19 +423,12 @@ namespace CodePlayground.Graphics.Shaders
         {
             throw new NotImplementedException();
         }
-
-        public T this[int index]
-        {
-            [MethodImpl(MethodImplOptions.NoInlining)]
-            [ShaderOperator(ShaderOperatorType.Index)]
-            get => throw new NotImplementedException();
-        }
         #endregion
 
         // todo: swizzles
     }
 
-    [PrimitiveShaderType("sampler2D", Instantiable = false, IsSampler = true)]
+    [PrimitiveShaderType("sampler2D", Instantiable = false, TypeClass = PrimitiveShaderTypeClass.Sampler)]
     public sealed class Sampler2D<T> where T : unmanaged
     {
         [BuiltinShaderFunction("texture")]
@@ -406,6 +439,22 @@ namespace CodePlayground.Graphics.Shaders
 
         [BuiltinShaderFunction("texture")]
         public Vector4<T> Sample(Vector2<T> uv, float bias)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    [PrimitiveShaderType("image2D", Instantiable = false, TypeClass = PrimitiveShaderTypeClass.Image)]
+    public sealed class Image2D<T> where T : unmanaged
+    {
+        [BuiltinShaderFunction("imageLoad")]
+        public Vector4<T> Load(Vector2<int> position)
+        {
+            throw new NotImplementedException();
+        }
+
+        [BuiltinShaderFunction("imageStore")]
+        public void Store(Vector2<int> position, Vector4<T> color)
         {
             throw new NotImplementedException();
         }
@@ -477,6 +526,13 @@ namespace CodePlayground.Graphics.Shaders
         public Matrix3x3<T> Transpose()
         {
             throw new NotImplementedException();
+        }
+
+        public Vector3<T> this[int index]
+        {
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            [ShaderOperator(ShaderOperatorType.Index)]
+            get => throw new NotImplementedException();
         }
     }
 

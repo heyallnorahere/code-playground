@@ -2,6 +2,7 @@ using Silk.NET.Vulkan;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using VMASharp;
 
@@ -10,6 +11,179 @@ using OptickMacros = Optick.NET.OptickMacros;
 
 namespace CodePlayground.Graphics.Vulkan
 {
+    internal struct BoundPipelineData
+    {
+        public Dictionary<int, BoundPipelineDescriptorSet> Sets { get; set; }
+        public VulkanPipeline Pipeline { get; set; }
+        public HashSet<nint> DynamicIDs { get; set; }
+    }
+
+    internal struct BoundPipelineDescriptorSet
+    {
+        public Dictionary<int, BoundPipelineBinding> Bindings { get; set; }
+    }
+
+    internal struct BoundPipelineBinding
+    {
+        public HashSet<int> BoundIndices { get; set; }
+    }
+
+    public abstract class BindableVulkanImage : IBindableVulkanResource
+    {
+        public BindableVulkanImage()
+        {
+            mID = VulkanPipeline.GenerateID();
+            mBoundPipelines = new Dictionary<ulong, BoundPipelineData>();
+        }
+
+        void IBindableVulkanResource.Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
+        {
+            using var bindEvent = OptickMacros.Event();
+
+            AddBindingIndex(set, binding, index, pipeline, dynamicId);
+            BindSets(sets, (uint)binding, (uint)index);
+        }
+
+        private void AddBindingIndex(int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
+        {
+            using var addBindingIndexEvent = OptickMacros.Event();
+
+            ulong id = pipeline.ID;
+            if (!mBoundPipelines.TryGetValue(id, out BoundPipelineData pipelineData))
+            {
+                mBoundPipelines.Add(id, pipelineData = new BoundPipelineData
+                {
+                    Sets = new Dictionary<int, BoundPipelineDescriptorSet>(),
+                    Pipeline = pipeline,
+                    DynamicIDs = new HashSet<nint>()
+                });
+            }
+
+            if (dynamicId >= 0)
+            {
+                pipelineData.DynamicIDs.Add(dynamicId);
+                return;
+            }
+
+            if (!pipelineData.Sets.TryGetValue(set, out BoundPipelineDescriptorSet setData))
+            {
+                pipelineData.Sets.Add(set, setData = new BoundPipelineDescriptorSet
+                {
+                    Bindings = new Dictionary<int, BoundPipelineBinding>()
+                });
+            }
+
+            if (!setData.Bindings.TryGetValue(binding, out BoundPipelineBinding bindingData))
+            {
+                setData.Bindings.Add(binding, bindingData = new BoundPipelineBinding
+                {
+                    BoundIndices = new HashSet<int>()
+                });
+            }
+
+            bindingData.BoundIndices.Add(index);
+        }
+
+        void IBindableVulkanResource.Unbind(int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
+        {
+            using var unbindEvent = OptickMacros.Event();
+
+            ulong id = pipeline.ID;
+            if (!mBoundPipelines.TryGetValue(id, out BoundPipelineData pipelineData))
+            {
+                return;
+            }
+
+            if (dynamicId >= 0)
+            {
+                if (pipelineData.Sets.Count == 0 && pipelineData.DynamicIDs.Count == 1 && pipelineData.DynamicIDs.Contains(dynamicId))
+                {
+                    mBoundPipelines.Remove(id);
+                    return;
+                }
+
+                pipelineData.DynamicIDs.Remove(dynamicId);
+                return;
+            }
+
+            if (!pipelineData.Sets.TryGetValue(set, out BoundPipelineDescriptorSet setData))
+            {
+                return;
+            }
+
+            if (!setData.Bindings.TryGetValue(binding, out BoundPipelineBinding bindingData))
+            {
+                return;
+            }
+
+            if (bindingData.BoundIndices.Count == 1 && bindingData.BoundIndices.Contains(index))
+            {
+                if (setData.Bindings.Count == 1 && setData.Bindings.ContainsKey(binding))
+                {
+                    if (pipelineData.Sets.Count == 1 && pipelineData.Sets.ContainsKey(set) && pipelineData.DynamicIDs.Count == 0)
+                    {
+                        mBoundPipelines.Remove(id);
+                        return;
+                    }
+
+                    pipelineData.Sets.Remove(set);
+                    return;
+                }
+
+                setData.Bindings.Remove(binding);
+                return;
+            }
+
+            bindingData.BoundIndices.Remove(index);
+        }
+
+        protected abstract void BindSets(DescriptorSet[] sets, uint binding, uint arrayElement);
+        protected void Rebind()
+        {
+            using var rebindEvent = OptickMacros.Event();
+            foreach (var pipelineId in mBoundPipelines.Keys)
+            {
+                var pipelineData = mBoundPipelines[pipelineId];
+                var pipeline = pipelineData.Pipeline;
+
+                foreach (int set in pipelineData.Sets.Keys)
+                {
+                    var setData = pipelineData.Sets[set];
+                    foreach (int binding in setData.Bindings.Keys)
+                    {
+                        var bindingData = setData.Bindings[binding];
+                        foreach (int index in bindingData.BoundIndices)
+                        {
+                            pipeline.Bind(this, set, binding, index);
+                        }
+                    }
+                }
+
+                foreach (nint dynamicId in pipelineData.DynamicIDs)
+                {
+                    pipeline.UpdateDynamicID(dynamicId);
+                }
+            }
+        }
+
+        protected void DestroyDynamicIDs()
+        {
+            using var destroyEvent = OptickMacros.Event();
+            foreach (var pipelineData in mBoundPipelines.Values)
+            {
+                foreach (nint id in pipelineData.DynamicIDs)
+                {
+                    pipelineData.Pipeline.DestroyDynamicID(id);
+                }
+            }
+        }
+
+        ulong IBindableVulkanResource.ID => mID;
+
+        private readonly ulong mID;
+        private readonly Dictionary<ulong, BoundPipelineData> mBoundPipelines;
+    }
+
     public struct VulkanImageLayout
     {
         public ImageLayout Layout { get; set; }
@@ -28,7 +202,7 @@ namespace CodePlayground.Graphics.Vulkan
         public ImageTiling Tiling { get; set; }
     }
 
-    public sealed class VulkanImage : IDeviceImage
+    public sealed class VulkanImage : BindableVulkanImage, IDeviceImage
     {
         private static readonly Format[] sPreferredDepthFormats;
         static VulkanImage()
@@ -65,6 +239,7 @@ namespace CodePlayground.Graphics.Vulkan
                     DeviceImageUsageFlags.DepthStencilAttachment => ImageUsageFlags.DepthStencilAttachmentBit,
                     DeviceImageUsageFlags.CopySource => ImageUsageFlags.TransferSrcBit,
                     DeviceImageUsageFlags.CopyDestination => ImageUsageFlags.TransferDstBit,
+                    DeviceImageUsageFlags.Storage => ImageUsageFlags.StorageBit,
                     _ => 0
                 };
             }
@@ -172,6 +347,9 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
+            using var disposeEvent = OptickMacros.Event();
+            DestroyDynamicIDs();
+
             var api = VulkanContext.API;
             api.DestroyImageView(mDevice.Device, mView, null);
             api.DestroyImage(mDevice.Device, mImage, null);
@@ -198,32 +376,17 @@ namespace CodePlayground.Graphics.Vulkan
                 Samples = SampleCountFlags.Count1Bit,
                 Tiling = Tiling,
                 Usage = ConvertUsageFlags(Usage),
-                InitialLayout = Layout.Layout
+                InitialLayout = mLayout.Layout
             };
 
             var physicalDevice = mDevice.PhysicalDevice;
-            var queueFamilies = physicalDevice.FindQueueTypes();
-            int graphics = queueFamilies[CommandQueueFlags.Graphics];
-            int transfer = queueFamilies[CommandQueueFlags.Transfer];
-
-            var indices = new uint[]
-            {
-                (uint)graphics,
-                (uint)transfer
-            };
+            var sharingMode = physicalDevice.FindSharingMode(out uint[]? indices, out uint indexCount);
 
             fixed (uint* indexPtr = indices)
             {
-                if (graphics != transfer)
-                {
-                    createInfo.SharingMode = SharingMode.Concurrent;
-                    createInfo.QueueFamilyIndexCount = (uint)indices.Length; // 2
-                    createInfo.PQueueFamilyIndices = indexPtr;
-                }
-                else
-                {
-                    createInfo.SharingMode = SharingMode.Exclusive;
-                }
+                createInfo.SharingMode = sharingMode;
+                createInfo.QueueFamilyIndexCount = indexCount;
+                createInfo.PQueueFamilyIndices = indexPtr;
 
                 fixed (Silk.NET.Vulkan.Image* image = &mImage)
                 {
@@ -257,6 +420,13 @@ namespace CodePlayground.Graphics.Vulkan
                 var api = VulkanContext.API;
                 api.CreateImageView(mDevice.Device, &createInfo, null, view).Assert();
             }
+
+            mImageInfo = VulkanUtilities.Init<DescriptorImageInfo>() with
+            {
+                Sampler = default,
+                ImageLayout = GetLayout(DeviceImageLayoutName.ComputeStorage).Layout, // we don't need any other layouts - vulkan's gonna get angry anyway
+                ImageView = mView
+            };
         }
 
         [MemberNotNull(nameof(mAllocation))]
@@ -312,6 +482,12 @@ namespace CodePlayground.Graphics.Vulkan
                     Layout = ImageLayout.TransferDstOptimal,
                     Stage = PipelineStageFlags.TransferBit,
                     AccessMask = AccessFlags.TransferWriteBit
+                },
+                DeviceImageLayoutName.ComputeStorage => new VulkanImageLayout
+                {
+                    Layout = ImageLayout.General,
+                    Stage = PipelineStageFlags.ComputeShaderBit,
+                    AccessMask = AccessFlags.ShaderWriteBit
                 },
                 _ => throw new ArgumentException("Invalid image layout name!")
             };
@@ -535,6 +711,30 @@ namespace CodePlayground.Graphics.Vulkan
             return new VulkanTexture(this, ownsImage, samplerSettings);
         }
 
+        protected override unsafe void BindSets(DescriptorSet[] sets, uint binding, uint arrayElement)
+        {
+            using var bindEvent = OptickMacros.Event();
+            fixed (DescriptorImageInfo* imageInfo = &mImageInfo)
+            {
+                var writes = new WriteDescriptorSet[sets.Length];
+                for (int i = 0; i < writes.Length; i++)
+                {
+                    writes[i] = VulkanUtilities.Init<WriteDescriptorSet>() with
+                    {
+                        DstSet = sets[i],
+                        DstBinding = binding,
+                        DstArrayElement = arrayElement,
+                        DescriptorCount = 1,
+                        DescriptorType = DescriptorType.StorageImage, // create a texture for sampling
+                        PImageInfo = imageInfo
+                    };
+                }
+
+                var api = VulkanContext.API;
+                api.UpdateDescriptorSets(mDevice.Device, writes, 0, null);
+            }
+        }
+
         public DeviceImageUsageFlags Usage { get; }
         public Size Size { get; }
         public int MipLevels { get; }
@@ -568,6 +768,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private Silk.NET.Vulkan.Image mImage;
         private ImageView mView;
+        private DescriptorImageInfo mImageInfo;
         private Allocation mAllocation;
         private VulkanImageLayout mLayout;
 

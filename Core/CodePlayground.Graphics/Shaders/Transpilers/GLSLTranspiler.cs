@@ -29,7 +29,16 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
             sShaderVariableNames = new Dictionary<ShaderVariableID, string>
             {
-                [ShaderVariableID.OutputPosition] = "gl_Position"
+                // vertex shader
+                [ShaderVariableID.OutputPosition] = "gl_Position",
+
+                // compute shader
+                [ShaderVariableID.WorkGroupCount] = "gl_NumWorkGroups",
+                [ShaderVariableID.WorkGroupID] = "gl_WorkGroupID",
+                [ShaderVariableID.WorkGroupSize] = "gl_WorkGroupSize", // compile-time constant
+                [ShaderVariableID.LocalInvocationID] = "gl_LocalInvocationID",
+                [ShaderVariableID.GlobalInvocationID] = "gl_GlobalInvocationID",
+                [ShaderVariableID.LocalInvocationIndex] = "gl_LocalInvocationIndex"
             };
         }
 
@@ -322,19 +331,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 int arraySize;
                 if (fieldType.IsArray)
                 {
-                    if (!fieldType.HasElementType)
-                    {
-                        throw new InvalidOperationException("Must define a type for struct arrays!");
-                    }
-
-                    var attribute = field.GetCustomAttribute<ArraySizeAttribute>();
-                    if (attribute is null)
-                    {
-                        throw new InvalidOperationException("Arrays defined in structs must have a set size!");
-                    }
-
                     elementType = fieldType.GetElementType() ?? throw new InvalidOperationException("Invalid array type!");
-                    arraySize = attribute.Length;
+                    arraySize = (int?)field.GetCustomAttribute<ArraySizeAttribute>()?.Length ?? -1;
                 }
                 else
                 {
@@ -395,41 +393,41 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             var inputFields = new Dictionary<string, string>();
             var outputFields = new Dictionary<string, string>();
 
-            for (int i = 0; i < parameters.Length; i++)
-            {
-                var parameter = parameters[i];
-
-                var name = parameter.Name ?? $"param_{i}";
-                parameterNames.Add(name);
-
-                if (entrypoint)
-                {
-                    ParseSignatureStructure(parameter.ParameterType, parameter, name, (fieldType, expression, destination, location) =>
-                    {
-                        string inputName;
-                        if (location >= 0)
-                        {
-                            inputName = "_input_" + destination;
-                            mStageIO.Add(inputName, new StageIOField
-                            {
-                                Direction = StageIODirection.In,
-                                Location = location,
-                                TypeName = GetTypeName(fieldType, type, true)
-                            });
-                        }
-                        else
-                        {
-                            inputName = destination;
-                        }
-
-                        inputFields.Add(expression, inputName);
-                        ProcessType(fieldType, type);
-                    });
-                }
-            }
-
             using (OptickMacros.Event("Parse shader function signature"))
             {
+                for (int i = 0; i < parameters.Length; i++)
+                {
+                    var parameter = parameters[i];
+
+                    var name = parameter.Name ?? $"param_{i}";
+                    parameterNames.Add(name);
+
+                    if (entrypoint)
+                    {
+                        ParseSignatureStructure(parameter.ParameterType, parameter, name, (fieldType, expression, destination, location) =>
+                        {
+                            string inputName;
+                            if (location >= 0)
+                            {
+                                inputName = "_input_" + destination;
+                                mStageIO.Add(inputName, new StageIOField
+                                {
+                                    Direction = StageIODirection.In,
+                                    Location = location,
+                                    TypeName = GetTypeName(fieldType, type, true)
+                                });
+                            }
+                            else
+                            {
+                                inputName = destination;
+                            }
+
+                            inputFields.Add(expression, inputName);
+                            ProcessType(fieldType, type);
+                        });
+                    }
+                }
+
                 if (entrypoint)
                 {
                     returnTypeString = "void";
@@ -530,7 +528,19 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 var operatorAttribute = operand.GetCustomAttribute<ShaderOperatorAttribute>();
                                 if (operatorAttribute is not null)
                                 {
+                                    string? setValue = null;
+                                    if (operand.GetParameters().Length > 1)
+                                    {
+                                        setValue = evaluationStack.Pop();
+                                    }
+
                                     PushOperatorExpression(operatorAttribute.Type, evaluationStack);
+                                    if (setValue is not null)
+                                    {
+                                        var target = evaluationStack.Pop();
+                                        builder.AppendLine($"{target} = {setValue}");
+                                    }
+
                                     continue;
                                 }
 
@@ -615,9 +625,19 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                             layoutString = $"set = {layoutAttribute.Set}, binding = {layoutAttribute.Binding}";
 
                                             var primitiveTypeAttribute = fieldType.GetCustomAttribute<PrimitiveShaderTypeAttribute>();
-                                            if (primitiveTypeAttribute is null || !primitiveTypeAttribute.IsSampler)
+                                            if (primitiveTypeAttribute is null || primitiveTypeAttribute.TypeClass == PrimitiveShaderTypeClass.Value)
                                             {
                                                 layoutString = "std140, " + layoutString;
+                                            }
+                                            else if (primitiveTypeAttribute.TypeClass == PrimitiveShaderTypeClass.Image)
+                                            {
+                                                var format = layoutAttribute.Format;
+                                                var formatEnumName = format.ToString();
+
+                                                var formatField = typeof(ShaderImageFormat).GetField(formatEnumName, BindingFlags.Static | BindingFlags.Public);
+                                                var fieldNameAttribute = formatField?.GetCustomAttribute<ShaderFieldNameAttribute>();
+
+                                                layoutString += ", " + fieldNameAttribute?.Name ?? formatEnumName.ToLower();
                                             }
                                         }
 
@@ -831,6 +851,10 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             var lhs = evaluationStack.Pop();
 
                             evaluationStack.Push($"{lhs} < {rhs}");
+                        }
+                        else if (name.StartsWith("conv"))
+                        {
+                            // glsl does not allow c-style casts
                         }
                         else
                         {
@@ -1291,9 +1315,15 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         private static string GetFieldDefinition(string fieldName, StructFieldInfo fieldInfo)
         {
             string definition = $"{fieldInfo.TypeName} {fieldName}";
-            if (fieldInfo.ArraySize > 0)
+            if (fieldInfo.ArraySize != 0)
             {
-                definition += $"[{fieldInfo.ArraySize}]";
+                definition += '[';
+                if (fieldInfo.ArraySize > 0)
+                {
+                    definition += fieldInfo.ArraySize;
+                }
+
+                definition += ']';
             }
 
             return $"{definition};";
@@ -1326,7 +1356,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     builder.AppendLine(definition);
                 }
 
-                builder.AppendLine("};\n");
+                builder.AppendLine("};");
             }
 
             foreach (string fieldName in mStageIO.Keys)
@@ -1335,6 +1365,15 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 var direction = fieldData.Direction.ToString().ToLower();
 
                 builder.AppendLine($"layout(location = {fieldData.Location}) {direction} {fieldData.TypeName} {fieldName};");
+            }
+
+            if (stage == ShaderStage.Compute)
+            {
+                var attribute = entrypoint.GetCustomAttribute<NumThreadsAttribute>();
+                if (attribute is not null)
+                {
+                    builder.AppendLine($"layout(local_size_x = {attribute.X}, local_size_y = {attribute.Y}, local_size_z = {attribute.Z}) in;");
+                }
             }
 
             foreach (string fieldName in mStageResources.Keys)

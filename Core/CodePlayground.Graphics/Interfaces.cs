@@ -41,6 +41,7 @@ namespace CodePlayground.Graphics
         Vertex,
         Index,
         Uniform,
+        Storage,
         Staging
     }
 
@@ -58,6 +59,7 @@ namespace CodePlayground.Graphics
         DepthStencilAttachment = 0x4,
         CopySource = 0x8,
         CopyDestination = 0x10,
+        Storage = 0x20,
     }
 
     public enum DeviceImageFormat
@@ -76,7 +78,8 @@ namespace CodePlayground.Graphics
         ColorAttachment,
         DepthStencilAttachment,
         CopySource,
-        CopyDestination
+        CopyDestination,
+        ComputeStorage,
     }
 
     public enum AddressMode
@@ -462,5 +465,7 @@ namespace CodePlayground.Graphics
     {
         public void SetScissor(ICommandList commandList, int index, int x, int y, int width, int height);
         public void RenderIndexed(ICommandList commandList, int indexOffset, int indexCount);
+
+        public void DispatchCompute(ICommandList commandList, int x, int y, int z);
     }
 }

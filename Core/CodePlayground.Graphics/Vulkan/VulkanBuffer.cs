@@ -14,6 +14,7 @@ namespace CodePlayground.Graphics.Vulkan
                 DeviceBufferUsage.Vertex => BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit,
                 DeviceBufferUsage.Index => BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit,
                 DeviceBufferUsage.Uniform => BufferUsageFlags.UniformBufferBit,
+                DeviceBufferUsage.Storage => BufferUsageFlags.StorageBufferBit,
                 DeviceBufferUsage.Staging => BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit,
                 _ => throw new ArgumentException("Invalid buffer usage!")
             };
@@ -38,32 +39,16 @@ namespace CodePlayground.Graphics.Vulkan
             };
 
             var physicalDevice = device.PhysicalDevice;
-            var queueFamilies = physicalDevice.FindQueueTypes();
-
-            int graphics = queueFamilies[CommandQueueFlags.Graphics];
-            int transfer = queueFamilies[CommandQueueFlags.Transfer];
-
-            var indices = new uint[]
-            {
-                (uint)graphics,
-                (uint)transfer
-            };
+            var sharingMode = physicalDevice.FindSharingMode(out uint[]? indices, out uint indexCount);
 
             var api = VulkanContext.API;
             using (OptickMacros.Event("Device buffer creation"))
             {
                 fixed (uint* indexPtr = indices)
                 {
-                    if (graphics != transfer)
-                    {
-                        createInfo.SharingMode = SharingMode.Concurrent;
-                        createInfo.QueueFamilyIndexCount = (uint)indices.Length; // 2
-                        createInfo.PQueueFamilyIndices = indexPtr;
-                    }
-                    else
-                    {
-                        createInfo.SharingMode = SharingMode.Exclusive;
-                    }
+                    createInfo.SharingMode = sharingMode;
+                    createInfo.QueueFamilyIndexCount = indexCount;
+                    createInfo.PQueueFamilyIndices = indexPtr;
 
                     fixed (Silk.NET.Vulkan.Buffer* buffer = &mBuffer)
                     {
@@ -81,6 +66,7 @@ namespace CodePlayground.Graphics.Vulkan
                         DeviceBufferUsage.Vertex => MemoryUsage.GPU_Only,
                         DeviceBufferUsage.Index => MemoryUsage.GPU_Only,
                         DeviceBufferUsage.Uniform => MemoryUsage.CPU_To_GPU,
+                        DeviceBufferUsage.Storage => MemoryUsage.GPU_To_CPU,
                         DeviceBufferUsage.Staging => MemoryUsage.CPU_Only,
                         _ => throw new ArgumentException("Invalid buffer usage!")
                     }
@@ -211,7 +197,7 @@ namespace CodePlayground.Graphics.Vulkan
             });
         }
 
-        public unsafe void Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
+        unsafe void IBindableVulkanResource.Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
         {
             using var bindEvent = OptickMacros.Event();
 
@@ -234,6 +220,7 @@ namespace CodePlayground.Graphics.Vulkan
                     DescriptorType = mUsage switch
                     {
                         DeviceBufferUsage.Uniform => DescriptorType.UniformBuffer,
+                        DeviceBufferUsage.Storage => DescriptorType.StorageBuffer,
                         _ => throw new InvalidOperationException($"Cannot bind a buffer of type {mUsage}")
                     },
                     PBufferInfo = &bufferInfo
@@ -252,7 +239,8 @@ namespace CodePlayground.Graphics.Vulkan
         public DeviceBufferUsage Usage => mUsage;
         public int Size => mSize;
         public Silk.NET.Vulkan.Buffer Buffer => mBuffer;
-        public ulong ID => mID;
+
+        ulong IBindableVulkanResource.ID => mID;
 
         private readonly VulkanDevice mDevice;
         private readonly VulkanMemoryAllocator mAllocator;

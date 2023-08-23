@@ -6,6 +6,7 @@ using Silk.NET.Vulkan;
 using Spirzza.Interop.SpirvCross;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
@@ -226,6 +227,27 @@ namespace CodePlayground.Graphics.Vulkan
 
             var formatName = format.ToString();
             return formatName.EndsWith(nameof(Format.S8Uint));
+        }
+
+        public static SharingMode FindSharingMode(this VulkanPhysicalDevice physicalDevice, out uint[]? familyIndices, out uint indexCount)
+        {
+            using var findFamiliesEvent = OptickMacros.Event();
+
+            familyIndices = null;
+            indexCount = 0;
+
+            var uniqueIndices = physicalDevice.FindQueueTypes().Values.ToHashSet();
+            if (uniqueIndices.Count != 1)
+            {
+                familyIndices = uniqueIndices.Cast<uint>().ToArray();
+                indexCount = (uint)uniqueIndices.Count;
+
+                return SharingMode.Concurrent;
+            }
+            else
+            {
+                return SharingMode.Exclusive;
+            }
         }
     }
 }

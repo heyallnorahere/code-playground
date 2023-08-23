@@ -55,5 +55,24 @@ namespace CodePlayground.Graphics.Vulkan
             var api = VulkanContext.API;
             api.CmdDrawIndexed(commandBuffer.Buffer, (uint)indexCount, 1, (uint)indexOffset, 0, 0);
         }
+
+        void IRenderer.DispatchCompute(ICommandList commandList, int x, int y, int z)
+        {
+            if (commandList is not VulkanCommandBuffer)
+            {
+                throw new ArgumentException("Must pass a Vulkan command buffer!");
+            }
+
+            DispatchCompute((VulkanCommandBuffer)commandList, x, y, z);
+        }
+
+        public static void DispatchCompute(VulkanCommandBuffer commandBuffer, int x, int y, int z)
+        {
+            using var computeEvent = OptickMacros.Event();
+            using var gpuComputeEvent = OptickMacros.GPUEvent("Dispatch compute");
+
+            var api = VulkanContext.API;
+            api.CmdDispatch(commandBuffer.Buffer, (uint)x, (uint)y, (uint)z);
+        }
     }
 }

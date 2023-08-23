@@ -1,29 +1,11 @@
 using Silk.NET.Vulkan;
 using System;
-using System.Collections.Generic;
 
 using OptickMacros = Optick.NET.OptickMacros;
 
 namespace CodePlayground.Graphics.Vulkan
 {
-    internal struct BoundPipelineData
-    {
-        public Dictionary<int, BoundPipelineDescriptorSet> Sets { get; set; }
-        public VulkanPipeline Pipeline { get; set; }
-        public HashSet<nint> DynamicIDs { get; set; }
-    }
-
-    internal struct BoundPipelineDescriptorSet
-    {
-        public Dictionary<int, BoundPipelineBinding> Bindings { get; set; }
-    }
-
-    internal struct BoundPipelineBinding
-    {
-        public HashSet<int> BoundIndices { get; set; }
-    }
-
-    public sealed class VulkanTexture : ITexture, IBindableVulkanResource
+    public sealed class VulkanTexture : BindableVulkanImage, ITexture
     {
         public VulkanTexture(VulkanImage image, bool ownsImage, ISamplerSettings? samplerSettings)
         {
@@ -31,9 +13,7 @@ namespace CodePlayground.Graphics.Vulkan
 
             mDisposed = false;
             mDevice = image.Device;
-            mBoundPipelines = new Dictionary<ulong, BoundPipelineData>();
 
-            ID = VulkanPipeline.GenerateID();
             Image = image;
             OwnsImage = ownsImage;
             SamplerSettings = samplerSettings;
@@ -71,14 +51,7 @@ namespace CodePlayground.Graphics.Vulkan
         private unsafe void Dispose(bool disposing)
         {
             using var disposeEvent = OptickMacros.Event();
-
-            foreach (var pipelineData in mBoundPipelines.Values)
-            {
-                foreach (nint id in pipelineData.DynamicIDs)
-                {
-                    pipelineData.Pipeline.DestroyDynamicID(id);
-                }
-            }
+            DestroyDynamicIDs();
 
             if (disposing)
             {
@@ -94,34 +67,6 @@ namespace CodePlayground.Graphics.Vulkan
 
             var api = VulkanContext.API;
             api.DestroySampler(mDevice.Device, mImageInfo.Sampler, null);
-        }
-
-        private void Rebind()
-        {
-            using var rebindEvent = OptickMacros.Event();
-            foreach (var pipelineId in mBoundPipelines.Keys)
-            {
-                var pipelineData = mBoundPipelines[pipelineId];
-                var pipeline = pipelineData.Pipeline;
-
-                foreach (int set in pipelineData.Sets.Keys)
-                {
-                    var setData = pipelineData.Sets[set];
-                    foreach (int binding in setData.Bindings.Keys)
-                    {
-                        var bindingData = setData.Bindings[binding];
-                        foreach (int index in bindingData.BoundIndices)
-                        {
-                            pipeline.Bind(this, set, binding, index);
-                        }
-                    }
-                }
-
-                foreach (nint dynamicId in pipelineData.DynamicIDs)
-                {
-                    pipeline.UpdateDynamicID(dynamicId);
-                }
-            }
         }
 
         private void OnLayoutChanged(VulkanImageLayout layout)
@@ -190,51 +135,8 @@ namespace CodePlayground.Graphics.Vulkan
             Rebind();
         }
 
-        private void AddBindingIndex(int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
+        protected override unsafe void BindSets(DescriptorSet[] sets, uint binding, uint arrayElement)
         {
-            using var addBindingIndexEvent = OptickMacros.Event();
-
-            ulong id = pipeline.ID;
-            if (!mBoundPipelines.TryGetValue(id, out BoundPipelineData pipelineData))
-            {
-                mBoundPipelines.Add(id, pipelineData = new BoundPipelineData
-                {
-                    Sets = new Dictionary<int, BoundPipelineDescriptorSet>(),
-                    Pipeline = pipeline,
-                    DynamicIDs = new HashSet<nint>()
-                });
-            }
-
-            if (dynamicId >= 0)
-            {
-                pipelineData.DynamicIDs.Add(dynamicId);
-                return;
-            }
-
-            if (!pipelineData.Sets.TryGetValue(set, out BoundPipelineDescriptorSet setData))
-            {
-                pipelineData.Sets.Add(set, setData = new BoundPipelineDescriptorSet
-                {
-                    Bindings = new Dictionary<int, BoundPipelineBinding>()
-                });
-            }
-
-            if (!setData.Bindings.TryGetValue(binding, out BoundPipelineBinding bindingData))
-            {
-                setData.Bindings.Add(binding, bindingData = new BoundPipelineBinding
-                {
-                    BoundIndices = new HashSet<int>()
-                });
-            }
-
-            bindingData.BoundIndices.Add(index);
-        }
-
-        public unsafe void Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
-        {
-            using var bindEvent = OptickMacros.Event();
-            AddBindingIndex(set, binding, index, pipeline, dynamicId);
-
             fixed (DescriptorImageInfo* imageInfo = &mImageInfo)
             {
                 var writes = new WriteDescriptorSet[sets.Length];
@@ -243,8 +145,8 @@ namespace CodePlayground.Graphics.Vulkan
                     writes[i] = VulkanUtilities.Init<WriteDescriptorSet>() with
                     {
                         DstSet = sets[i],
-                        DstBinding = (uint)binding,
-                        DstArrayElement = (uint)index,
+                        DstBinding = binding,
+                        DstArrayElement = arrayElement,
                         DescriptorCount = 1,
                         DescriptorType = DescriptorType.CombinedImageSampler,
                         PImageInfo = imageInfo
@@ -256,69 +158,15 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        void IBindableVulkanResource.Unbind(int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
-        {
-            using var unbindEvent = OptickMacros.Event();
-
-            ulong id = pipeline.ID;
-            if (!mBoundPipelines.TryGetValue(id, out BoundPipelineData pipelineData))
-            {
-                return;
-            }
-
-            if (dynamicId >= 0)
-            {
-                if (pipelineData.Sets.Count == 0 && pipelineData.DynamicIDs.Count == 1 && pipelineData.DynamicIDs.Contains(dynamicId))
-                {
-                    mBoundPipelines.Remove(id);
-                    return;
-                }
-
-                pipelineData.DynamicIDs.Remove(dynamicId);
-                return;
-            }
-
-            if (!pipelineData.Sets.TryGetValue(set, out BoundPipelineDescriptorSet setData))
-            {
-                return;
-            }
-
-            if (!setData.Bindings.TryGetValue(binding, out BoundPipelineBinding bindingData))
-            {
-                return;
-            }
-
-            if (bindingData.BoundIndices.Count == 1 && bindingData.BoundIndices.Contains(index))
-            {
-                if (setData.Bindings.Count == 1 && setData.Bindings.ContainsKey(binding))
-                {
-                    if (pipelineData.Sets.Count == 1 && pipelineData.Sets.ContainsKey(set) && pipelineData.DynamicIDs.Count == 0)
-                    {
-                        mBoundPipelines.Remove(id);
-                        return;
-                    }
-
-                    pipelineData.Sets.Remove(set);
-                    return;
-                }
-
-                setData.Bindings.Remove(binding);
-                return;
-            }
-
-            bindingData.BoundIndices.Remove(index);
-        }
-
         public VulkanImage Image { get; }
         public bool OwnsImage { get; }
         public ISamplerSettings? SamplerSettings { get; }
-        public ulong ID { get; }
 
         IDeviceImage ITexture.Image => Image;
 
-        private bool mDisposed;
         private readonly VulkanDevice mDevice;
         private DescriptorImageInfo mImageInfo;
-        private readonly Dictionary<ulong, BoundPipelineData> mBoundPipelines;
+
+        private bool mDisposed;
     }
 }
