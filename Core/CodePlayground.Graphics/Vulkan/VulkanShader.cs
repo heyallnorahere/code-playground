@@ -23,7 +23,8 @@ namespace CodePlayground.Graphics.Vulkan
                 [spvc_resource_type.SPVC_RESOURCE_TYPE_SEPARATE_IMAGE] = ShaderResourceTypeFlags.Image,
                 [spvc_resource_type.SPVC_RESOURCE_TYPE_SEPARATE_SAMPLERS] = ShaderResourceTypeFlags.Sampler,
                 [spvc_resource_type.SPVC_RESOURCE_TYPE_UNIFORM_BUFFER] = ShaderResourceTypeFlags.UniformBuffer,
-                [spvc_resource_type.SPVC_RESOURCE_TYPE_STORAGE_BUFFER] = ShaderResourceTypeFlags.StorageBuffer
+                [spvc_resource_type.SPVC_RESOURCE_TYPE_STORAGE_BUFFER] = ShaderResourceTypeFlags.StorageBuffer,
+                [spvc_resource_type.SPVC_RESOURCE_TYPE_STORAGE_IMAGE] = ShaderResourceTypeFlags.StorageImage
             };
 
             sResourceTypeIODirections = new Dictionary<spvc_resource_type, StageIODirection>

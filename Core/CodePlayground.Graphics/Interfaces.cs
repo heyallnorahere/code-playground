@@ -121,7 +121,8 @@ namespace CodePlayground.Graphics
         Image = 0x1,
         Sampler = 0x2,
         UniformBuffer = 0x4,
-        StorageBuffer = 0x8
+        StorageBuffer = 0x8,
+        StorageImage = 0x10,
     }
 
     public enum StageIODirection

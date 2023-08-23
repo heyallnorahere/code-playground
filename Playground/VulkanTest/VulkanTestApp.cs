@@ -5,7 +5,6 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.Design;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
@@ -312,7 +311,7 @@ namespace VulkanTest
                 FrameCount = 1
             });
 
-            var stream = GetResourceStream("Models/textures/hammer_Albedo.png");
+            var stream = GetResourceStream("Models/textures/hammer_Metallic.png");
             if (stream is null)
             {
                 throw new FileNotFoundException("Could not image to emboss!");
@@ -412,6 +411,32 @@ namespace VulkanTest
                 material.Bind(pipeline, nameof(TestShader.u_MaterialBuffer), textureType => $"u_{textureType}Map");
 
                 mPipelines[i] = pipeline;
+            }
+
+            // compute shader test
+            {
+                var queue = context.Device.GetQueue(CommandQueueFlags.Transfer | CommandQueueFlags.Compute);
+                var commandList = queue.Release();
+                commandList.Begin();
+
+                var result = EmbossImage(context, mRenderer, commandList);
+                commandList.PushStagingObject(result);
+
+                var imageSize = result.Size;
+                int bufferSize = imageSize.Width * imageSize.Height * Marshal.SizeOf<Rgba32>();
+
+                var stagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, bufferSize);
+                result.CopyToBuffer(commandList, stagingBuffer, result.Layout);
+                commandList.PushStagingObject(stagingBuffer);
+
+                commandList.End();
+                queue.Submit(commandList, true);
+
+                var imageBuffer = new byte[bufferSize];
+                stagingBuffer.CopyToCPU(imageBuffer);
+
+                var image = Image.LoadPixelData<Rgba32>(imageBuffer, imageSize.Width, imageSize.Height);
+                image.SaveAsPng("result.png");
             }
 
             InitializeImGui();

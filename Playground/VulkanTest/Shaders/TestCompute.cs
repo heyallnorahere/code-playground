@@ -26,9 +26,11 @@ namespace VulkanTest.Shaders
         {
             var position = new Vector2<int>((int)input.GlobalInvocationID.X, (int)input.GlobalInvocationID.Y);
 
-            // emboss kernel
-            // https://github.com/SaschaWillems/Vulkan/blob/master/shaders/glsl/computeshader/emboss.comp
-            var kernel = new Matrix3x3<float>(new Vector3<float>(-1f, 0f, 0f), new Vector3<float>(0f, -1f, 0f), new Vector3<float>(0f, 0f, 2f));
+            // edge-detection kernel
+            // https://github.com/SaschaWillems/Vulkan/blob/master/shaders/glsl/computeshader/edgedetect.comp
+            var kernel = new Matrix3x3<float>(new Vector3<float>(-1f / 8f, -1f / 8f, -1f / 8f),
+                                              new Vector3<float>(-1f / 8f, 1f, -1f / 8f),
+                                              new Vector3<float>(-1f / 8f, -1f / 8f, -1f / 8f)).Transpose();
 
             var data = new Matrix3x3<float>(0f);
             for (int y = -1; y <= 1; y++)

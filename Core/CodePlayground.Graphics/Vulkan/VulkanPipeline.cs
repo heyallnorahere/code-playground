@@ -588,6 +588,7 @@ namespace CodePlayground.Graphics.Vulkan
                                     ShaderResourceTypeFlags.Sampler => DescriptorType.Sampler,
                                     ShaderResourceTypeFlags.UniformBuffer => DescriptorType.UniformBuffer,
                                     ShaderResourceTypeFlags.StorageBuffer => DescriptorType.StorageBuffer,
+                                    ShaderResourceTypeFlags.StorageImage => DescriptorType.StorageImage,
                                     _ => throw new InvalidOperationException($"Flag combination not implemented: {resource.ResourceType}")
                                 },
                                 DescriptorCount = descriptorCount,

@@ -78,6 +78,8 @@ namespace Ragdoll
 
             mModelRegistry?.Dispose();
             mRenderer?.Dispose();
+
+            GraphicsContext?.Dispose();
         }
 
         private void OnUpdate(double delta)
