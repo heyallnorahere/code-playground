@@ -443,6 +443,7 @@ namespace CodePlayground.Graphics
         public void PushConstants(ICommandList commandList, BufferMapCallback callback);
 
         public bool Bind(IDeviceBuffer buffer, string name, int index = 0);
+        public bool Bind(IDeviceImage image, string name, int index = 0);
         public bool Bind(ITexture texture, string name, int index = 0);
 
         public nint CreateDynamicID(IDeviceBuffer buffer, string name, int index = 0);

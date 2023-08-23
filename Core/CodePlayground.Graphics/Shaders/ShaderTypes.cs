@@ -464,7 +464,7 @@ namespace CodePlayground.Graphics.Shaders
     [PrimitiveShaderType("mat4")]
     public sealed class Matrix4x4<T> where T : unmanaged
     {
-        public Matrix4x4(T value)
+        public Matrix4x4(T scalar)
         {
             throw new NotImplementedException();
         }
@@ -502,6 +502,16 @@ namespace CodePlayground.Graphics.Shaders
     [PrimitiveShaderType("mat3")]
     public sealed class Matrix3x3<T> where T : unmanaged
     {
+        public Matrix3x3(T scalar)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Matrix3x3(Vector3<T> col1, Vector3<T> col2, Vector3<T> col3)
+        {
+            throw new NotImplementedException();
+        }
+
         public Matrix3x3(Matrix4x4<T> matrix)
         {
             throw new NotImplementedException();
@@ -533,6 +543,10 @@ namespace CodePlayground.Graphics.Shaders
             [MethodImpl(MethodImplOptions.NoInlining)]
             [ShaderOperator(ShaderOperatorType.Index)]
             get => throw new NotImplementedException();
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            [ShaderOperator(ShaderOperatorType.Index)]
+            set => throw new NotImplementedException();
         }
     }
 

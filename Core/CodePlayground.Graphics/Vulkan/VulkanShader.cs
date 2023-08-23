@@ -710,6 +710,8 @@ namespace CodePlayground.Graphics.Vulkan
                 {
                     ShaderStage.Vertex => ShaderKind.VertexShader,
                     ShaderStage.Fragment => ShaderKind.FragmentShader,
+                    ShaderStage.Geometry => ShaderKind.GeometryShader,
+                    ShaderStage.Compute => ShaderKind.ComputeShader,
                     _ => throw new ArgumentException("Unsupported shader stage!")
                 };
 

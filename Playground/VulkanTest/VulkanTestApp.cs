@@ -5,6 +5,7 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.Design;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
@@ -303,14 +304,67 @@ namespace VulkanTest
             return Model.Load(buffer, path, importContext);
         }
 
+        private IDeviceImage EmbossImage(IGraphicsContext context, IRenderer renderer, ICommandList commandList)
+        {
+            var pipeline = mShaderLibrary!.LoadPipeline<TestCompute>(new PipelineDescription
+            {
+                Type = PipelineType.Compute,
+                FrameCount = 1
+            });
+
+            var stream = GetResourceStream("Models/textures/hammer_Albedo.png");
+            if (stream is null)
+            {
+                throw new FileNotFoundException("Could not image to emboss!");
+            }
+
+            var image = Image.Load<Rgba32>(stream);
+            var sourceImage = context.CreateDeviceImage(new DeviceImageInfo
+            {
+                Size = image.Size,
+                Usage = DeviceImageUsageFlags.CopyDestination | DeviceImageUsageFlags.Storage,
+                Format = DeviceImageFormat.RGBA8_UNORM,
+                MipLevels = 1
+            });
+
+            var destinationImage = context.CreateDeviceImage(new DeviceImageInfo
+            {
+                Size = image.Size,
+                Usage = DeviceImageUsageFlags.CopySource | DeviceImageUsageFlags.Storage,
+                Format = DeviceImageFormat.RGBA8_UNORM,
+                MipLevels = 1
+            });
+
+            var storageLayout = sourceImage.GetLayout(DeviceImageLayoutName.ComputeStorage);
+            sourceImage.TransitionLayout(commandList, sourceImage.Layout, storageLayout);
+            destinationImage.TransitionLayout(commandList, destinationImage.Layout, storageLayout);
+            sourceImage.Layout = destinationImage.Layout = storageLayout;
+
+            int bufferSize = image.Width * image.Height * Marshal.SizeOf<Rgba32>();
+            var buffer = new byte[bufferSize];
+            image.CopyPixelDataTo(buffer);
+
+            var stagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, bufferSize);
+            stagingBuffer.CopyFromCPU(buffer);
+
+            commandList.PushStagingObject(stagingBuffer);
+            commandList.PushStagingObject(pipeline);
+            commandList.PushStagingObject(sourceImage);
+
+            sourceImage.CopyFromBuffer(commandList, stagingBuffer, storageLayout);
+            pipeline.Bind(sourceImage, nameof(TestCompute.u_Input));
+            pipeline.Bind(destinationImage, nameof(TestCompute.u_Result));
+            pipeline.Bind(commandList, 0);
+
+            renderer.DispatchCompute(commandList, image.Width / TestCompute.BlockSize, image.Height / TestCompute.BlockSize, 1);
+            return destinationImage;
+        }
+
         private void OnLoad()
         {
             var context = CreateGraphicsContext();
             var swapchain = context.Swapchain;
             swapchain.VSync = true; // enable vsync
-
-            // enable profiling
-            InitializeOptick();
 
             mShaderLibrary = new ShaderLibrary(context, GetType().Assembly);
             mRenderer = context.CreateRenderer();

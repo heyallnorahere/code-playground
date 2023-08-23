@@ -118,7 +118,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             {
                 if (i > 0)
                 {
-                    glslName += ", ";
+                    glslName += "_";
                 }
 
                 glslName += nameList[i];
@@ -529,7 +529,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 if (operatorAttribute is not null)
                                 {
                                     string? setValue = null;
-                                    if (operand.GetParameters().Length > 1)
+                                    if (operatorAttribute.Type == ShaderOperatorType.Index && operand.GetParameters().Length > 1)
                                     {
                                         setValue = evaluationStack.Pop();
                                     }
@@ -538,7 +538,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                     if (setValue is not null)
                                     {
                                         var target = evaluationStack.Pop();
-                                        builder.AppendLine($"{target} = {setValue}");
+                                        builder.AppendLine($"{target} = {setValue};");
                                     }
 
                                     continue;
@@ -637,7 +637,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                                 var formatField = typeof(ShaderImageFormat).GetField(formatEnumName, BindingFlags.Static | BindingFlags.Public);
                                                 var fieldNameAttribute = formatField?.GetCustomAttribute<ShaderFieldNameAttribute>();
 
-                                                layoutString += ", " + fieldNameAttribute?.Name ?? formatEnumName.ToLower();
+                                                string formatString = fieldNameAttribute?.Name ?? formatEnumName.ToLower();
+                                                layoutString += ", " + formatString;
                                             }
                                         }
 
@@ -728,6 +729,14 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                     if (lastSeparator >= 0)
                                     {
                                         var valueSegment = name[(lastSeparator + 1)..];
+
+                                        int factor = 1;
+                                        if (valueSegment.StartsWith('m'))
+                                        {
+                                            factor *= -1;
+                                            valueSegment = valueSegment[1..];
+                                        }
+
                                         if (int.TryParse(valueSegment, out int parsedInteger))
                                         {
                                             parsedExpression = valueSegment;
@@ -836,21 +845,28 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             var rhs = evaluationStack.Pop();
                             var lhs = evaluationStack.Pop();
 
-                            evaluationStack.Push($"{lhs} == {rhs}");
+                            // hack
+                            if ((lhs.Contains('<') || lhs.Contains('>')) && int.TryParse(rhs, out int result))
+                            {
+                                // HACK
+                                rhs = (result != 0).ToString().ToLower();
+                            }
+
+                            evaluationStack.Push($"({lhs} == {rhs})");
                         }
                         else if (name.StartsWith("cgt"))
                         {
                             var rhs = evaluationStack.Pop();
                             var lhs = evaluationStack.Pop();
 
-                            evaluationStack.Push($"{lhs} > {rhs}");
+                            evaluationStack.Push($"({lhs} > {rhs})");
                         }
                         else if (name.StartsWith("clt"))
                         {
                             var rhs = evaluationStack.Pop();
                             var lhs = evaluationStack.Pop();
 
-                            evaluationStack.Push($"{lhs} < {rhs}");
+                            evaluationStack.Push($"({lhs} < {rhs})");
                         }
                         else if (name.StartsWith("conv"))
                         {
@@ -890,18 +906,20 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                     break;
                                 case "ret":
                                     {
-                                        var returnedExpression = evaluationStack.Pop();
-                                        if (entrypoint)
+                                        if (evaluationStack.TryPop(out string? returnedExpression))
                                         {
-                                            foreach (var expression in outputFields.Keys)
+                                            if (entrypoint)
                                             {
-                                                var outputName = outputFields[expression];
-                                                builder.AppendLine($"{outputName} = {returnedExpression}{expression};");
+                                                foreach (var expression in outputFields.Keys)
+                                                {
+                                                    var outputName = outputFields[expression];
+                                                    builder.AppendLine($"{outputName} = {returnedExpression}{expression};");
+                                                }
                                             }
-                                        }
-                                        else
-                                        {
-                                            builder.AppendLine($"return {returnedExpression};");
+                                            else
+                                            {
+                                                builder.AppendLine($"return {returnedExpression};");
+                                            }
                                         }
                                     }
                                     break;

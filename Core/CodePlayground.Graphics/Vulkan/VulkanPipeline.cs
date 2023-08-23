@@ -334,6 +334,7 @@ namespace CodePlayground.Graphics.Vulkan
         }
 
         bool IPipeline.Bind(IDeviceBuffer buffer, string name, int index) => BindObject(buffer, name, index, Bind);
+        bool IPipeline.Bind(IDeviceImage image, string name, int index) => BindObject(image, name, index, Bind);
         bool IPipeline.Bind(ITexture texture, string name, int index) => BindObject(texture, name, index, Bind);
 
         private static T BindObject<T>(object passedObject, string name, int index, Func<IBindableVulkanResource, string, int, T> callback)

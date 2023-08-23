@@ -5,7 +5,7 @@ using System;
 namespace VulkanTest.Shaders
 {
     [CompiledShader]
-    public static class TestShader
+    public sealed class TestShader
     {
         public const int MaxBones = 100;
 
