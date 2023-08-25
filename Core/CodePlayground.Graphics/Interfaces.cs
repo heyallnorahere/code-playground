@@ -311,6 +311,8 @@ namespace CodePlayground.Graphics
         public void Begin();
         public void End();
 
+        public void ExecutionBarrier();
+
         public void AddSemaphore(IDisposable semaphore, SemaphoreUsage usage);
         public void PushStagingObject(IDisposable stagingObject);
     }

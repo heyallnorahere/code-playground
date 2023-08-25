@@ -42,6 +42,20 @@ namespace CodePlayground.Graphics.Shaders
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("max")]
+        public static T Max<T>(T lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("min")]
+        public static T Min<T>(T lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
         [BuiltinShaderFunction("clamp")]
         public static float Clamp(float value, float min, float max)
         {
@@ -51,6 +65,39 @@ namespace CodePlayground.Graphics.Shaders
         [MethodImpl(MethodImplOptions.NoInlining)]
         [BuiltinShaderFunction("discard", Keyword = true)]
         public static void Discard()
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("barrier")]
+        public static void Barrier()
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("pow")]
+        public static float Pow(float x, float y)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("exp")]
+        public static float Exp(float x)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    // specifically atomic operations
+    // takes first argument by reference when translated due to the quirks of the glsl transpiler
+    public static class Atomic
+    {
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("atomicAdd")]
+        public static T Add<T>(T lhs, T rhs)
         {
             throw new NotImplementedException();
         }
@@ -431,12 +478,14 @@ namespace CodePlayground.Graphics.Shaders
     [PrimitiveShaderType("sampler2D", Instantiable = false, TypeClass = PrimitiveShaderTypeClass.Sampler)]
     public sealed class Sampler2D<T> where T : unmanaged
     {
+        [MethodImpl(MethodImplOptions.NoInlining)]
         [BuiltinShaderFunction("texture")]
         public Vector4<T> Sample(Vector2<T> uv)
         {
             throw new NotImplementedException();
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
         [BuiltinShaderFunction("texture")]
         public Vector4<T> Sample(Vector2<T> uv, float bias)
         {
@@ -447,16 +496,25 @@ namespace CodePlayground.Graphics.Shaders
     [PrimitiveShaderType("image2D", Instantiable = false, TypeClass = PrimitiveShaderTypeClass.Image)]
     public sealed class Image2D<T> where T : unmanaged
     {
+        [MethodImpl(MethodImplOptions.NoInlining)]
         [BuiltinShaderFunction("imageLoad")]
         public Vector4<T> Load(Vector2<int> position)
         {
             throw new NotImplementedException();
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
         [BuiltinShaderFunction("imageStore")]
         public void Store(Vector2<int> position, Vector4<T> color)
         {
             throw new NotImplementedException();
+        }
+
+        public Vector2<int> Size
+        {
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            [BuiltinShaderFunction("imageSize")]
+            get => throw new NotImplementedException();
         }
     }
 

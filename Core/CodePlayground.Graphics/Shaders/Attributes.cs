@@ -84,7 +84,7 @@ namespace CodePlayground.Graphics.Shaders
     {
         Uniform,
         [ShaderFieldName("buffer")]
-        StorageBuffer
+        Storage
     }
 
     public enum ShaderImageFormat
@@ -109,6 +109,7 @@ namespace CodePlayground.Graphics.Shaders
             ResourceType = ShaderResourceType.Uniform;
             Format = ShaderImageFormat.RGBA8;
             PushConstants = false;
+            Shared = false;
         }
 
         public int Location { get; set; }
@@ -117,6 +118,7 @@ namespace CodePlayground.Graphics.Shaders
         public ShaderResourceType ResourceType { get; set; }
         public ShaderImageFormat Format { get; set; }
         public bool PushConstants { get; set; }
+        public bool Shared { get; set; }
     }
 
     [AttributeUsage(AttributeTargets.Field, AllowMultiple = false, Inherited = true)]
@@ -125,9 +127,11 @@ namespace CodePlayground.Graphics.Shaders
         public ShaderFieldNameAttribute(string name)
         {
             Name = name;
+            UseClassName = true;
         }
 
         public string Name { get; }
+        public bool UseClassName { get; set; }
     }
 
     public enum ShaderVariableID

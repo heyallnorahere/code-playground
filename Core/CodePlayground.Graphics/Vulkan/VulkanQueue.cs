@@ -88,6 +88,14 @@ namespace CodePlayground.Graphics.Vulkan
             api.EndCommandBuffer(mBuffer).Assert();
         }
 
+        public unsafe void ExecutionBarrier()
+        {
+            using var barrierEvent = OptickMacros.Event();
+
+            var api = VulkanContext.API;
+            api.CmdPipelineBarrier(mBuffer, PipelineStageFlags.BottomOfPipeBit, PipelineStageFlags.TopOfPipeBit, DependencyFlags.None, 0, null, 0, null, 0, null);
+        }
+
         void ICommandList.AddSemaphore(IDisposable semaphore, SemaphoreUsage usage)
         {
             if (semaphore is not VulkanSemaphore)

@@ -14,6 +14,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private static readonly IReadOnlyDictionary<Type, string> sPrimitiveTypeNames;
         private static readonly IReadOnlyDictionary<ShaderVariableID, string> sShaderVariableNames;
+        private static readonly IReadOnlyDictionary<string, string> sConversionTypes;
 
         static GLSLTranspiler()
         {
@@ -40,6 +41,15 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 [ShaderVariableID.GlobalInvocationID] = "gl_GlobalInvocationID",
                 [ShaderVariableID.LocalInvocationIndex] = "gl_LocalInvocationIndex"
             };
+
+            sConversionTypes = new Dictionary<string, string>
+            {
+                ["r"] = "float",
+                ["r4"] = "float",
+                ["r8"] = "double",
+                ["i4"] = "int",
+                ["u4"] = "uint"
+            };
         }
 
         public GLSLTranspiler()
@@ -49,6 +59,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             mFieldNames = new Dictionary<FieldInfo, string>();
             mStageIO = new Dictionary<string, StageIOField>();
             mStageResources = new Dictionary<string, ShaderResource>();
+            mSharedVariables = new Dictionary<string, Type>();
             mDependencyGraph = new Dictionary<MethodInfo, TranslatedMethodInfo>();
             mStructDependencies = new Dictionary<Type, StructDependencyInfo>();
             mMethodScopes = new List<Scope>();
@@ -66,11 +77,14 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             var attribute = field.GetCustomAttribute<ShaderFieldNameAttribute>();
             string name = attribute?.Name ?? field.Name;
 
-            var declaringType = field.DeclaringType;
-            if (field.IsStatic && declaringType is not null && field.DeclaringType != shaderType)
+            if (attribute?.UseClassName ?? true)
             {
-                string typeName = GetTypeName(declaringType, shaderType, false);
-                name = $"{typeName}_{name}";
+                var declaringType = field.DeclaringType;
+                if (field.IsStatic && declaringType is not null && declaringType != shaderType)
+                {
+                    string typeName = GetTypeName(declaringType, shaderType, false);
+                    name = $"{typeName}_{name}";
+                }
             }
 
             mFieldNames.Add(field, name);
@@ -610,6 +624,16 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                     {
                                         throw new InvalidOperationException("Static and/or shader fields must have the Layout attribute applied!");
                                     }
+                                    else if (layoutAttribute.Shared)
+                                    {
+                                        var fieldType = field.FieldType;
+                                        ProcessType(fieldType, type);
+
+                                        if (!mSharedVariables.ContainsKey(fieldName))
+                                        {
+                                            mSharedVariables.Add(fieldName, fieldType);
+                                        }
+                                    }
                                     else if (!mStageResources.ContainsKey(fieldName))
                                     {
                                         var fieldType = field.FieldType;
@@ -655,7 +679,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 {
                                     var parentExpression = evaluationStack.Pop();
                                     expression = parentExpression != "this" ? $"{parentExpression}.{fieldName}" : fieldName;
-                                    
+
                                     if (inputFields.TryGetValue(expression, out string? inputName))
                                     {
                                         expression = inputName;
@@ -756,6 +780,14 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             if (instruction.Operand is FieldInfo field)
                             {
                                 var expression = evaluationStack.Pop();
+                                var fieldType = field.FieldType;
+
+                                // note(nora): this is fucking gross
+                                if (fieldType.IsPrimitive)
+                                {
+                                    var fieldTypeName = GetTypeName(fieldType, type, true);
+                                    expression = $"{fieldTypeName}({expression})";
+                                }
 
                                 var destination = GetFieldName(field, type);
                                 if (storeType.StartsWith("fld"))
@@ -779,6 +811,15 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 }
 
                                 var expression = evaluationStack.Pop();
+                                var variableType = localVariables[variableIndex].LocalType;
+
+                                // note(nora): also disgusting
+                                if (variableType.IsPrimitive)
+                                {
+                                    var variableTypeName = GetTypeName(variableType, type, true);
+                                    expression = $"{variableTypeName}({expression})";
+                                }
+
                                 builder.AppendLine($"var_{variableIndex} = {expression};");
                             }
                             else if (storeType.StartsWith("elem"))
@@ -870,7 +911,21 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         }
                         else if (name.StartsWith("conv"))
                         {
-                            // glsl does not allow c-style casts
+                            int typeIndex = name.IndexOfAny(new char[] { 'u', 'i', 'r' });
+                            if (typeIndex < 0)
+                            {
+                                throw new ArgumentException("Invalid convert instruction!");
+                            }
+
+                            int end = typeIndex + 1;
+                            if (name.Length > end && name[end] != '_')
+                            {
+                                end++;
+                            }
+
+                            string conversionType = name[typeIndex..end];
+                            string value = evaluationStack.Pop();
+                            evaluationStack.Push($"{sConversionTypes[conversionType]}({value})");
                         }
                         else
                         {
@@ -882,6 +937,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                         var expression = evaluationStack.Pop();
                                         builder.AppendLine($"{expression};");
                                     }
+
                                     break;
                                 case "initobj":
                                     evaluationStack.Pop();
@@ -903,25 +959,29 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
                                         evaluationStack.Push($"{typeName}({expressionString})");
                                     }
+
                                     break;
                                 case "ret":
+                                    if (evaluationStack.TryPop(out string? returnedExpression))
                                     {
-                                        if (evaluationStack.TryPop(out string? returnedExpression))
+                                        if (entrypoint)
                                         {
-                                            if (entrypoint)
+                                            foreach (var expression in outputFields.Keys)
                                             {
-                                                foreach (var expression in outputFields.Keys)
-                                                {
-                                                    var outputName = outputFields[expression];
-                                                    builder.AppendLine($"{outputName} = {returnedExpression}{expression};");
-                                                }
-                                            }
-                                            else
-                                            {
-                                                builder.AppendLine($"return {returnedExpression};");
+                                                var outputName = outputFields[expression];
+                                                builder.AppendLine($"{outputName} = {returnedExpression}{expression};");
                                             }
                                         }
+                                        else
+                                        {
+                                            builder.AppendLine($"return {returnedExpression};");
+                                        }
                                     }
+                                    else
+                                    {
+                                        builder.AppendLine("return;");
+                                    }
+
                                     break;
                                 default:
                                     throw new InvalidOperationException($"Instruction {name} has not been implemented yet!");
@@ -1140,6 +1200,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             mFieldNames.Clear();
             mStageIO.Clear();
             mStageResources.Clear();
+            mSharedVariables.Clear();
             mDependencyGraph.Clear();
             mStructDependencies.Clear();
         }
@@ -1429,6 +1490,14 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 builder.AppendLine(fieldName + ';');
             }
 
+            foreach (string fieldName in mSharedVariables.Keys)
+            {
+                var fieldType = mSharedVariables[fieldName];
+                var typeName = GetTypeName(fieldType, type, true);
+
+                builder.AppendLine($"shared {typeName} {fieldName};");
+            }
+
             var functionOrder = ResolveFunctionOrder();
             foreach (var method in functionOrder)
             {
@@ -1449,6 +1518,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         private readonly Dictionary<FieldInfo, string> mFieldNames;
         private readonly Dictionary<string, StageIOField> mStageIO;
         private readonly Dictionary<string, ShaderResource> mStageResources;
+        private readonly Dictionary<string, Type> mSharedVariables;
         private readonly Dictionary<MethodInfo, TranslatedMethodInfo> mDependencyGraph;
         private readonly Dictionary<Type, StructDependencyInfo> mStructDependencies;
         private readonly List<Scope> mMethodScopes;
