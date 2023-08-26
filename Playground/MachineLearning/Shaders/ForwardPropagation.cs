@@ -72,7 +72,7 @@ namespace MachineLearning.Shaders
                 {
                     int previousLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer - 1];
 
-                    // all of the weights relating to this neuron, plus the bias
+                    // all of the weights relating to this neuron and the bias of the neuron
                     int rowLength = previousLayerSize + 1;
                     int rowOffset = currentNeuron * rowLength + s_DataOffset;
 

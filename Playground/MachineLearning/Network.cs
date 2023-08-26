@@ -48,7 +48,7 @@ namespace MachineLearning
     public struct NetworkData
     {
         public int[] LayerSizes;
-        public Layer[] LayerData;
+        public Layer[] Data;
     }
 
     public sealed class Network
@@ -103,7 +103,7 @@ namespace MachineLearning
         public Network(NetworkData data)
         {
             int layerCount = data.LayerSizes.Length;
-            if (data.LayerData.Length != layerCount - 1)
+            if (data.Data.Length != layerCount - 1)
             {
                 throw new ArgumentException("Layer count mismatch!");
             }
@@ -118,7 +118,7 @@ namespace MachineLearning
                 int previousSize = mLayerSizes[i];
 
                 var layer = new Layer(currentSize, previousSize);
-                var existingLayer = data.LayerData[i];
+                var existingLayer = data.Data[i];
 
                 if (existingLayer.Biases.Length != existingLayer.Weights.GetLength(0))
                 {
@@ -201,7 +201,7 @@ namespace MachineLearning
             var result = new NetworkData
             {
                 LayerSizes = new int[layerCount],
-                LayerData = new Layer[layerCount - 1]
+                Data = new Layer[layerCount - 1]
             };
 
             Array.Copy(mLayerSizes, result.LayerSizes, layerCount);
@@ -222,7 +222,7 @@ namespace MachineLearning
                     }
                 }
 
-                result.LayerData[i] = layer;
+                result.Data[i] = layer;
             }
 
             return result;

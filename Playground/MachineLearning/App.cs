@@ -1,16 +1,31 @@
 using CodePlayground;
 using CodePlayground.Graphics;
+using ImGuiNET;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 using Optick.NET;
+using SixLabors.ImageSharp;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Numerics;
 using System.Reflection;
 
 namespace MachineLearning
 {
+    internal struct DatasetSource
+    {
+        public string Images;
+        public string Labels;
+    }
+
+    public enum DatasetType
+    {
+        Training,
+        Testing
+    }
+
     [ApplicationTitle("Machine learning test")]
     internal sealed class App : GraphicsApplication
     {
@@ -22,6 +37,8 @@ namespace MachineLearning
         
         private static readonly Random sRandom;
         private static readonly JsonSerializerSettings sSettings;
+        private static readonly IReadOnlyDictionary<DatasetType, DatasetSource> sDatasetSources;
+
         static App()
         {
             sRandom = new Random();
@@ -33,12 +50,27 @@ namespace MachineLearning
                 },
                 Formatting = Formatting.Indented
             };
+
+            sDatasetSources = new Dictionary<DatasetType, DatasetSource>
+            {
+                [DatasetType.Training] = new DatasetSource
+                {
+                    Images = "http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz",
+                    Labels = "http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz"
+                },
+                [DatasetType.Testing] = new DatasetSource
+                {
+                    Images = "http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz",
+                    Labels = "http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz"
+                }
+            };
         }
 
         public App()
         {
             mExistingSemaphores = new Queue<IDisposable>();
             mSignaledSemaphores = new List<IDisposable>();
+            mSelectedImage = 0;
 
             Load += OnLoad;
             InputReady += OnInputReady;
@@ -47,6 +79,35 @@ namespace MachineLearning
             Update += OnUpdate;
             Render += OnRender;
         }
+
+        [MemberNotNull(nameof(mDataset))]
+        public void LoadDataset(DatasetType type)
+        {
+            var source = sDatasetSources[type];
+            mDataset = Dataset.Pull(source.Images, source.Labels);
+
+            mSelectedDataset = type;
+        }
+
+        private IDisposable GetSemaphore()
+        {
+            if (!mExistingSemaphores.TryDequeue(out IDisposable? semaphore))
+            {
+                semaphore = GraphicsContext!.CreateSemaphore();
+            }
+
+            return semaphore;
+        }
+
+        public void SignalSemaphore(ICommandList commandList)
+        {
+            var semaphore = GetSemaphore();
+            mSignaledSemaphores.Add(semaphore);
+
+            commandList.AddSemaphore(semaphore, SemaphoreUsage.Signal);
+        }
+
+        #region Events
 
         private void OnLoad()
         {
@@ -59,22 +120,57 @@ namespace MachineLearning
             InitializeOptick();
             InitializeImGui();
 
+            // load testing dataset as default
+            LoadDataset(DatasetType.Testing);
+
+            mDisplayedTexture = context.CreateDeviceImage(new DeviceImageInfo
+            {
+                Size = new Size(mDataset.Width, mDataset.Height),
+                Usage = DeviceImageUsageFlags.CopyDestination | DeviceImageUsageFlags.Render,
+                Format = DeviceImageFormat.RGBA8_UNORM,
+                MipLevels = 1
+            }).CreateTexture(true);
+
             const string networkFileName = "network.json";
             if (File.Exists(networkFileName))
             {
                 using var stream = new FileStream(networkFileName, FileMode.Open, FileAccess.Read);
                 mNetwork = Network.Load(stream);
+
+                int inputCount = mNetwork.LayerSizes[0];
+                if (inputCount != mDataset.InputSize)
+                {
+                    throw new ArgumentException("Input size mismatch!");
+                }
             }
             else
             {
                 mNetwork = new Network(new int[]
                 {
-                    28 * 28, // input
+                    mDataset.InputSize, // input
                     64, // arbitrary hidden layer sizes
                     16,
                     10
                 });
             }
+
+            var queue = context.Device.GetQueue(CommandQueueFlags.Transfer);
+            var commandList = queue.Release();
+
+            commandList.Begin();
+            using (commandList.Context(GPUQueueType.Transfer))
+            {
+                var image = mDisplayedTexture.Image;
+                var layout = image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
+
+                image.TransitionLayout(commandList, image.Layout, layout);
+                image.Layout = layout;
+            }
+
+            SignalSemaphore(commandList);
+
+            commandList.End();
+            queue.Submit(commandList);
         }
 
         private void OnInputReady() => InitializeImGui();
@@ -105,24 +201,6 @@ namespace MachineLearning
             queue.Submit(commandList);
         }
 
-        private IDisposable GetSemaphore()
-        {
-            if (!mExistingSemaphores.TryDequeue(out IDisposable? semaphore))
-            {
-                semaphore = GraphicsContext!.CreateSemaphore();
-            }
-
-            return semaphore;
-        }
-
-        public void SignalSemaphore(ICommandList commandList)
-        {
-            var semaphore = GetSemaphore();
-            mSignaledSemaphores.Add(semaphore);
-
-            commandList.AddSemaphore(semaphore, SemaphoreUsage.Signal);
-        }
-
         private void OnClose()
         {
             var context = GraphicsContext;
@@ -139,8 +217,10 @@ namespace MachineLearning
                 semaphore.Dispose();
             }
 
-            mLibrary?.Dispose();
             mImGui?.Dispose();
+            mDisplayedTexture?.Dispose();
+
+            mLibrary?.Dispose();
             GraphicsContext?.Dispose();
         }
 
@@ -148,7 +228,7 @@ namespace MachineLearning
         {
             mImGui?.NewFrame(delta);
 
-            // todo: update menus
+            DatasetMenu();
         }
 
         private void OnRender(FrameRenderInfo renderInfo)
@@ -169,6 +249,96 @@ namespace MachineLearning
             mSignaledSemaphores.Clear();
         }
 
+        #endregion
+        #region Menus
+
+        private void DatasetMenu()
+        {
+            ImGui.Begin("Dataset");
+
+            int imageCount = mDataset?.Count ?? 0;
+            ImGui.Text($"{imageCount} images loaded");
+
+            if (ImGui.BeginCombo("##dataset-type", mSelectedDataset.ToString()))
+            {
+                var types = Enum.GetValues<DatasetType>();
+                foreach (var type in types)
+                {
+                    bool isSelected = type == mSelectedDataset;
+                    bool isDisabled = !sDatasetSources.ContainsKey(type);
+
+                    if (isDisabled)
+                    {
+                        ImGui.BeginDisabled();
+                    }
+
+                    if (ImGui.Selectable(type.ToString(), isSelected))
+                    {
+                        mSelectedDataset = type;
+                    }
+
+                    if (isSelected)
+                    {
+                        ImGui.SetItemDefaultFocus();
+                    }
+
+                    if (isDisabled)
+                    {
+                        ImGui.EndDisabled();
+                    }
+                }
+
+                ImGui.EndCombo();
+            }
+
+            ImGui.SameLine();
+            if (ImGui.Button("Load dataset"))
+            {
+                LoadDataset(mSelectedDataset);
+            }
+
+            ImGui.InputInt("##selected-image", ref mSelectedImage);
+            ImGui.SameLine();
+
+            if (ImGui.Button("Load image"))
+            {
+                if (mSelectedImage <= 0 || mSelectedImage > imageCount)
+                {
+                    throw new IndexOutOfRangeException();
+                }
+
+                int imageIndex = mSelectedImage - 1;
+                var imageData = mDataset!.GetImageData(imageIndex, 4); // rgba
+
+                var context = GraphicsContext!;
+                var buffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, imageData.Length);
+                buffer.CopyFromCPU(imageData);
+
+                var queue = context.Device.GetQueue(CommandQueueFlags.Transfer);
+                var commandList = queue.Release();
+
+                commandList.Begin();
+                using (commandList.Context(GPUQueueType.Transfer))
+                {
+                    var image = mDisplayedTexture!.Image;
+                    image.CopyFromBuffer(commandList, buffer, image.Layout);
+                }
+
+                SignalSemaphore(commandList);
+                commandList.PushStagingObject(buffer);
+
+                commandList.End();
+                queue.Submit(commandList);
+            }
+
+            var regionAvailable = ImGui.GetContentRegionAvail();
+            ImGui.Image(mImGui!.GetTextureID(mDisplayedTexture!), Vector2.One * regionAvailable.X);
+
+            ImGui.End();
+        }
+
+        #endregion
+
         public ShaderLibrary Library => mLibrary!;
         public IRenderer Renderer => mRenderer!;
 
@@ -176,9 +346,14 @@ namespace MachineLearning
         private IRenderer? mRenderer;
 
         private Network? mNetwork;
+        private Dataset? mDataset;
 
         private ShaderLibrary? mLibrary;
         private int mCurrentFrame;
+
+        private DatasetType mSelectedDataset;
+        private int mSelectedImage;
+        private ITexture? mDisplayedTexture;
 
         private readonly Queue<IDisposable> mExistingSemaphores;
         private readonly List<IDisposable> mSignaledSemaphores;
