@@ -101,6 +101,13 @@ namespace CodePlayground.Graphics.Shaders
         {
             throw new NotImplementedException();
         }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("atomicExchange")]
+        public static T Exchange<T>(T lhs, T rhs)
+        {
+            throw new NotImplementedException();
+        }
     }
 
     [PrimitiveShaderType("vec2")]

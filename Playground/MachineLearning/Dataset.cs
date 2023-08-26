@@ -34,7 +34,7 @@ namespace MachineLearning
             int rowCount = ReadInt32WithEndianness(reader);
             int columnCount = ReadInt32WithEndianness(reader);
 
-            var result = new float[imageCount, rowCount, columnCount];
+            var result = new float[imageCount, columnCount, rowCount];
             for (int i = 0; i < imageCount; i++)
             {
                 for (int y = 0; y < rowCount; y++)

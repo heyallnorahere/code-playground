@@ -3,6 +3,7 @@ using MachineLearning.Shaders;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 
 namespace MachineLearning
 {
@@ -110,7 +111,9 @@ namespace MachineLearning
                     for (int j = 0; j < confidenceCount; j++)
                     {
                         int offset = (currentLayerOffset + j) * stride;
-                        passConfidences[j] = BitConverter.ToSingle(data[offset..]);
+                        var slice = data[offset..(offset + Marshal.SizeOf<float>())];
+
+                        passConfidences[j] = BitConverter.ToSingle(slice);
                     }
 
                     results[i] = passConfidences;

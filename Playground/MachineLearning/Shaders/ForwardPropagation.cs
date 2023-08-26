@@ -93,7 +93,7 @@ namespace MachineLearning.Shaders
                     int previousValue = Atomic.Add(s_ActivatedNeurons, 1);
                     if (previousValue == currentLayerSize - 1)
                     {
-                        s_ActivatedNeurons = 0;
+                        Atomic.Exchange(s_ActivatedNeurons, previousValue);
                         Atomic.Add(s_DataOffset, rowLength * currentLayerSize);
                         Atomic.Add(s_ActivationOffset, previousLayerSize);
                         Atomic.Add(s_CurrentLayer, 1);
