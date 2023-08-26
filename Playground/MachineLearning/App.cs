@@ -1,8 +1,11 @@
 using CodePlayground;
 using CodePlayground.Graphics;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 using Optick.NET;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Numerics;
 using System.Reflection;
 
@@ -15,11 +18,21 @@ namespace MachineLearning
 
         public static new App Instance => (App)Application.Instance;
         public static Random RNG => sRandom;
+        public static JsonSerializer Serializer => JsonSerializer.Create(sSettings);
         
         private static readonly Random sRandom;
+        private static readonly JsonSerializerSettings sSettings;
         static App()
         {
             sRandom = new Random();
+            sSettings = new JsonSerializerSettings
+            {
+                ContractResolver = new DefaultContractResolver
+                {
+                    NamingStrategy = new SnakeCaseNamingStrategy()
+                },
+                Formatting = Formatting.Indented
+            };
         }
 
         public App()
@@ -45,6 +58,23 @@ namespace MachineLearning
 
             InitializeOptick();
             InitializeImGui();
+
+            const string networkFileName = "network.json";
+            if (File.Exists(networkFileName))
+            {
+                using var stream = new FileStream(networkFileName, FileMode.Open, FileAccess.Read);
+                mNetwork = Network.Load(stream);
+            }
+            else
+            {
+                mNetwork = new Network(new int[]
+                {
+                    28 * 28, // input
+                    64, // arbitrary hidden layer sizes
+                    16,
+                    10
+                });
+            }
         }
 
         private void OnInputReady() => InitializeImGui();
@@ -139,8 +169,13 @@ namespace MachineLearning
             mSignaledSemaphores.Clear();
         }
 
+        public ShaderLibrary Library => mLibrary!;
+        public IRenderer Renderer => mRenderer!;
+
         private ImGuiController? mImGui;
         private IRenderer? mRenderer;
+
+        private Network? mNetwork;
 
         private ShaderLibrary? mLibrary;
         private int mCurrentFrame;

@@ -1,4 +1,5 @@
 ﻿using Optick.NET;
+using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 using System;
 using System.Collections.Generic;
@@ -118,6 +119,36 @@ namespace CodePlayground.Graphics.Vulkan
             }
 
             return result;
+        }
+
+        public unsafe Vector3D<uint> MaxComputeWorkGroups
+        {
+            get
+            {
+                GetProperties(out PhysicalDeviceProperties properties);
+
+                var result = new Vector3D<uint>();
+                for (int i = 0; i < 3; i++)
+                {
+                    uint count = properties.Limits.MaxComputeWorkGroupCount[i];
+
+                    // silk.net you suck
+                    switch (i)
+                    {
+                        case 0:
+                            result.X = count;
+                            break;
+                        case 1:
+                            result.Y = count;
+                            break;
+                        case 2:
+                            result.Z = count;
+                            break;
+                    }
+                }
+
+                return result;
+            }
         }
 
         public PhysicalDevice Device { get; }

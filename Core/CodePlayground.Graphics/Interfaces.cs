@@ -1,4 +1,5 @@
-﻿using Silk.NET.Windowing;
+﻿using Silk.NET.Maths;
+using Silk.NET.Windowing;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
@@ -283,6 +284,8 @@ namespace CodePlayground.Graphics
     {
         public string Name { get; }
         public DeviceType Type { get; }
+
+        public Vector3D<uint> MaxComputeWorkGroups { get; }
     }
 
     public interface IGraphicsDeviceScorer

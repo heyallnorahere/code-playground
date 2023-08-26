@@ -192,6 +192,8 @@ namespace CodePlayground.Graphics
             pipeline.Load(stages);
         }
 
+        public IGraphicsContext Context => mContext;
+
         private readonly Dictionary<string, IShader> mShaders;
         private readonly IGraphicsContext mContext;
 

@@ -26,6 +26,26 @@ namespace MachineLearning.Shaders
         [Layout(Shared = true)]
         private static int s_ActivationOffset;
 
+        private static void Initialize(uint networkPass)
+        {
+            s_ActivatedNeurons = 0;
+            s_CurrentLayer = 1;
+            s_DataOffset = 0;
+
+            s_ActivationOffset = 0;
+            s_MaxLayerSize = 0;
+            for (int i = 0; i < ShaderResources.SizeBuffer.LayerCount; i++)
+            {
+                int layerSize = ShaderResources.SizeBuffer.LayerSizes[i];
+                s_ActivationOffset += layerSize * (int)networkPass;
+
+                if (i > 0)
+                {
+                    s_MaxLayerSize = BuiltinFunctions.Max(s_MaxLayerSize, layerSize);
+                }
+            }
+        }
+
         public static float Sigmoid(float x) => 1 / (1 - BuiltinFunctions.Exp(-x));
 
         [ShaderEntrypoint(ShaderStage.Compute)]
@@ -35,22 +55,7 @@ namespace MachineLearning.Shaders
             int currentNeuron = (int)input.InvocationID.X;
             if (currentNeuron == 0)
             {
-                s_ActivatedNeurons = 0;
-                s_CurrentLayer = 1;
-                s_DataOffset = 0;
-
-                s_ActivationOffset = 0;
-                s_MaxLayerSize = 0;
-                for (int i = 0; i < ShaderResources.SizeBuffer.LayerCount; i++)
-                {
-                    int layerSize = ShaderResources.SizeBuffer.LayerSizes[i];
-                    s_ActivationOffset += layerSize * (int)input.WorkGroupID.X;
-
-                    if (i > 0)
-                    {
-                        s_MaxLayerSize = BuiltinFunctions.Max(s_MaxLayerSize, layerSize);
-                    }
-                }
+                Initialize(input.WorkGroupID.X);
             }
 
             BuiltinFunctions.Barrier();
