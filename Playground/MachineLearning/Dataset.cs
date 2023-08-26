@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
@@ -7,15 +6,9 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
-// dataset is pulled from here https://yann.lecun.com/exdb/mnist/
+// dataset is pulled from https://yann.lecun.com/exdb/mnist/
 namespace MachineLearning
 {
-    internal struct LabeledImage
-    {
-        public float[,] Image;
-        public int Label;
-    }
-
     internal sealed class Dataset
     {
         private static int ReadInt32WithEndianness(BinaryReader reader)
@@ -80,36 +73,7 @@ namespace MachineLearning
             var imageData = ReadImageData(imageStream);
             var labelData = ReadLabelData(labelStream);
 
-            int count = imageData.GetLength(0);
-            int width = imageData.GetLength(1);
-            int height = imageData.GetLength(2);
-
-            if (count != labelData.Length)
-            {
-                throw new ArgumentException("Dataset size mismatch!");
-            }
-
-            var data = new LabeledImage[count];
-            for (int i = 0; i < count; i++)
-            {
-                var image = new LabeledImage
-                {
-                    Image = new float[width, height],
-                    Label = labelData[i]
-                };
-
-                for (int y = 0; y < height; y++)
-                {
-                    for (int x = 0; x < width; x++)
-                    {
-                        image.Image[x, y] = imageData[i, x, y];
-                    }
-                }
-
-                data[i] = image;
-            }
-
-            return new Dataset(data);
+            return new Dataset(imageData, labelData);
         }
 
         private static async Task<Stream> PullAsync(HttpClient client, string url)
@@ -138,69 +102,29 @@ namespace MachineLearning
             }
         }
 
-        public Dataset(IReadOnlyList<LabeledImage> data)
+        public Dataset(float[,,] images, int[] labels)
         {
-            int width = -1;
-            int height = -1;
-            int count = data.Count;
+            mCount = images.GetLength(0);
+            mWidth = images.GetLength(1);
+            mHeight = images.GetLength(2);
 
-            mData = new LabeledImage[count];
-            for (int i = 0; i < count; i++)
+            if (labels.Length != mCount)
             {
-                var existingImage = data[i];
-                int existingWidth = existingImage.Image.GetLength(0);
-                int existingHeight = existingImage.Image.GetLength(1);
-
-                if (width < 0)
-                {
-                    width = existingWidth;
-                }
-                else if (width != existingWidth)
-                {
-                    throw new ArgumentException("Inconsistent width!");
-                }
-
-                if (height < 0)
-                {
-                    height = existingHeight;
-                }
-                else if (height != existingHeight)
-                {
-                    throw new ArgumentException("Inconsistent height!");
-                }
-
-                var image = new LabeledImage
-                {
-                    Image = new float[width, height],
-                    Label = existingImage.Label
-                };
-
-                for (int x = 0; x < width; x++)
-                {
-                    for (int y = 0; y < height; y++)
-                    {
-                        image.Image[x, y] = existingImage.Image[x, y];
-                    }
-                }
-
-                mData[i] = image;
+                throw new ArgumentException("Dataset size mismatch!");
             }
 
-            mWidth = width;
-            mHeight = height;
-            mCount = count;
+            mImages = images;
+            mLabels = labels;
         }
 
         public float[] GetInput(int index)
         {
             var input = new float[mWidth * mHeight];
-            var data = mData[index].Image;
-
             for (int x = 0; x < mWidth; x++)
             {
                 for (int y = 0; y < mHeight; y++)
                 {
-                    input[y * mWidth + x] = data[x, y];
+                    input[y * mWidth + x] = mImages[index, x, y];
                 }
             }
 
@@ -210,7 +134,7 @@ namespace MachineLearning
         public float[] GetExpectedOutput(int index)
         {
             var output = new float[10];
-            int label = mData[index].Label;
+            int label = mLabels[index];
 
             for (int i = 0; i < output.Length; i++)
             {
@@ -222,15 +146,13 @@ namespace MachineLearning
 
         public byte[] GetImageData(int index, int channels)
         {
-            var data = mData[index].Image;
             var result = new byte[mWidth * mHeight * channels];
-
             for (int x = 0; x < mWidth; x++)
             {
                 for (int y = 0; y < mHeight; y++)
                 {
                     int pixelOffset = (y * mWidth + x) * channels;
-                    byte pixelValue = (byte)(data[x, y] * byte.MaxValue);
+                    byte pixelValue = (byte)(mImages[index, x, y] * byte.MaxValue);
 
                     for (int i = 0; i < channels; i++)
                     {
@@ -248,6 +170,7 @@ namespace MachineLearning
         public int InputSize => mWidth * mHeight;
 
         private readonly int mWidth, mHeight, mCount;
-        private readonly LabeledImage[] mData;
+        private readonly int[] mLabels;
+        private readonly float[,,] mImages;
     }
 }

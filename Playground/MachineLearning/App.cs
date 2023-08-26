@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Reflection;
 
@@ -70,7 +71,10 @@ namespace MachineLearning
         {
             mExistingSemaphores = new Queue<IDisposable>();
             mSignaledSemaphores = new List<IDisposable>();
+
+            mPassIndex = -1;
             mSelectedImage = 0;
+            mInputString = string.Empty;
 
             Load += OnLoad;
             InputReady += OnInputReady;
@@ -229,6 +233,7 @@ namespace MachineLearning
             mImGui?.NewFrame(delta);
 
             DatasetMenu();
+            NetworkMenu();
         }
 
         private void OnRender(FrameRenderInfo renderInfo)
@@ -337,6 +342,106 @@ namespace MachineLearning
             ImGui.End();
         }
 
+        private void NetworkMenu()
+        {
+            if (mActivationBuffer is not null)
+            {
+                mOutputs = NetworkDispatcher.GetConfidenceValues(mActivationBuffer, mStride, mPassCount, mNetwork!.LayerSizes);
+                mPassIndex = 0;
+
+                mActivationBuffer = null;
+            }
+
+            ImGui.Begin("Network");
+
+            ImGui.Text("Enter image numbers to pass through the neural network, separated by commas; spaces allowed.");
+            ImGui.InputText("##input-string", ref mInputString, 512);
+            ImGui.SameLine();
+
+            if (ImGui.Button("Run"))
+            {
+                if (mDataset is null)
+                {
+                    throw new InvalidOperationException("No dataset loaded!");
+                }
+
+                var imageNumbers = mInputString.Replace(" ", string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToArray();
+                var inputs = new float[mPassCount = imageNumbers.Length][];
+
+                for (int i = 0; i < imageNumbers.Length; i++)
+                {
+                    int number = imageNumbers[i];
+                    if (number <= 0 || number > mDataset.Count)
+                    {
+                        throw new ArgumentException("Invalid image number!");
+                    }
+
+                    int imageIndex = number - 1;
+                    inputs[i] = mDataset.GetInput(imageIndex);
+                }
+
+                var context = GraphicsContext!;
+                var queue = context.Device.GetQueue(CommandQueueFlags.Compute);
+                var commandList = queue.Release();
+
+                commandList.Begin();
+                using (commandList.Context(GPUQueueType.Compute))
+                {
+                    mActivationBuffer = NetworkDispatcher.Dispatch(commandList, mNetwork!, inputs, out mStride);
+                }
+
+                SignalSemaphore(commandList);
+                commandList.PushStagingObject(mActivationBuffer);
+
+                commandList.End();
+                queue.Submit(commandList);
+            }
+
+            if (ImGui.CollapsingHeader("Results"))
+            {
+                bool isDisabled = mOutputs is null;
+                if (isDisabled)
+                {
+                    ImGui.BeginDisabled();
+                }
+
+                if (ImGui.BeginCombo("Pass results", $"Pass #{mPassIndex + 1}"))
+                {
+                    for (int i = 0; i < mOutputs!.Length; i++)
+                    {
+                        bool isSelected = i == mPassIndex;
+                        if (ImGui.Selectable($"Pass #{i + 1}", isSelected))
+                        {
+                            mPassIndex = i;
+                        }
+
+                        if (isSelected)
+                        {
+                            ImGui.SetItemDefaultFocus();
+                        }
+                    }
+
+                    ImGui.EndCombo();
+                }
+
+                if (mPassIndex >= 0)
+                {
+                    var output = mOutputs![mPassIndex];
+                    for (int i = 0; i < output.Length; i++)
+                    {
+                        ImGui.Text($"{i + 1}: {output[i] * 100f}% confident");
+                    }
+                }
+
+                if (isDisabled)
+                {
+                    ImGui.EndDisabled();
+                }
+            }
+
+            ImGui.End();
+        }
+
         #endregion
 
         public ShaderLibrary Library => mLibrary!;
@@ -354,6 +459,12 @@ namespace MachineLearning
         private DatasetType mSelectedDataset;
         private int mSelectedImage;
         private ITexture? mDisplayedTexture;
+
+        private string mInputString;
+        private float[][]? mOutputs;
+        private IDeviceBuffer? mActivationBuffer;
+        private int mPassIndex;
+        private int mStride, mPassCount;
 
         private readonly Queue<IDisposable> mExistingSemaphores;
         private readonly List<IDisposable> mSignaledSemaphores;

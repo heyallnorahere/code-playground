@@ -640,7 +640,8 @@ namespace CodePlayground.Graphics.Vulkan
                     int dimensionIndex = fieldType.ArrayDimensions.Count - (i + 1);
                     int dimensionStride = stride;
 
-                    if (index < 0 || index >= fieldType.ArrayDimensions[dimensionIndex])
+                    int dimensionSize = fieldType.ArrayDimensions[dimensionIndex];
+                    if (index < 0 || (dimensionSize > 0 && index >= fieldType.ArrayDimensions[dimensionIndex]))
                     {
                         throw new IndexOutOfRangeException();
                     }

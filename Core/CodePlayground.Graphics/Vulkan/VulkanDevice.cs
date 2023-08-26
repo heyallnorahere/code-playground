@@ -350,7 +350,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public VulkanPhysicalDevice PhysicalDevice => mPhysicalDevice;
         public Device Device => mDevice;
-        IGraphicsDeviceInfo IGraphicsDevice.DeviceInfo => throw new NotImplementedException();
+        IGraphicsDeviceInfo IGraphicsDevice.DeviceInfo => mPhysicalDevice;
 
         private readonly VulkanPhysicalDevice mPhysicalDevice;
         private readonly Dictionary<int, VulkanQueue> mQueues;
