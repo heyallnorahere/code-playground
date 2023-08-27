@@ -223,6 +223,7 @@ namespace MachineLearning
             mImGui?.Dispose();
             mDisplayedTexture?.Dispose();
             mComputeFence?.Dispose();
+            mActivationBuffer?.Dispose();
 
             mLibrary?.Dispose();
             GraphicsContext?.Dispose();
