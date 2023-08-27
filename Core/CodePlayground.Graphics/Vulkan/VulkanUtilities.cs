@@ -239,7 +239,7 @@ namespace CodePlayground.Graphics.Vulkan
             var uniqueIndices = physicalDevice.FindQueueTypes().Values.ToHashSet();
             if (uniqueIndices.Count != 1)
             {
-                familyIndices = uniqueIndices.Cast<uint>().ToArray();
+                familyIndices = uniqueIndices.Select(Convert.ToUInt32).ToArray();
                 indexCount = (uint)uniqueIndices.Count;
 
                 return SharingMode.Concurrent;

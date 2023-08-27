@@ -631,6 +631,7 @@ namespace CodePlayground.Graphics.Vulkan
         }
 
         IDisposable IGraphicsContext.CreateSemaphore() => new VulkanSemaphore(mDevice!);
+        IFence IGraphicsContext.CreateFence(bool signaled) => new VulkanFence(mDevice!, signaled);
 
         IFramebuffer IGraphicsContext.CreateFramebuffer(FramebufferInfo info, out IRenderTarget renderTarget)
         {

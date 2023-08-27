@@ -216,9 +216,6 @@ namespace CodePlayground.Graphics.Vulkan
                 }, marshal);
             }, marshal);
 
-            var vulkanQueues = new nint[queueFamilies.Length];
-            var vulkanQueueFamilies = new uint[queueFamilies.Length];
-
             mQueues = new Dictionary<int, VulkanQueue>();
             for (int i = 0; i < queueFamilies.Length; i++)
             {
@@ -229,15 +226,16 @@ namespace CodePlayground.Graphics.Vulkan
 
                 var queue = new VulkanQueue(queueFamily, usage, this);
                 mQueues.Add(queueFamily, queue);
-
-                vulkanQueues[i] = queue.Queue.Handle;
-                vulkanQueueFamilies[i] = (uint)queueFamily;
             }
 
-            InitializeOptick(vulkanQueues, vulkanQueueFamilies);
+            if (queueTypes.TryGetValue(CommandQueueFlags.Transfer, out int graphicsFamily))
+            {
+                var graphicsQueue = mQueues[graphicsFamily].Queue.Handle;
+                InitializeOptick(graphicsQueue, (uint)graphicsFamily);
+            }
         }
 
-        private unsafe void InitializeOptick(nint[] queues, uint[] families)
+        private unsafe void InitializeOptick(nint graphicsQueue, uint graphicsFamily)
         {
             var instanceFunctions = new HashSet<string>
             {
@@ -266,16 +264,11 @@ namespace CodePlayground.Graphics.Vulkan
                 field.SetValue(vulkanFunctions, functionAddress);
             }
 
+            nint device = mDevice.Handle;
+            nint physicalDevice = mPhysicalDevice.Device.Handle;
+
             var vulkanFunctionStructure = (VulkanFunctions)vulkanFunctions;
-            fixed (nint* queuePtr = queues)
-            {
-                fixed (uint* queueFamilyPtr = families)
-                {
-                    nint device = mDevice.Handle;
-                    nint physicalDevice = mPhysicalDevice.Device.Handle;
-                    OptickImports.InitGpuVulkan(&device, &physicalDevice, queuePtr, queueFamilyPtr, (uint)queues.Length, &vulkanFunctionStructure);
-                }
-            }
+            OptickImports.InitGpuVulkan(&device, &physicalDevice, &graphicsQueue, &graphicsFamily, 1, &vulkanFunctionStructure);
         }
 
         ~VulkanDevice()

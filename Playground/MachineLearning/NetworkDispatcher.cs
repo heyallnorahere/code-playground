@@ -28,7 +28,7 @@ namespace MachineLearning
             mMaxConcurrentPasses = (int)deviceInfo.MaxComputeWorkGroups.X;
         }
 
-        public static IDeviceBuffer Dispatch(ICommandList commandList, Network network, float[][] inputs, out int bufferStride)
+        public static IDeviceBuffer Dispatch(ICommandList commandList, Network network, float[][] inputs, out int bufferStride, out int dataOffset)
         {
             var layerSizes = network.LayerSizes;
             int inputCount = layerSizes[0];
@@ -89,10 +89,12 @@ namespace MachineLearning
             mRenderer.DispatchCompute(commandList, passCount, 1, 1);
 
             bufferStride = stride;
+            dataOffset = startOffset;
+
             return activationBuffer;
         }
 
-        public static float[][] GetConfidenceValues(IDeviceBuffer activations, int stride, int passCount, IReadOnlyList<int> layerSizes)
+        public static float[][] GetConfidenceValues(IDeviceBuffer activations, int stride, int dataOffset, int passCount, IReadOnlyList<int> layerSizes)
         {
             int layerCount = layerSizes.Count;
             int confidenceCount = layerSizes[^1];
@@ -103,6 +105,7 @@ namespace MachineLearning
             var results = new float[passCount][];
             activations.Map(data =>
             {
+                var floatSpan = MemoryMarshal.Cast<byte, float>(data);
                 for (int i = 0; i < passCount; i++)
                 {
                     var passConfidences = new float[confidenceCount];
@@ -110,7 +113,7 @@ namespace MachineLearning
 
                     for (int j = 0; j < confidenceCount; j++)
                     {
-                        int offset = (currentLayerOffset + j) * stride;
+                        int offset = (currentLayerOffset + j) * stride + dataOffset;
                         var slice = data[offset..(offset + Marshal.SizeOf<float>())];
 
                         passConfidences[j] = BitConverter.ToSingle(slice);

@@ -18,9 +18,9 @@ namespace MachineLearning.Shaders
         [Layout(Shared = true)]
         private static int s_ActivatedNeurons;
         [Layout(Shared = true)]
-        private static int s_CurrentLayer;
-        [Layout(Shared = true)]
         private static int s_MaxLayerSize;
+        [Layout(Shared = true)]
+        private static int s_CurrentLayer;
         [Layout(Shared = true)]
         private static int s_DataOffset;
         [Layout(Shared = true)]
@@ -29,8 +29,8 @@ namespace MachineLearning.Shaders
         private static void Initialize(uint networkPass)
         {
             s_ActivatedNeurons = 0;
-            s_CurrentLayer = 1;
             s_DataOffset = 0;
+            s_CurrentLayer = 1;
 
             s_ActivationOffset = 0;
             s_MaxLayerSize = 0;
@@ -46,7 +46,7 @@ namespace MachineLearning.Shaders
             }
         }
 
-        public static float Sigmoid(float x) => 1 / (1 - BuiltinFunctions.Exp(-x));
+        public static float Sigmoid(float x) => 1f / (1f + BuiltinFunctions.Exp(-x));
 
         [ShaderEntrypoint(ShaderStage.Compute)]
         [NumThreads(Network.MaxNeuronsPerLayer, 1, 1)]
@@ -93,9 +93,10 @@ namespace MachineLearning.Shaders
                     int previousValue = Atomic.Add(s_ActivatedNeurons, 1);
                     if (previousValue == currentLayerSize - 1)
                     {
-                        Atomic.Exchange(s_ActivatedNeurons, previousValue);
+                        Atomic.Exchange(s_ActivatedNeurons, 0);
                         Atomic.Add(s_DataOffset, rowLength * currentLayerSize);
                         Atomic.Add(s_ActivationOffset, previousLayerSize);
+
                         Atomic.Add(s_CurrentLayer, 1);
                     }
                 }

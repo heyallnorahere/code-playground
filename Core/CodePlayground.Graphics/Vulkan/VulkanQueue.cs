@@ -183,6 +183,93 @@ namespace CodePlayground.Graphics.Vulkan
         public IReadOnlyList<Semaphore>? SignalSemaphores { get; set; }
     }
 
+    public sealed class VulkanFence : IFence
+    {
+        public unsafe VulkanFence(VulkanDevice device, bool signaled)
+        {
+            mDisposed = false;
+            mDevice = device.Device;
+
+            var fenceInfo = VulkanUtilities.Init<FenceCreateInfo>() with
+            {
+                Flags = signaled ? FenceCreateFlags.SignaledBit : FenceCreateFlags.None
+            };
+
+            var api = VulkanContext.API;
+            fixed (Fence* fence = &mFence)
+            {
+                api.CreateFence(mDevice, fenceInfo, null, fence).Assert();
+            }
+        }
+
+        ~VulkanFence()
+        {
+            if (!mDisposed)
+            {
+                Dispose(false);
+                mDisposed = true;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (mDisposed)
+            {
+                return;
+            }
+
+            Dispose(true);
+            mDisposed = true;
+        }
+
+        private unsafe void Dispose(bool disposing)
+        {
+            var api = VulkanContext.API;
+            api.DestroyFence(mDevice, mFence, null);
+        }
+
+        public bool IsSignaled()
+        {
+            var api = VulkanContext.API;
+            var result = api.GetFenceStatus(mDevice, mFence);
+
+            if (result == Result.NotReady)
+            {
+                return false;
+            }
+
+            result.Assert();
+            return true;
+        }
+
+        public void Reset()
+        {
+            var api = VulkanContext.API;
+            api.ResetFences(mDevice, 1, mFence).Assert();
+        }
+
+        public bool Wait(ulong timeout)
+        {
+            var api = VulkanContext.API;
+            var result = api.WaitForFences(mDevice, 1, mFence, true, timeout);
+
+            if (result == Result.NotReady)
+            {
+                return false;
+            }
+
+            result.Assert();
+            return true;
+        }
+
+        public Fence Fence => mFence;
+
+        private readonly Device mDevice;
+        private readonly Fence mFence;
+
+        private bool mDisposed;
+    }
+
     public sealed class VulkanQueue : ICommandQueue, IDisposable
     {
         internal unsafe VulkanQueue(int queueFamily, CommandQueueFlags usage, VulkanDevice device)
@@ -282,15 +369,23 @@ namespace CodePlayground.Graphics.Vulkan
             return new VulkanCommandBuffer(mPool, mDevice, mUsage);
         }
 
-        void ICommandQueue.Submit(ICommandList commandList, bool wait)
+        void ICommandQueue.Submit(ICommandList commandList, bool wait, IFence? fence)
         {
             if (commandList is not VulkanCommandBuffer)
             {
-                throw new ArgumentException("Must pass a vulkan command buffer!");
+                throw new ArgumentException("Must pass a Vulkan command buffer!");
+            }
+
+            if (fence is not null and not VulkanFence)
+            {
+                throw new ArgumentException("Must pass a Vulkan fence!");
             }
 
             var commandBuffer = (VulkanCommandBuffer)commandList;
-            Submit(commandBuffer, wait: wait);
+            Submit(commandBuffer, new VulkanQueueSubmitInfo
+            {
+                Fence = ((VulkanFence?)fence)?.Fence
+            }, wait);
         }
 
         private unsafe Fence GetFence()

@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 
 // based off of https://github.com/yodasoda1219/cpu-neural-network/blob/main/NeuralNetwork/Network.cs
@@ -153,12 +154,12 @@ namespace MachineLearning
             {
                 int layerCount = mLayerSizes.Length;
                 int offset = reflectionView.GetBufferOffset(ShaderResources.SizeBufferName, nameof(SizeBufferData.LayerCount));
-                BitConverter.GetBytes(layerCount).CopyTo(data[offset..]);
+                BitConverter.GetBytes(layerCount).CopyTo(data[offset..(offset + Marshal.SizeOf<int>())]);
 
                 for (int i = 0; i < layerCount; i++)
                 {
                     offset = reflectionView.GetBufferOffset(ShaderResources.SizeBufferName, $"{nameof(SizeBufferData.LayerSizes)}[{i}]");
-                    BitConverter.GetBytes(mLayerSizes[i]).CopyTo(data[offset..]);
+                    BitConverter.GetBytes(mLayerSizes[i]).CopyTo(data[offset..(offset + Marshal.SizeOf<int>())]);
                 }
             });
 
@@ -178,17 +179,16 @@ namespace MachineLearning
             dataBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Storage, elementCount * stride + startOffset);
             dataBuffer.Map(data =>
             {
-                int n = 0;
+                var values = new List<float>();
                 for (int i = 0; i < mLayers.Length; i++)
                 {
-                    var values = new List<float>();
                     mLayers[i].SerializeToBuffer(values.Add);
+                }
 
-                    foreach (var value in values)
-                    {
-                        int offset = n * stride + startOffset;
-                        BitConverter.GetBytes(value).CopyTo(data[offset..]);
-                    }
+                for (int i = 0; i < values.Count; i++)
+                {
+                    int offset = i * stride + startOffset;
+                    BitConverter.GetBytes(values[i]).CopyTo(data[offset..(offset + Marshal.SizeOf<float>())]);
                 }
             });
         }

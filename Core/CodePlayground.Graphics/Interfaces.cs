@@ -276,6 +276,8 @@ namespace CodePlayground.Graphics
         public IPipeline CreatePipeline(PipelineDescription description);
 
         public IDisposable CreateSemaphore();
+        public IFence CreateFence(bool signaled);
+
         public IFramebuffer CreateFramebuffer(FramebufferInfo info, out IRenderTarget renderTarget);
         public IFramebuffer CreateFramebuffer(FramebufferInfo info, IRenderTarget renderTarget);
     }
@@ -326,10 +328,18 @@ namespace CodePlayground.Graphics
         public int CommandListCap { get; set; }
 
         public ICommandList Release();
-        public void Submit(ICommandList commandList, bool wait = false);
+        public void Submit(ICommandList commandList, bool wait = false, IFence? fence = null);
 
         public void Wait();
         public void ClearCache();
+    }
+
+    public interface IFence : IDisposable
+    {
+        public bool IsSignaled();
+
+        public void Reset();
+        public bool Wait(ulong timeout = ulong.MaxValue);
     }
 
     public interface IRenderTarget : IDisposable

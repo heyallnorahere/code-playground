@@ -30,8 +30,6 @@ namespace MachineLearning
     [ApplicationTitle("Machine learning test")]
     internal sealed class App : GraphicsApplication
     {
-        public const int FrameCount = 3;
-
         public static new App Instance => (App)Application.Instance;
         public static Random RNG => sRandom;
         public static JsonSerializer Serializer => JsonSerializer.Create(sSettings);
@@ -127,6 +125,7 @@ namespace MachineLearning
             // load testing dataset as default
             LoadDataset(DatasetType.Testing);
 
+            mComputeFence = context.CreateFence(true);
             mDisplayedTexture = context.CreateDeviceImage(new DeviceImageInfo
             {
                 Size = new Size(mDataset.Width, mDataset.Height),
@@ -195,7 +194,7 @@ namespace MachineLearning
             commandList.Begin();
             using (commandList.Context(GPUQueueType.Transfer))
             {
-                mImGui = new ImGuiController(graphicsContext, inputContext, window, graphicsContext.Swapchain.RenderTarget, FrameCount);
+                mImGui = new ImGuiController(graphicsContext, inputContext, window, graphicsContext.Swapchain.RenderTarget, SynchronizationFrames);
                 mImGui.LoadFontAtlas(commandList);
             }
 
@@ -223,6 +222,7 @@ namespace MachineLearning
 
             mImGui?.Dispose();
             mDisplayedTexture?.Dispose();
+            mComputeFence?.Dispose();
 
             mLibrary?.Dispose();
             GraphicsContext?.Dispose();
@@ -250,7 +250,7 @@ namespace MachineLearning
             mImGui?.Render(commandList, mRenderer!, mCurrentFrame);
             renderTarget.EndRender(commandList);
 
-            mCurrentFrame = (mCurrentFrame + 1) % FrameCount;
+            mCurrentFrame = (mCurrentFrame + 1) % SynchronizationFrames;
             mSignaledSemaphores.Clear();
         }
 
@@ -344,12 +344,13 @@ namespace MachineLearning
 
         private void NetworkMenu()
         {
-            if (mActivationBuffer is not null)
+            bool fenceSignaled = mComputeFence!.IsSignaled();
+            if (mReadBuffer && fenceSignaled)
             {
-                mOutputs = NetworkDispatcher.GetConfidenceValues(mActivationBuffer, mStride, mPassCount, mNetwork!.LayerSizes);
+                mOutputs = NetworkDispatcher.GetConfidenceValues(mActivationBuffer!, mStride, mActivationOffset, mPassCount, mNetwork!.LayerSizes);
                 mPassIndex = 0;
 
-                mActivationBuffer = null;
+                mReadBuffer = false;
             }
 
             ImGui.Begin("Network");
@@ -357,6 +358,12 @@ namespace MachineLearning
             ImGui.Text("Enter image numbers to pass through the neural network, separated by commas; spaces allowed.");
             ImGui.InputText("##input-string", ref mInputString, 512);
             ImGui.SameLine();
+
+            bool isDisabled = mReadBuffer || !fenceSignaled;
+            if (isDisabled)
+            {
+                ImGui.BeginDisabled();
+            }
 
             if (ImGui.Button("Run"))
             {
@@ -387,19 +394,25 @@ namespace MachineLearning
                 commandList.Begin();
                 using (commandList.Context(GPUQueueType.Compute))
                 {
-                    mActivationBuffer = NetworkDispatcher.Dispatch(commandList, mNetwork!, inputs, out mStride);
+                    mActivationBuffer?.Dispose();
+                    mActivationBuffer = NetworkDispatcher.Dispatch(commandList, mNetwork!, inputs, out mStride, out mActivationOffset);
                 }
 
-                SignalSemaphore(commandList);
-                commandList.PushStagingObject(mActivationBuffer);
+                mComputeFence.Reset();
+                mReadBuffer = true;
 
                 commandList.End();
-                queue.Submit(commandList);
+                queue.Submit(commandList, fence: mComputeFence);
+            }
+
+            if (isDisabled)
+            {
+                ImGui.EndDisabled();
             }
 
             if (ImGui.CollapsingHeader("Results"))
             {
-                bool isDisabled = mOutputs is null;
+                isDisabled = mOutputs is null;
                 if (isDisabled)
                 {
                     ImGui.BeginDisabled();
@@ -429,7 +442,8 @@ namespace MachineLearning
                     var output = mOutputs![mPassIndex];
                     for (int i = 0; i < output.Length; i++)
                     {
-                        ImGui.Text($"{i + 1}: {output[i] * 100f}% confident");
+                        float confidence = output[i] * 100f;
+                        ImGui.TextUnformatted($"{i}: {confidence}% confident");
                     }
                 }
 
@@ -462,9 +476,11 @@ namespace MachineLearning
 
         private string mInputString;
         private float[][]? mOutputs;
+        private bool mReadBuffer;
         private IDeviceBuffer? mActivationBuffer;
         private int mPassIndex;
-        private int mStride, mPassCount;
+        private int mStride, mActivationOffset, mPassCount;
+        private IFence? mComputeFence;
 
         private readonly Queue<IDisposable> mExistingSemaphores;
         private readonly List<IDisposable> mSignaledSemaphores;
