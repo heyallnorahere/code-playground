@@ -7,6 +7,19 @@ using System.Runtime.InteropServices;
 
 namespace MachineLearning
 {
+    public struct ForwardPropagationBufferData
+    {
+        public IDeviceBuffer ActivationBuffer, PreSigmoidBuffer, SizeBuffer, DataBuffer;
+        public int ActivationStride, ActivationOffset;
+        public int PassCount;
+    }
+
+    public struct BackPropagationBufferData
+    {
+        public IDeviceBuffer DeltaBuffer;
+        public int DeltaStride, DeltaOffset;
+    }
+
     public static class NetworkDispatcher
     {
         private static readonly ShaderLibrary mLibrary;
@@ -28,7 +41,7 @@ namespace MachineLearning
             mMaxConcurrentPasses = (int)deviceInfo.MaxComputeWorkGroups.X;
         }
 
-        public static IDeviceBuffer Dispatch(ICommandList commandList, Network network, float[][] inputs, out int bufferStride, out int dataOffset)
+        public static ForwardPropagationBufferData ForwardPropagation(ICommandList commandList, Network network, float[][] inputs)
         {
             var layerSizes = network.LayerSizes;
             int inputCount = layerSizes[0];
@@ -50,14 +63,23 @@ namespace MachineLearning
             });
 
             var reflectionView = pipeline.ReflectionView;
-            int startOffset = reflectionView.GetBufferOffset(ShaderResources.ActivationBufferName, $"{nameof(NetworkDataBuffer.Data)}[0]");
+            int activationOffset = reflectionView.GetBufferOffset(ShaderResources.ActivationBufferName, $"{nameof(NetworkDataBuffer.Data)}[0]");
             int endOffset = reflectionView.GetBufferOffset(ShaderResources.ActivationBufferName, $"{nameof(NetworkDataBuffer.Data)}[1]");
-            int stride = endOffset - startOffset;
+            int activationStride = endOffset - activationOffset;
+
+            int preSigmoidOffset = reflectionView.GetBufferOffset(ShaderResources.PreSigmoidBufferName, $"{nameof(NetworkDataBuffer.Data)}[0]");
+            endOffset = reflectionView.GetBufferOffset(ShaderResources.PreSigmoidBufferName, $"{nameof(NetworkDataBuffer.Data)}[1]");
+            int preSigmoidStride = endOffset - preSigmoidOffset;
 
             int activationCount = neuronTotal * passCount;
-            int bufferSize = stride * activationCount + startOffset;
+            int activationBufferSize = activationStride * activationCount + activationOffset;
 
-            var activationBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Storage, bufferSize);
+            int preSigmoidalValueCount = (neuronTotal - inputCount) * passCount;
+            int preSigmoidBufferSize = preSigmoidalValueCount * preSigmoidStride + preSigmoidOffset;
+
+            var activationBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Storage, activationBufferSize);
+            var preSigmoidBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Storage, preSigmoidBufferSize);
+
             activationBuffer.Map(data =>
             {
                 for (int i = 0; i < passCount; i++)
@@ -70,7 +92,7 @@ namespace MachineLearning
 
                     for (int j = 0; j < inputCount; j++)
                     {
-                        int offset = (i * neuronTotal + j) * stride + startOffset;
+                        int offset = (i * neuronTotal + j) * activationStride + activationOffset;
                         BitConverter.GetBytes(layerActivations[j]).CopyTo(data[offset..]);
                     }
                 }
@@ -80,18 +102,90 @@ namespace MachineLearning
             pipeline.Bind(sizeBuffer, ShaderResources.SizeBufferName);
             pipeline.Bind(dataBuffer, ShaderResources.DataBufferName);
             pipeline.Bind(activationBuffer, ShaderResources.ActivationBufferName);
+            pipeline.Bind(preSigmoidBuffer, ShaderResources.PreSigmoidBufferName);
 
             commandList.PushStagingObject(pipeline);
-            commandList.PushStagingObject(sizeBuffer);
-            commandList.PushStagingObject(dataBuffer);
-
             pipeline.Bind(commandList, 0);
+
             mRenderer.DispatchCompute(commandList, passCount, 1, 1);
+            return new ForwardPropagationBufferData
+            {
+                ActivationBuffer = activationBuffer,
+                PreSigmoidBuffer = preSigmoidBuffer,
+                SizeBuffer = sizeBuffer,
+                DataBuffer = dataBuffer,
 
-            bufferStride = stride;
-            dataOffset = startOffset;
+                ActivationOffset = activationOffset,
+                ActivationStride = activationStride,
 
-            return activationBuffer;
+                PassCount = passCount
+            };
+        }
+
+        public static BackPropagationBufferData BackPropagation(ICommandList commandList, ForwardPropagationBufferData data, float[][] expected, IReadOnlyList<int> layerSizes)
+        {
+            int outputCount = layerSizes[^1];
+            int passCount = expected.Length;
+
+            if (passCount != data.PassCount)
+            {
+                throw new ArgumentException("Inconsistent pass count!");
+            }
+
+            var pipeline = mLibrary.LoadPipeline<BackPropagation>(new PipelineDescription
+            {
+                RenderTarget = null,
+                Type = PipelineType.Compute,
+                FrameCount = 1,
+                Specification = null
+            });
+
+            // going to assume the data buffer has the same stride as the delta buffer
+            var reflectionView = pipeline.ReflectionView;
+            int startOffset = reflectionView.GetBufferOffset(ShaderResources.DeltaBufferName, $"{nameof(NetworkDataBuffer.Data)}[0]");
+            int endOffset = reflectionView.GetBufferOffset(ShaderResources.DeltaBufferName, $"{nameof(NetworkDataBuffer.Data)}[1]");
+            int stride = startOffset - endOffset;
+
+            int bufferSize = outputCount * stride + startOffset + data.DataBuffer.Size;
+            var deltaBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Storage, bufferSize);
+
+            deltaBuffer.Map(data =>
+            {
+                for (int i = 0; i < passCount; i++)
+                {
+                    var passExpected = expected[i];
+                    if (passExpected.Length != outputCount)
+                    {
+                        throw new ArgumentException("Inconsistent pass count!");
+                    }
+
+                    for (int j = 0; j < outputCount; j++)
+                    {
+                        int bufferIndex = i * outputCount + j;
+                        int offset = bufferIndex * stride + startOffset;
+
+                        float expectedValue = passExpected[j];
+                        BitConverter.GetBytes(expectedValue).CopyTo(data[offset..]);
+                    }
+                }
+            });
+
+            pipeline.Bind(data.SizeBuffer, ShaderResources.SizeBufferName);
+            pipeline.Bind(data.DataBuffer, ShaderResources.DataBufferName);
+            pipeline.Bind(data.ActivationBuffer, ShaderResources.ActivationBufferName);
+            pipeline.Bind(data.PreSigmoidBuffer, ShaderResources.PreSigmoidBufferName);
+            pipeline.Bind(deltaBuffer, ShaderResources.DeltaBufferName);
+
+            commandList.PushStagingObject(pipeline);
+            pipeline.Bind(commandList, 0);
+
+            mRenderer.DispatchCompute(commandList, passCount, 1, 1);
+            return new BackPropagationBufferData
+            {
+                DeltaBuffer = deltaBuffer,
+                DeltaStride = stride,
+                DeltaOffset = startOffset
+            };
         }
 
         public static float[][] GetConfidenceValues(IDeviceBuffer activations, int stride, int dataOffset, int passCount, IReadOnlyList<int> layerSizes)

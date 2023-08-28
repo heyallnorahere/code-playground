@@ -260,7 +260,7 @@ namespace MachineLearning
             mImGui?.Dispose();
             mDisplayedTexture?.Dispose();
             mComputeFence?.Dispose();
-            mActivationBuffer?.Dispose();
+            mForwardPropagationData?.ActivationBuffer?.Dispose();
 
             mLibrary?.Dispose();
             GraphicsContext?.Dispose();
@@ -290,7 +290,15 @@ namespace MachineLearning
 
             using (commandList.Context(GPUQueueType.Compute))
             {
-                activationBuffer = NetworkDispatcher.Dispatch(commandList, mNetwork!, input, out stride, out offset);
+                var data = NetworkDispatcher.ForwardPropagation(commandList, mNetwork!, input);
+
+                commandList.PushStagingObject(data.PreSigmoidBuffer);
+                commandList.PushStagingObject(data.SizeBuffer);
+                commandList.PushStagingObject(data.DataBuffer);
+
+                activationBuffer = data.ActivationBuffer;
+                stride = data.ActivationStride;
+                offset = data.ActivationOffset;
             }
 
             commandList.End();
@@ -430,7 +438,13 @@ namespace MachineLearning
             bool fenceSignaled = mComputeFence!.IsSignaled();
             if (mReadBuffer && fenceSignaled)
             {
-                mOutputs = NetworkDispatcher.GetConfidenceValues(mActivationBuffer!, mStride, mActivationOffset, mPassCount, mNetwork!.LayerSizes);
+                var data = mForwardPropagationData!.Value;
+                var activationBuffer = data.ActivationBuffer;
+                
+                int stride = data.ActivationStride;
+                int offset = data.ActivationOffset;
+
+                mOutputs = NetworkDispatcher.GetConfidenceValues(activationBuffer, stride, offset, mPassCount, mNetwork!.LayerSizes);
                 mPassIndex = 0;
 
                 mReadBuffer = false;
@@ -477,8 +491,14 @@ namespace MachineLearning
                 commandList.Begin();
                 using (commandList.Context(GPUQueueType.Compute))
                 {
-                    mActivationBuffer?.Dispose();
-                    mActivationBuffer = NetworkDispatcher.Dispatch(commandList, mNetwork!, inputs, out mStride, out mActivationOffset);
+                    var data = NetworkDispatcher.ForwardPropagation(commandList, mNetwork!, inputs);
+
+                    commandList.PushStagingObject(data.PreSigmoidBuffer);
+                    commandList.PushStagingObject(data.SizeBuffer);
+                    commandList.PushStagingObject(data.DataBuffer);
+
+                    mForwardPropagationData?.ActivationBuffer?.Dispose();
+                    mForwardPropagationData = data;
                 }
 
                 mComputeFence.Reset();
@@ -562,9 +582,9 @@ namespace MachineLearning
         private string mInputString;
         private float[][]? mOutputs;
         private bool mReadBuffer;
-        private IDeviceBuffer? mActivationBuffer;
+        private ForwardPropagationBufferData? mForwardPropagationData;
+        private int mPassCount;
         private int mPassIndex;
-        private int mStride, mActivationOffset, mPassCount;
         private IFence? mComputeFence;
 
         private readonly Queue<IDisposable> mExistingSemaphores;

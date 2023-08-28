@@ -1393,9 +1393,14 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         }
                     }
 
-                    if (!hasDependencies)
+                    if (!hasDependencies || functionOrder.Contains(method))
                     {
-                        break;
+                        if (!hasDependencies)
+                        {
+                            newEvaluationList.Add(method);
+                        }
+                        
+                        continue;
                     }
 
                     functionOrder.Add(method);
