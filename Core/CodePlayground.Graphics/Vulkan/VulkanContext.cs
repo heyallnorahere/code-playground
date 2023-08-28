@@ -119,7 +119,7 @@ namespace CodePlayground.Graphics.Vulkan
 
             physicalDevice.GetProperties(out PhysicalDeviceProperties properties);
             physicalDevice.GetFeatures(out PhysicalDeviceFeatures features);
-            
+
             // todo: change score based off of features/properties
 
             return score;
@@ -210,7 +210,7 @@ namespace CodePlayground.Graphics.Vulkan
             return options.API.Equals(GraphicsAPI.DefaultVulkan);
         }
 
-        public unsafe void Initialize(IWindow window, GraphicsApplication application)
+        public unsafe void Initialize(IWindow? window, GraphicsApplication application)
         {
             if (mInitialized)
             {
@@ -228,15 +228,22 @@ namespace CodePlayground.Graphics.Vulkan
             CreateInstance(title, version, mVulkanVersion);
             CreateDebugMessenger();
 
+            var additionalQueueFamilies = new List<int>();
+            SurfaceKHR? windowSurface = null;
+
             var physicalDevice = ChoosePhysicalDevice();
-            var windowSurface = CreateWindowSurface(physicalDevice, window, out int presentQueue);
+            if (window is not null)
+            {
+                windowSurface = CreateWindowSurface(physicalDevice, window, out int presentQueue);
+                additionalQueueFamilies.Add(presentQueue);
+            }
 
             mDevice = new VulkanDevice(new VulkanDeviceCreateInfo
             {
                 Device = physicalDevice,
                 Extensions = ChooseExtensions(physicalDevice, VulkanExtensionType.Extension),
                 Layers = ChooseExtensions(physicalDevice, VulkanExtensionType.Layer),
-                AdditionalQueueFamilies = new int[] { presentQueue }
+                AdditionalQueueFamilies = additionalQueueFamilies
             });
 
             mAllocator = new VulkanMemoryAllocator(new VulkanMemoryAllocatorCreateInfo
@@ -251,7 +258,11 @@ namespace CodePlayground.Graphics.Vulkan
                 FrameInUseCount = 0
             });
 
-            mSwapchain = new VulkanSwapchain(windowSurface, this, mInstance!.Value, window);
+            if (windowSurface is not null)
+            {
+                mSwapchain = new VulkanSwapchain(windowSurface.Value, this, mInstance!.Value, window!);
+            }
+
             mInitialized = true;
         }
 
@@ -779,7 +790,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public IGraphicsDeviceScorer DeviceScorer { get; set; }
         public VulkanDevice Device => mDevice!;
-        public VulkanSwapchain Swapchain => mSwapchain!;
+        public VulkanSwapchain? Swapchain => mSwapchain;
         public VulkanMemoryAllocator Allocator => mAllocator!;
 
         public bool FlipUVs => true;
@@ -787,7 +798,7 @@ namespace CodePlayground.Graphics.Vulkan
         public MinimumDepth MinDepth => MinimumDepth.Zero;
 
         IGraphicsDevice IGraphicsContext.Device => mDevice!;
-        ISwapchain IGraphicsContext.Swapchain => mSwapchain!;
+        ISwapchain? IGraphicsContext.Swapchain => mSwapchain;
 
         private Version? mVulkanVersion;
         private Instance? mInstance;

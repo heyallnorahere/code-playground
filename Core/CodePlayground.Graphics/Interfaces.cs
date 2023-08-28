@@ -256,14 +256,14 @@ namespace CodePlayground.Graphics
     {
         public IGraphicsDeviceScorer DeviceScorer { set; }
         public IGraphicsDevice Device { get; }
-        public ISwapchain Swapchain { get; }
+        public ISwapchain? Swapchain { get; }
 
         public bool FlipUVs { get; }
         public bool LeftHanded { get; }
         public MinimumDepth MinDepth { get; }
 
         public bool IsApplicable(WindowOptions options);
-        public void Initialize(IWindow window, GraphicsApplication application);
+        public void Initialize(IWindow? window, GraphicsApplication application);
 
         public IShaderCompiler CreateCompiler();
         public IRenderer CreateRenderer();

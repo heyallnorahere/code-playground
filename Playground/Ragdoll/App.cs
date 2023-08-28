@@ -34,7 +34,12 @@ namespace Ragdoll
         private void OnLoad()
         {
             var context = CreateGraphicsContext();
-            context.Swapchain.VSync = true;
+            var swapchain = context.Swapchain;
+
+            if (swapchain is not null)
+            {
+                swapchain.VSync = true;
+            }
 
             // enable profiling
             InitializeOptick();
@@ -55,16 +60,17 @@ namespace Ragdoll
             var graphicsContext = GraphicsContext;
             var inputContext = InputContext;
             var window = RootWindow;
+            var renderTarget = graphicsContext?.Swapchain?.RenderTarget;
 
             if (graphicsContext is null ||
                 inputContext is null ||
                 window is null ||
+                renderTarget is null ||
                 mLayerStack.HasLayer<ImGuiLayer>())
             {
                 return;
             }
 
-            var renderTarget = graphicsContext.Swapchain.RenderTarget;
             mLayerStack.PushLayer<ImGuiLayer>(LayerType.Overlay, graphicsContext, inputContext, window, renderTarget);
         }
 

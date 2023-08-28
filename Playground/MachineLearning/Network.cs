@@ -98,6 +98,8 @@ namespace MachineLearning
                         layer.Weights[y, x] = App.RNG.NextSingle() * 2f - 1f;
                     }
                 }
+
+                mLayers[i] = layer;
             }
         }
 

@@ -68,6 +68,7 @@ namespace CodePlayground.Graphics
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
     [RequestedVulkanExtension(ExtDebugUtils.ExtensionName, VulkanExtensionLevel.Instance, VulkanExtensionType.Extension, Required = false)]
     [RequestedVulkanExtension(KhrGetPhysicalDeviceProperties2.ExtensionName, VulkanExtensionLevel.Instance, VulkanExtensionType.Extension, Required = false)]
+    [RequestedVulkanExtension(KhrSurface.ExtensionName, VulkanExtensionLevel.Instance, VulkanExtensionType.Extension, Required = true)]
     [RequestedVulkanExtension(KhrSwapchain.ExtensionName, VulkanExtensionLevel.Device, VulkanExtensionType.Extension, Required = true)]
     [RequestedVulkanExtension("VK_KHR_portability_subset", VulkanExtensionLevel.Device, VulkanExtensionType.Extension, Required = false)]
     [RequestedVulkanExtension("VK_LAYER_KHRONOS_validation", VulkanExtensionLevel.Instance, VulkanExtensionType.Layer, Required = false)]
@@ -100,7 +101,7 @@ namespace CodePlayground.Graphics
 
         public override bool Quit(int exitCode)
         {
-            if (mWindow?.IsClosing ?? true)
+            if (mWindow?.IsClosing ?? false)
             {
                 return false;
             }
@@ -111,30 +112,51 @@ namespace CodePlayground.Graphics
             return true;
         }
 
+        protected virtual void ParseArguments()
+        {
+            // nothing
+        }
+
         protected override int Run(string[] args)
         {
             mArgs = args;
-            mOptions = WindowOptions.Default with
+            ParseArguments();
+
+            if (ShouldRunHeadless)
             {
-                Size = mInitialSize,
-                Title = Title,
-                API = mAPI switch
+                Load?.Invoke();
+                Render?.Invoke(new FrameRenderInfo
                 {
-                    AppGraphicsAPI.OpenGL => GraphicsAPI.Default,
-                    AppGraphicsAPI.Vulkan => GraphicsAPI.DefaultVulkan,
-                    _ => GraphicsAPI.None
-                }
-            };
+                    Delta = 0,
+                    CurrentImage = 0
+                });
 
-            mWindow = Window.Create(mOptions.Value);
-            RegisterWindowEvents();
+                Closing?.Invoke();
+            }
+            else
+            {
+                mOptions = WindowOptions.Default with
+                {
+                    Size = mInitialSize,
+                    Title = Title,
+                    API = mAPI switch
+                    {
+                        AppGraphicsAPI.OpenGL => GraphicsAPI.Default,
+                        AppGraphicsAPI.Vulkan => GraphicsAPI.DefaultVulkan,
+                        _ => GraphicsAPI.None
+                    }
+                };
 
-            mIsRunning = true;
-            mWindow.Run();
-            mIsRunning = false;
+                mWindow = Window.Create(mOptions.Value);
+                RegisterWindowEvents();
 
-            mWindow.Dispose();
-            mWindow = null;
+                mIsRunning = true;
+                mWindow.Run();
+                mIsRunning = false;
+
+                mWindow.Dispose();
+                mWindow = null;
+            }
 
             return mExitCode;
         }
@@ -181,8 +203,11 @@ namespace CodePlayground.Graphics
         {
             try
             {
-                mInputContext = mWindow!.CreateInput();
-                InputReady?.Invoke();
+                mInputContext = mWindow?.CreateInput();
+                if (mInputContext is not null)
+                {
+                    InputReady?.Invoke();
+                }
             }
             catch (Exception)
             {
@@ -213,7 +238,7 @@ namespace CodePlayground.Graphics
         {
             using (OptickMacros.Category("Render", Category.Rendering))
             {
-                if (mGraphicsContext is null)
+                if (mGraphicsContext?.Swapchain is null)
                 {
                     Render?.Invoke(new FrameRenderInfo
                     {
@@ -274,7 +299,7 @@ namespace CodePlayground.Graphics
         protected virtual void OnContextCreation(IGraphicsContext context) { }
         public T CreateGraphicsContext<T>(params object[] args) where T : IGraphicsContext
         {
-            if (mWindow is null || mOptions is null)
+            if (!ShouldRunHeadless && (mWindow is null || mOptions is null))
             {
                 throw new InvalidOperationException("The window has not been created!");
             }
@@ -285,7 +310,7 @@ namespace CodePlayground.Graphics
             }
 
             var context = Utilities.CreateDynamicInstance<T>(args);
-            if (!context.IsApplicable(mOptions.Value))
+            if (mOptions is not null && !context.IsApplicable(mOptions.Value))
             {
                 throw new InvalidOperationException("Context type is not applicable to this window!");
             }
@@ -300,7 +325,10 @@ namespace CodePlayground.Graphics
         public IWindow? RootWindow => mWindow;
         public IInputContext? InputContext => mInputContext;
         public IGraphicsContext? GraphicsContext => mGraphicsContext;
+
         public string[] CommandLineArguments => mArgs;
+        public virtual bool ShouldRunHeadless => false;
+
         internal IVkSurface? VulkanSurfaceFactory => mWindow?.VkSurface;
 
         private int mExitCode;

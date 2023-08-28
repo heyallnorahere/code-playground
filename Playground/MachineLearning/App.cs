@@ -33,7 +33,7 @@ namespace MachineLearning
         public static new App Instance => (App)Application.Instance;
         public static Random RNG => sRandom;
         public static JsonSerializer Serializer => JsonSerializer.Create(sSettings);
-        
+
         private static readonly Random sRandom;
         private static readonly JsonSerializerSettings sSettings;
         private static readonly IReadOnlyDictionary<DatasetType, DatasetSource> sDatasetSources;
@@ -74,6 +74,9 @@ namespace MachineLearning
             mSelectedImage = 0;
             mInputString = string.Empty;
 
+            // load testing dataset as default
+            mSelectedDataset = DatasetType.Training;
+
             Load += OnLoad;
             InputReady += OnInputReady;
             Closing += OnClose;
@@ -82,13 +85,42 @@ namespace MachineLearning
             Render += OnRender;
         }
 
+        public override bool ShouldRunHeadless => mSelectedTestImages is not null;
+
+        protected override void ParseArguments()
+        {
+            var args = CommandLineArguments;
+            if (args.Length == 0)
+            {
+                return;
+            }
+
+            string selectedDataString = string.Empty;
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (i > 0)
+                {
+                    selectedDataString += ' ';
+                }
+
+                selectedDataString += args[i];
+            }
+
+            int separatorPosition = selectedDataString.IndexOf(':');
+            if (separatorPosition < 0)
+            {
+                throw new ArgumentException("Malformed selector string!");
+            }
+
+            mSelectedTestImages = selectedDataString[(separatorPosition + 1)..].Split(new char[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToArray();
+            mSelectedDataset = Enum.Parse<DatasetType>(selectedDataString[..separatorPosition], true);
+        }
+
         [MemberNotNull(nameof(mDataset))]
         public void LoadDataset(DatasetType type)
         {
             var source = sDatasetSources[type];
             mDataset = Dataset.Pull(source.Images, source.Labels);
-
-            mSelectedDataset = type;
         }
 
         private IDisposable GetSemaphore()
@@ -114,7 +146,12 @@ namespace MachineLearning
         private void OnLoad()
         {
             var context = CreateGraphicsContext();
-            context.Swapchain.VSync = true;
+            var swapchain = context.Swapchain;
+
+            if (swapchain is not null)
+            {
+                swapchain.VSync = true;
+            }
 
             mLibrary = new ShaderLibrary(context, Assembly.GetExecutingAssembly());
             mRenderer = context.CreateRenderer();
@@ -122,8 +159,7 @@ namespace MachineLearning
             InitializeOptick();
             InitializeImGui();
 
-            // load testing dataset as default
-            LoadDataset(DatasetType.Testing);
+            LoadDataset(mSelectedDataset);
 
             mComputeFence = context.CreateFence(true);
             mDisplayedTexture = context.CreateDeviceImage(new DeviceImageInfo
@@ -182,8 +218,9 @@ namespace MachineLearning
             var graphicsContext = GraphicsContext;
             var inputContext = InputContext;
             var window = RootWindow;
+            var renderTarget = graphicsContext?.Swapchain?.RenderTarget;
 
-            if (mImGui is not null || window is null || graphicsContext is null || inputContext is null)
+            if (mImGui is not null || window is null || graphicsContext is null || inputContext is null || renderTarget is null)
             {
                 return;
             }
@@ -194,7 +231,7 @@ namespace MachineLearning
             commandList.Begin();
             using (commandList.Context(GPUQueueType.Transfer))
             {
-                mImGui = new ImGuiController(graphicsContext, inputContext, window, graphicsContext.Swapchain.RenderTarget, SynchronizationFrames);
+                mImGui = new ImGuiController(graphicsContext, inputContext, window, renderTarget, SynchronizationFrames);
                 mImGui.LoadFontAtlas(commandList);
             }
 
@@ -237,8 +274,53 @@ namespace MachineLearning
             NetworkMenu();
         }
 
+        private void RunNeuralNetwork(int[] imageNumbers)
+        {
+            // just run headless
+            var input = imageNumbers.Select(number => mDataset!.GetInput(number - 1)).ToArray();
+
+            var context = GraphicsContext!;
+            var queue = context.Device.GetQueue(CommandQueueFlags.Compute);
+
+            var commandList = queue.Release();
+            commandList.Begin();
+
+            IDeviceBuffer activationBuffer;
+            int stride, offset;
+
+            using (commandList.Context(GPUQueueType.Compute))
+            {
+                activationBuffer = NetworkDispatcher.Dispatch(commandList, mNetwork!, input, out stride, out offset);
+            }
+
+            commandList.End();
+            queue.Submit(commandList);
+            queue.ClearCache();
+
+            using (activationBuffer)
+            {
+                var confidence = NetworkDispatcher.GetConfidenceValues(activationBuffer, stride, offset, input.Length, mNetwork!.LayerSizes);
+                for (int i = 0; i < confidence.Length; i++)
+                {
+                    var passConfidence = confidence[i];
+                    Console.WriteLine($"Pass #{i + 1}");
+
+                    for (int j = 0; j < passConfidence.Length; j++)
+                    {
+                        Console.WriteLine($"{j}: {passConfidence[j] * 100f}%");
+                    }
+                }
+            }
+        }
+
         private void OnRender(FrameRenderInfo renderInfo)
         {
+            if (mSelectedTestImages is not null)
+            {
+                RunNeuralNetwork(mSelectedTestImages);
+                return;
+            }
+
             var commandList = renderInfo.CommandList!;
             var renderTarget = renderInfo.RenderTarget!;
 
@@ -471,7 +553,9 @@ namespace MachineLearning
         private ShaderLibrary? mLibrary;
         private int mCurrentFrame;
 
+        private int[]? mSelectedTestImages;
         private DatasetType mSelectedDataset;
+
         private int mSelectedImage;
         private ITexture? mDisplayedTexture;
 

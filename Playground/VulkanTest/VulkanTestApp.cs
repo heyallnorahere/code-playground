@@ -363,7 +363,11 @@ namespace VulkanTest
         {
             var context = CreateGraphicsContext();
             var swapchain = context.Swapchain;
-            swapchain.VSync = true; // enable vsync
+
+            if (swapchain is not null)
+            {
+                swapchain.VSync = true; // enable vsync
+            }
 
             mShaderLibrary = new ShaderLibrary(context, GetType().Assembly);
             mRenderer = context.CreateRenderer();
@@ -400,9 +404,9 @@ namespace VulkanTest
                 var material = mModel.Materials[i];
                 var pipeline = mShaderLibrary.LoadPipeline<TestShader>(new PipelineDescription
                 {
-                    RenderTarget = swapchain.RenderTarget,
+                    RenderTarget = swapchain?.RenderTarget,
                     Type = PipelineType.Graphics,
-                    FrameCount = swapchain.FrameCount,
+                    FrameCount = swapchain?.FrameCount ?? 0,
                     Specification = material.PipelineSpecification
                 });
 
@@ -449,13 +453,13 @@ namespace VulkanTest
             var graphicsContext = GraphicsContext;
             var inputContext = InputContext;
             var window = RootWindow;
+            var swapchain = graphicsContext?.Swapchain;
 
-            if (graphicsContext is null || inputContext is null || window is null || mImGuiController is not null)
+            if (graphicsContext is null || inputContext is null || window is null || mImGuiController is not null || swapchain is null)
             {
                 return;
             }
 
-            var swapchain = graphicsContext.Swapchain;
             mImGuiController = new ImGuiController(graphicsContext, inputContext, window, swapchain.RenderTarget, swapchain.FrameCount);
             ImGui.StyleColorsDark();
 
