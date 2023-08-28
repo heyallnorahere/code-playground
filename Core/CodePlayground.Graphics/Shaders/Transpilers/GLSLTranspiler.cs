@@ -383,6 +383,10 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 ShaderOperatorType.Multiply => $"({evaluationStack.Pop()} * {rhs})",
                 ShaderOperatorType.Divide => $"({evaluationStack.Pop()} / {rhs})",
                 ShaderOperatorType.Invert => $"(-{rhs})",
+                ShaderOperatorType.And => $"({evaluationStack.Pop()} & {rhs})",
+                ShaderOperatorType.Or => $"({evaluationStack.Pop()} | {rhs})",
+                ShaderOperatorType.ShiftLeft => $"({evaluationStack.Pop()} << {rhs})",
+                ShaderOperatorType.ShiftRight => $"({evaluationStack.Pop()} >> {rhs})",
                 ShaderOperatorType.Index => $"{evaluationStack.Pop()}[{rhs}]",
                 _ => throw new ArgumentException("Invalid shader operator!")
             });
@@ -880,6 +884,22 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         else if (name.StartsWith("neg"))
                         {
                             PushOperatorExpression(ShaderOperatorType.Invert, evaluationStack);
+                        }
+                        else if (name.StartsWith("and"))
+                        {
+                            PushOperatorExpression(ShaderOperatorType.And, evaluationStack);
+                        }
+                        else if (name.StartsWith("or"))
+                        {
+                            PushOperatorExpression(ShaderOperatorType.Or, evaluationStack);
+                        }
+                        else if (name.StartsWith("shl"))
+                        {
+                            PushOperatorExpression(ShaderOperatorType.ShiftLeft, evaluationStack);
+                        }
+                        else if (name.StartsWith("shr"))
+                        {
+                            PushOperatorExpression(ShaderOperatorType.ShiftRight, evaluationStack);
                         }
                         else if (name.StartsWith("ceq"))
                         {

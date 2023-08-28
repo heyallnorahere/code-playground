@@ -59,51 +59,52 @@ namespace MachineLearning.Shaders
             }
 
             BuiltinFunctions.Barrier();
-            if (currentNeuron >= s_MaxLayerSize)
-            {
-                return;
-            }
 
             int currentLayer = s_CurrentLayer;
+            int layersCompleted = 0; // hacky. i dont like this
+
             while (currentLayer < ShaderResources.SizeBuffer.LayerCount)
             {
-                int currentLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer];
-                if (currentNeuron < currentLayerSize)
+                int bit = 1 << currentLayer;
+                if ((layersCompleted & bit) == 0)
                 {
-                    int previousLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer - 1];
-
-                    // all of the weights relating to this neuron and the bias of the neuron
-                    int rowLength = previousLayerSize + 1;
-                    int rowOffset = currentNeuron * rowLength + s_DataOffset;
-
-                    // the bias preceeds all of the weights
-                    float z = ShaderResources.DataBuffer.Data[rowOffset];
-
-                    for (int i = 0; i < previousLayerSize; i++)
+                    int currentLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer];
+                    if (currentNeuron < currentLayerSize)
                     {
-                        float weight = ShaderResources.DataBuffer.Data[rowOffset + i + 1];
-                        float previousActivation = ShaderResources.ActivationBuffer.Data[s_ActivationOffset + i];
+                        int previousLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer - 1];
 
-                        z += weight * previousActivation;
+                        // all of the weights relating to this neuron and the bias of the neuron
+                        int bufferRowLength = previousLayerSize + 1;
+                        int bufferRowOffset = currentNeuron * bufferRowLength + s_DataOffset;
+
+                        // the bias preceeds all of the weights
+                        // initially setting z to the bias value
+                        // at the end of the loop, z will be the pre-sigmoidal input value
+                        float z = ShaderResources.DataBuffer.Data[bufferRowOffset];
+
+                        for (int i = 0; i < previousLayerSize; i++)
+                        {
+                            float weight = ShaderResources.DataBuffer.Data[bufferRowOffset + i + 1];
+                            float previousActivation = ShaderResources.ActivationBuffer.Data[s_ActivationOffset + i];
+
+                            z += weight * previousActivation;
+                        }
+
+                        // s_ActivationOffset describes the offset of the activations of the previous layer
+                        ShaderResources.ActivationBuffer.Data[s_ActivationOffset + previousLayerSize + currentNeuron] = Sigmoid(z);
+
+                        int previousValue = Atomic.Add(s_ActivatedNeurons, 1);
+                        if (previousValue == currentLayerSize - 1)
+                        {
+                            Atomic.Exchange(s_ActivatedNeurons, 0);
+                            Atomic.Add(s_DataOffset, bufferRowLength * currentLayerSize);
+                            Atomic.Add(s_ActivationOffset, previousLayerSize);
+
+                            Atomic.Add(s_CurrentLayer, 1);
+                        }
                     }
 
-                    // s_ActivationOffset describes the offset of the activations of the previous layer
-                    ShaderResources.ActivationBuffer.Data[s_ActivationOffset + previousLayerSize + currentNeuron] = Sigmoid(z);
-
-                    int previousValue = Atomic.Add(s_ActivatedNeurons, 1);
-                    if (previousValue == currentLayerSize - 1)
-                    {
-                        Atomic.Exchange(s_ActivatedNeurons, 0);
-                        Atomic.Add(s_DataOffset, rowLength * currentLayerSize);
-                        Atomic.Add(s_ActivationOffset, previousLayerSize);
-
-                        Atomic.Add(s_CurrentLayer, 1);
-                    }
-                }
-
-                while (currentLayer == s_CurrentLayer)
-                {
-                    // wait
+                    layersCompleted |= bit;
                 }
 
                 currentLayer = s_CurrentLayer;

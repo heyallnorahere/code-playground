@@ -66,7 +66,11 @@ namespace CodePlayground.Graphics.Shaders
         Multiply,
         Divide,
         Invert,
-        Index
+        And,
+        Or,
+        ShiftLeft,
+        ShiftRight,
+        Index,
     }
 
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]

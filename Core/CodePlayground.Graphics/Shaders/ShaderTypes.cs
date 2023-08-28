@@ -77,6 +77,13 @@ namespace CodePlayground.Graphics.Shaders
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("groupMemoryBarrier")]
+        public static void GroupMemoryBarrier()
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
         [BuiltinShaderFunction("pow")]
         public static float Pow(float x, float y)
         {
