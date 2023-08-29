@@ -65,10 +65,10 @@ namespace MachineLearning
 
             for (int y = 0; y < currentSize; y++)
             {
-                Biases[y] += delta.Biases[y] * learningRate;
+                Biases[y] -= delta.Biases[y] * learningRate;
                 for (int x = 0; x < previousSize; x++)
                 {
-                    Weights[y, x] = delta.Weights[y, x] * learningRate;
+                    Weights[y, x] -= delta.Weights[y, x] * learningRate;
                 }
             }
         }
