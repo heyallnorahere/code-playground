@@ -67,10 +67,10 @@ namespace MachineLearning
 
             int deltaOffset = reflectionView.GetBufferOffset(ShaderResources.DeltaBufferName, $"{nameof(NetworkDataBuffer.Data)}[0]");
             endOffset = reflectionView.GetBufferOffset(ShaderResources.DeltaBufferName, $"{nameof(NetworkDataBuffer.Data)}[1]");
-            int deltaStride = deltaOffset - endOffset;
+            int deltaStride = endOffset - deltaOffset;
 
             // going to assume the data buffer has the same stride as the delta buffer
-            int deltaBufferSize = outputCount * deltaStride + deltaOffset + dataBuffer.Size - dataOffset;
+            int deltaBufferSize = deltaOffset + (outputCount * deltaStride + dataBuffer.Size - dataOffset) * passCount;
             var deltaBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Storage, deltaBufferSize);
 
             return new DispatcherBufferData
@@ -268,7 +268,7 @@ namespace MachineLearning
         {
             int dataMatrixSize = buffers.DataBuffer.Size - buffers.DataOffset;
             int deltaMatrixSize = dataMatrixSize * buffers.DeltaStride / buffers.DataStride;
-            int deltaMatrixOffset = buffers.DeltaBuffer.Size - deltaMatrixSize;
+            int deltaMatrixOffset = buffers.DeltaBuffer.Size - (deltaMatrixSize * buffers.PassCount);
 
             var deltas = new Layer[buffers.LayerSizes.Length - 1];
             buffers.DeltaBuffer.Map(data =>

@@ -529,24 +529,22 @@ namespace CodePlayground.Graphics.Vulkan
 
         private bool IsFenceInQueue(Fence fence)
         {
-            bool found = false;
             foreach (var stored in mStoredBuffers)
             {
                 if (stored.Fence.Handle == fence.Handle)
                 {
-                    found = true;
-                    break;
+                    return true;
                 }
             }
 
-            return found;
+            return false;
         }
 
         public bool ReleaseFence(Fence fence, bool wait)
         {
             if (!IsFenceInQueue(fence))
             {
-                return false;
+                return true;
             }
 
             var api = VulkanContext.API;

@@ -77,6 +77,10 @@ namespace MachineLearning
             // load testing dataset as default
             mSelectedDataset = DatasetType.Testing;
 
+            mAverageAbsoluteCost = float.PositiveInfinity;
+            mMinimumAverageCost = 0f;
+            mUseMinimumAverageCost = false;
+
             Load += OnLoad;
             InputReady += OnInputReady;
             Closing += OnClose;
@@ -157,6 +161,16 @@ namespace MachineLearning
 
         #region Events
 
+        private void OnBatchResults(TrainerBatchResults results)
+        {
+            mAverageAbsoluteCost = results.AverageAbsoluteCost;
+            if (mUseMinimumAverageCost && mAverageAbsoluteCost < mMinimumAverageCost)
+            {
+                mTrainer?.Stop();
+            }
+        }
+
+        private const string networkFileName = "network.json";
         private void OnLoad()
         {
             var context = CreateGraphicsContext();
@@ -169,6 +183,9 @@ namespace MachineLearning
 
             mLibrary = new ShaderLibrary(context, Assembly.GetExecutingAssembly());
             mRenderer = context.CreateRenderer();
+
+            mTrainer = new Trainer(context, 100, 0.1f); // initial batch size and learning rate
+            mTrainer.OnBatchResults += OnBatchResults;
 
             InitializeOptick();
             InitializeImGui();
@@ -184,7 +201,6 @@ namespace MachineLearning
                 MipLevels = 1
             }).CreateTexture(true);
 
-            const string networkFileName = "network.json";
             if (File.Exists(networkFileName))
             {
                 using var stream = new FileStream(networkFileName, FileMode.Open, FileAccess.Read);
@@ -257,6 +273,12 @@ namespace MachineLearning
 
         private void OnClose()
         {
+            if (mNetwork is not null)
+            {
+                using var stream = new FileStream(networkFileName, FileMode.Create, FileAccess.Write);
+                Network.Save(mNetwork, stream);
+            }
+
             var context = GraphicsContext;
             context?.Device?.ClearQueues();
 
@@ -275,6 +297,7 @@ namespace MachineLearning
             mDisplayedTexture?.Dispose();
             mComputeFence?.Dispose();
             mBufferData?.ActivationBuffer?.Dispose();
+            mTrainer?.Dispose();
 
             mLibrary?.Dispose();
             GraphicsContext?.Dispose();
@@ -283,9 +306,11 @@ namespace MachineLearning
         private void OnUpdate(double delta)
         {
             mImGui?.NewFrame(delta);
+            mTrainer?.Update();
 
             DatasetMenu();
             NetworkMenu();
+            TrainingMenu();
         }
 
         private void RunNeuralNetwork(int[] imageNumbers)
@@ -566,6 +591,62 @@ namespace MachineLearning
             ImGui.End();
         }
 
+        private void TrainingMenu()
+        {
+            ImGui.Begin("Training");
+
+            ImGui.Checkbox("##use-minimum", ref mUseMinimumAverageCost);
+            ImGui.SameLine();
+
+            var minAverageFlags = mUseMinimumAverageCost ? ImGuiInputTextFlags.None : ImGuiInputTextFlags.ReadOnly;
+            ImGui.InputFloat("Minimum average cost", ref mMinimumAverageCost, 0.005f, 0.01f, "%f", minAverageFlags);
+
+            bool training = mTrainer!.Running;
+            if (training)
+            {
+                ImGui.BeginDisabled();
+            }
+
+            int batchSize = mTrainer.BatchSize;
+            if (ImGui.InputInt("Batch size", ref batchSize))
+            {
+                mTrainer.BatchSize = batchSize;
+            }
+
+            float learningRate = mTrainer.LearningRate;
+            if (ImGui.InputFloat("Learning rate", ref learningRate))
+            {
+                mTrainer.LearningRate = learningRate;
+            }
+
+            if (training)
+            {
+                ImGui.EndDisabled();
+            }
+
+            if (ImGui.Button(training ? "Stop" : "Start"))
+            {
+                if (training)
+                {
+                    mTrainer.Stop();
+                }
+                else
+                {
+                    mTrainer.Start(mDataset!, mNetwork!);
+                }
+            }
+
+            ImGui.SameLine();
+            ImGui.InputFloat("##average-absolute-cost", ref mAverageAbsoluteCost, 0f, 0f, "%.10f", ImGuiInputTextFlags.ReadOnly);
+
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Average absolute cost");
+            }
+
+            ImGui.End();
+        }
+
         #endregion
 
         public ShaderLibrary Library => mLibrary!;
@@ -592,6 +673,10 @@ namespace MachineLearning
         private DispatcherBufferData? mBufferData;
         private int mPassIndex;
         private IFence? mComputeFence;
+
+        private Trainer? mTrainer;
+        private float mAverageAbsoluteCost, mMinimumAverageCost;
+        private bool mUseMinimumAverageCost;
 
         private readonly Queue<IDisposable> mExistingSemaphores;
         private readonly List<IDisposable> mSignaledSemaphores;

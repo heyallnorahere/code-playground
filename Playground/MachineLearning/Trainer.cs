@@ -84,7 +84,7 @@ namespace MachineLearning
         {
             var queue = mContext.Device.GetQueue(CommandQueueFlags.Compute);
 
-            bool advanceBatch = false;
+            bool advanceBatch = mState.Batch is null;
             if (mState.Batch is not null && (wait || mFence.IsSignaled()))
             {
                 var batch = mState.Batch.Value;
@@ -93,7 +93,7 @@ namespace MachineLearning
                     var confidences = NetworkDispatcher.GetConfidenceValues(mState.BufferData);
                     var deltas = NetworkDispatcher.GetDeltas(mState.BufferData);
 
-                    int outputCount = mState.Network.LayerSizes[0];
+                    int outputCount = mState.Network.LayerSizes[^1];
                     float averageAbsoluteCost = 0f;
                     for (int i = 0; i < confidences.Length; i++)
                     {
@@ -119,6 +119,10 @@ namespace MachineLearning
                 else if (wait)
                 {
                     throw new InvalidOperationException("Fence was not submitted to the queue!");
+                }
+                else
+                {
+                    Console.WriteLine("test output");
                 }
             }
 
@@ -152,6 +156,7 @@ namespace MachineLearning
                     imageIndices[i] = index;
                 }
 
+                mFence.Reset();
                 mState.Batch = new TrainerBatchData
                 {
                     BatchIndex = newBatchIndex,
@@ -175,6 +180,8 @@ namespace MachineLearning
 
             if (!mRunning && mState.Initialized)
             {
+                queue.ReleaseFence(mFence, true);
+
                 mState.BufferData.SizeBuffer.Dispose();
                 mState.BufferData.DataBuffer.Dispose();
                 mState.BufferData.ActivationBuffer.Dispose();
