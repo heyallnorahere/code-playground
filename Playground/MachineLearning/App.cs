@@ -75,7 +75,7 @@ namespace MachineLearning
             mInputString = string.Empty;
 
             // load testing dataset as default
-            mSelectedDataset = DatasetType.Training;
+            mSelectedDataset = DatasetType.Testing;
 
             Load += OnLoad;
             InputReady += OnInputReady;
@@ -120,7 +120,21 @@ namespace MachineLearning
         public void LoadDataset(DatasetType type)
         {
             var source = sDatasetSources[type];
-            mDataset = Dataset.Pull(source.Images, source.Labels);
+            var cachePath = $"data/{type.ToString().ToLower()}/";
+
+            var imageSource = new DatasetFileSource
+            {
+                Url = source.Images,
+                Cache = cachePath + "images"
+            };
+
+            var labelSource = new DatasetFileSource
+            {
+                Url = source.Labels,
+                Cache = cachePath + "labels"
+            };
+
+            mDataset = Dataset.Load(imageSource, labelSource);
         }
 
         private IDisposable GetSemaphore()

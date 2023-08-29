@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
@@ -9,6 +10,11 @@ using System.Threading.Tasks;
 // dataset is pulled from https://yann.lecun.com/exdb/mnist/
 namespace MachineLearning
 {
+    public struct DatasetFileSource
+    {
+        public string Url, Cache;
+    }
+
     public sealed class Dataset
     {
         private static int ReadInt32WithEndianness(BinaryReader reader)
@@ -86,18 +92,80 @@ namespace MachineLearning
         }
 
         // hack hacky hack hack
-        public static Dataset Pull(string imageUrl, string labelUrl)
+        // i dont care anymore
+        public static Dataset Load(DatasetFileSource images, DatasetFileSource labels)
         {
-            using var client = new HttpClient();
-            var imageTask = PullAsync(client, imageUrl);
-            var labelTask = PullAsync(client, labelUrl);
+            Stream? imageStream = null;
+            Stream? labelStream = null;
 
-            Task.WhenAll(imageTask, labelTask).Wait();
-            using (imageTask.Result)
+            using var client = new HttpClient();
+            var tasks = new List<Task<Stream>>();
+            Task<Stream>? imageTask, labelTask;
+
+            if (File.Exists(images.Cache))
             {
-                using (labelTask.Result)
+                imageStream = new FileStream(images.Cache, FileMode.Open, FileAccess.Read);
+                imageTask = null;
+            }
+            else
+            {
+                tasks.Add(imageTask = PullAsync(client, images.Url));
+            }
+
+            if (File.Exists(labels.Cache))
+            {
+                labelStream = new FileStream(labels.Cache, FileMode.Open, FileAccess.Read);
+                labelTask = null;
+            }
+            else
+            {
+                tasks.Add(labelTask = PullAsync(client, labels.Url));
+            }
+
+            if (tasks.Count > 0)
+            {
+                Task.WhenAll(tasks).Wait();
+            }
+
+            if (imageStream is null)
+            {
+                imageStream = new MemoryStream();
+                imageTask!.Result.CopyTo(imageStream);
+                imageStream.Position = 0;
+
+                var directory = Path.GetDirectoryName(images.Cache);
+                if (directory is not null)
                 {
-                    return Load(imageTask.Result, labelTask.Result);
+                    Directory.CreateDirectory(directory);
+                }
+
+                using var cacheStream = new FileStream(images.Cache, FileMode.Create, FileAccess.Write);
+                imageStream.CopyTo(cacheStream);
+                imageStream.Position = 0;
+            }
+
+            if (labelStream is null)
+            {
+                labelStream = new MemoryStream();
+                labelTask!.Result.CopyTo(labelStream);
+                labelStream.Position = 0;
+
+                var directory = Path.GetDirectoryName(labels.Cache);
+                if (directory is not null)
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                using var cacheStream = new FileStream(labels.Cache, FileMode.Create, FileAccess.Write);
+                labelStream.CopyTo(cacheStream);
+                labelStream.Position = 0;
+            }
+
+            using (imageStream)
+            {
+                using (labelStream)
+                {
+                    return Load(imageStream, labelStream);
                 }
             }
         }
