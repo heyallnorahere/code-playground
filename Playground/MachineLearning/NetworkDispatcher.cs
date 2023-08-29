@@ -273,6 +273,7 @@ namespace MachineLearning
             var deltas = new Layer[buffers.LayerSizes.Length - 1];
             buffers.DeltaBuffer.Map(data =>
             {
+                int layerOffset = 0;
                 for (int i = 0; i < deltas.Length; i++)
                 {
                     int currentLayerSize = buffers.LayerSizes[i + 1];
@@ -283,7 +284,7 @@ namespace MachineLearning
 
                     for (int j = 0; j < buffers.PassCount; j++)
                     {
-                        int matrixOffset = deltaMatrixOffset + deltaMatrixSize * j;
+                        int matrixOffset = deltaMatrixOffset + layerOffset * buffers.DeltaStride + deltaMatrixSize * j;
                         for (int y = 0; y < currentLayerSize; y++)
                         {
                             int matrixRowOffset = matrixRowLength * y;
@@ -303,6 +304,7 @@ namespace MachineLearning
                     }
 
                     deltas[i] = delta;
+                    layerOffset += matrixRowLength * currentLayerSize;
                 }
             });
 
