@@ -107,15 +107,15 @@ namespace MachineLearning
                         }
                     }
 
-                    mState.Network.Step(deltas, mLearningRate);
-                    mState.Network.UpdateBuffer(mState.BufferData.DataBuffer, mState.BufferData.DataStride, mState.BufferData.DataOffset);
-
                     OnBatchResults?.Invoke(new TrainerBatchResults
                     {
                         ConfidenceValues = confidences,
                         AverageAbsoluteCost = averageAbsoluteCost,
                         ImageIndices = batch.ImageIndices
                     });
+
+                    mState.Network.Step(deltas, mLearningRate);
+                    mState.Network.UpdateBuffer(mState.BufferData.DataBuffer, mState.BufferData.DataStride, mState.BufferData.DataOffset);
 
                     advanceBatch = true;
                 }
