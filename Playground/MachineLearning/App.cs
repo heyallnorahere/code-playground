@@ -282,9 +282,8 @@ namespace MachineLearning
             var context = GraphicsContext;
             context?.Device?.ClearQueues();
 
-            while (mExistingSemaphores.Count > 0)
+            while (mExistingSemaphores.TryDequeue(out IDisposable? semaphore))
             {
-                var semaphore = mExistingSemaphores.Dequeue();
                 semaphore.Dispose();
             }
 
@@ -369,6 +368,7 @@ namespace MachineLearning
             foreach (var semaphore in mSignaledSemaphores)
             {
                 commandList.AddSemaphore(semaphore, SemaphoreUsage.Wait);
+                mExistingSemaphores.Enqueue(semaphore);
             }
 
             renderTarget.BeginRender(commandList, renderInfo.Framebuffer!, Vector4.Zero);

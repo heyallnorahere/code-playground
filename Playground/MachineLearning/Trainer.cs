@@ -120,10 +120,6 @@ namespace MachineLearning
                 {
                     throw new InvalidOperationException("Fence was not submitted to the queue!");
                 }
-                else
-                {
-                    Console.WriteLine("test output");
-                }
             }
 
             if (mRunning && advanceBatch)
