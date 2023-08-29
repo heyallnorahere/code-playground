@@ -27,6 +27,11 @@ namespace MachineLearning.Shaders
         public float[] Data;
     }
 
+    public struct NetworkPushConstantData
+    {
+        public int CurrentLayer;
+    }
+
     public static class ShaderResources
     {
         public const string SizeBufferName = "u_NetworkSize";
@@ -34,6 +39,7 @@ namespace MachineLearning.Shaders
         public const string ActivationBufferName = "u_ActivationBuffer";
         public const string PreSigmoidBufferName = "u_PreSigmoidBuffer";
         public const string DeltaBufferName = "u_DeltaBuffer";
+        public const string PushConstantBufferName = "u_PushConstants";
 
         [Layout(Set = 0, Binding = 0, ResourceType = ShaderResourceType.Uniform)]
         [ShaderFieldName(SizeBufferName, UseClassName = false)]
@@ -54,5 +60,9 @@ namespace MachineLearning.Shaders
         [Layout(Set = 0, Binding = 4, ResourceType = ShaderResourceType.Storage)]
         [ShaderFieldName(DeltaBufferName, UseClassName = false)]
         public static NetworkDataBuffer DeltaBuffer;
+
+        [Layout(PushConstants = true)]
+        [ShaderFieldName(PushConstantBufferName, UseClassName = false)]
+        public static NetworkPushConstantData PushConstants;
     }
 }

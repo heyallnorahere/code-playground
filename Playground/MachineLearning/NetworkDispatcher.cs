@@ -1,5 +1,6 @@
 ﻿using CodePlayground.Graphics;
 using MachineLearning.Shaders;
+using Optick.NET;
 using System;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -95,6 +96,8 @@ namespace MachineLearning
 
         public static void ForwardPropagation(ICommandList commandList, DispatcherBufferData buffers, float[][] inputs)
         {
+            using var dispatchEvent = OptickMacros.GPUEvent("Forward propagation");
+
             int inputCount = buffers.LayerSizes[0];
             int neuronTotal = buffers.LayerSizes.Aggregate((a, b) => a + b);
 
@@ -142,14 +145,30 @@ namespace MachineLearning
             commandList.PushStagingObject(pipeline);
             pipeline.Bind(commandList, 0);
 
-            mRenderer.DispatchCompute(commandList, buffers.PassCount, 1, 1);
+            for (int i = 0; i < buffers.LayerSizes.Length - 1; i++)
+            {
+                if (i > 0)
+                {
+                    commandList.ExecutionBarrier();
+                }
+
+                pipeline.PushConstants(commandList, data =>
+                {
+                    pipeline.ReflectionView.MapStructure(data, ShaderResources.PushConstantBufferName, new NetworkPushConstantData
+                    {
+                        CurrentLayer = i + 1
+                    });
+                });
+
+                mRenderer.DispatchCompute(commandList, buffers.PassCount, 1, 1);
+            }
         }
 
         public static void BackPropagation(ICommandList commandList, DispatcherBufferData buffers, float[][] expected)
         {
-            int outputCount = buffers.LayerSizes[^1];
-            int passCount = expected.Length;
+            using var dispatchEvent = OptickMacros.GPUEvent("Back propagation");
 
+            int outputCount = buffers.LayerSizes[^1];
             if (expected.Length != buffers.PassCount)
             {
                 throw new ArgumentException("Inconsistent pass count!");
@@ -165,7 +184,7 @@ namespace MachineLearning
 
             buffers.DeltaBuffer.Map(data =>
             {
-                for (int i = 0; i < passCount; i++)
+                for (int i = 0; i < buffers.PassCount; i++)
                 {
                     var passExpected = expected[i];
                     if (passExpected.Length != outputCount)
@@ -193,7 +212,24 @@ namespace MachineLearning
             commandList.PushStagingObject(pipeline);
             pipeline.Bind(commandList, 0);
 
-            mRenderer.DispatchCompute(commandList, passCount, 1, 1);
+            int startingLayer = buffers.LayerSizes.Length - 1;
+            for (int i = startingLayer; i > 0; i--)
+            {
+                if (i < startingLayer)
+                {
+                    commandList.ExecutionBarrier();
+                }
+
+                pipeline.PushConstants(commandList, data =>
+                {
+                    pipeline.ReflectionView.MapStructure(data, ShaderResources.PushConstantBufferName, new NetworkPushConstantData
+                    {
+                        CurrentLayer = i
+                    });
+                });
+
+                mRenderer.DispatchCompute(commandList, buffers.PassCount, 1, 1);
+            }
         }
 
         public static float[][] GetConfidenceValues(DispatcherBufferData buffers)
