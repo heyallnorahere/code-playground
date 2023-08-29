@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 // dataset is pulled from https://yann.lecun.com/exdb/mnist/
 namespace MachineLearning
 {
-    internal sealed class Dataset
+    public sealed class Dataset
     {
         private static int ReadInt32WithEndianness(BinaryReader reader)
         {

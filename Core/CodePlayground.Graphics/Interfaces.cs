@@ -332,6 +332,7 @@ namespace CodePlayground.Graphics
 
         public void Wait();
         public void ClearCache();
+        public bool ReleaseFence(IFence fence, bool wait);
     }
 
     public interface IFence : IDisposable

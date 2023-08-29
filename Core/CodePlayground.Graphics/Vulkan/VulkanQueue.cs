@@ -282,6 +282,7 @@ namespace CodePlayground.Graphics.Vulkan
 
             mStoredBuffers = new Queue<StoredCommandBuffer>();
             mFences = new Queue<Fence>();
+            mAllocatedBuffers = new Queue<VulkanCommandBuffer>();
 
             mUsage = usage;
             mBufferCap = -1;
@@ -334,12 +335,23 @@ namespace CodePlayground.Graphics.Vulkan
                 api.DestroyFence(mDevice, fence, null);
             }
 
+            while (mAllocatedBuffers.Count > 0)
+            {
+                var buffer = mAllocatedBuffers.Dequeue();
+                buffer.Dispose();
+            }
+
             api.DestroyCommandPool(mDevice, mPool, null);
         }
 
         ICommandList ICommandQueue.Release() => Release();
         public VulkanCommandBuffer Release()
         {
+            if (mAllocatedBuffers.TryDequeue(out VulkanCommandBuffer? allocatedBuffer))
+            {
+                return allocatedBuffer;
+            }
+
             if (mStoredBuffers.Count > 0)
             {
                 var buffer = mStoredBuffers.Peek();
@@ -411,6 +423,11 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void Submit(VulkanCommandBuffer commandBuffer, VulkanQueueSubmitInfo info = default, bool wait = false)
         {
+            if (info.Fence is not null && IsFenceInQueue(info.Fence.Value))
+            {
+                throw new InvalidOperationException("The passed fence has already been submitted!");
+            }
+
             if (commandBuffer.IsRecording)
             {
                 commandBuffer.End();
@@ -500,6 +517,78 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
+        bool ICommandQueue.ReleaseFence(IFence fence, bool wait)
+        {
+            if (fence is not VulkanFence)
+            {
+                throw new ArgumentException("Must pass a Vulkan fence!");
+            }
+
+            return ReleaseFence(((VulkanFence)fence).Fence, wait);
+        }
+
+        private bool IsFenceInQueue(Fence fence)
+        {
+            bool found = false;
+            foreach (var stored in mStoredBuffers)
+            {
+                if (stored.Fence.Handle == fence.Handle)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            return found;
+        }
+
+        public bool ReleaseFence(Fence fence, bool wait)
+        {
+            if (!IsFenceInQueue(fence))
+            {
+                return false;
+            }
+
+            var api = VulkanContext.API;
+            if (wait)
+            {
+                api.WaitForFences(mDevice, 1, fence, true, ulong.MaxValue).Assert();
+            }
+            else
+            {
+                var result = api.GetFenceStatus(mDevice, fence);
+                if (result == Result.NotReady)
+                {
+                    return false;
+                }
+
+                result.Assert();
+            }
+
+            while (true)
+            {
+                var storedBuffer = mStoredBuffers.Dequeue();
+                var buffer = storedBuffer.CommandBuffer;
+
+                buffer.Reset();
+                mAllocatedBuffers.Enqueue(buffer);
+
+                var storedFence = storedBuffer.Fence;
+                if (storedBuffer.OwnsFence)
+                {
+                    api.ResetFences(mDevice, 1, storedFence);
+                    mFences.Enqueue(storedFence);
+                }
+
+                if (storedFence.Handle == fence.Handle)
+                {
+                    break;
+                }
+            }
+
+            return true;
+        }
+
         public CommandQueueFlags Usage => mUsage;
         public Queue Queue => mQueue;
         public int CommandListCap
@@ -518,6 +607,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private readonly Queue<StoredCommandBuffer> mStoredBuffers;
         private readonly Queue<Fence> mFences;
+        private readonly Queue<VulkanCommandBuffer> mAllocatedBuffers;
 
         private readonly CommandQueueFlags mUsage;
         private int mBufferCap;

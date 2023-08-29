@@ -44,6 +44,34 @@ namespace MachineLearning
                 }
             }
         }
+
+        public void Step(Layer delta, float learningRate)
+        {
+            int currentSize = Weights.GetLength(0);
+            int previousSize = Weights.GetLength(1);
+
+            int deltaCurrentSize = delta.Weights.GetLength(0);
+            int deltaPreviousSize = delta.Weights.GetLength(1);
+
+            if (Biases.Length != currentSize || delta.Biases.Length != deltaCurrentSize)
+            {
+                throw new ArgumentException("Size mismatch!");
+            }
+
+            if (currentSize != deltaCurrentSize || previousSize != deltaPreviousSize)
+            {
+                throw new ArgumentException("Size mismatch!");
+            }
+
+            for (int y = 0; y < currentSize; y++)
+            {
+                Biases[y] += delta.Biases[y] * learningRate;
+                for (int x = 0; x < previousSize; x++)
+                {
+                    Weights[y, x] = delta.Weights[y, x] * learningRate;
+                }
+            }
+        }
     }
 
     public struct NetworkData
@@ -147,7 +175,7 @@ namespace MachineLearning
             }
         }
 
-        public void CreateBuffers(IGraphicsContext context, IReflectionView reflectionView, out IDeviceBuffer dataBuffer, out IDeviceBuffer sizeBuffer)
+        public void CreateBuffers(IGraphicsContext context, IReflectionView reflectionView, out IDeviceBuffer dataBuffer, out IDeviceBuffer sizeBuffer, out int dataStride, out int dataOffset)
         {
             int bufferSize = reflectionView.GetBufferSize(ShaderResources.SizeBufferName);
             sizeBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize);
@@ -165,9 +193,9 @@ namespace MachineLearning
                 }
             });
 
-            int startOffset = reflectionView.GetBufferOffset(ShaderResources.DataBufferName, $"{nameof(NetworkDataBuffer.Data)}[0]");
+            dataOffset = reflectionView.GetBufferOffset(ShaderResources.DataBufferName, $"{nameof(NetworkDataBuffer.Data)}[0]");
             int endOffset = reflectionView.GetBufferOffset(ShaderResources.DataBufferName, $"{nameof(NetworkDataBuffer.Data)}[1]");
-            int stride = endOffset - startOffset;
+            dataStride = endOffset - dataOffset;
 
             int elementCount = 0;
             for (int i = 0; i < mLayers.Length; i++)
@@ -178,7 +206,12 @@ namespace MachineLearning
                 elementCount += currentSize * (previousSize + 1);
             }
 
-            dataBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Storage, elementCount * stride + startOffset);
+            dataBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Storage, elementCount * dataStride + dataOffset);
+            UpdateBuffer(dataBuffer, dataStride, dataOffset);
+        }
+
+        public void UpdateBuffer(IDeviceBuffer dataBuffer, int bufferStride, int dataOffset)
+        {
             dataBuffer.Map(data =>
             {
                 var values = new List<float>();
@@ -189,7 +222,7 @@ namespace MachineLearning
 
                 for (int i = 0; i < values.Count; i++)
                 {
-                    int offset = i * stride + startOffset;
+                    int offset = i * bufferStride + dataOffset;
                     BitConverter.GetBytes(values[i]).CopyTo(data[offset..(offset + Marshal.SizeOf<float>())]);
                 }
             });
@@ -228,6 +261,19 @@ namespace MachineLearning
             }
 
             return result;
+        }
+
+        public void Step(Layer[] deltas, float learningRate)
+        {
+            if (mLayers.Length != deltas.Length)
+            {
+                throw new ArgumentException("Layer count mismatch!");
+            }
+
+            for (int i = 0; i < mLayers.Length; i++)
+            {
+                mLayers[i].Step(deltas[i], learningRate);
+            }
         }
 
         private readonly int[] mLayerSizes;

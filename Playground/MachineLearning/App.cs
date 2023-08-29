@@ -260,7 +260,7 @@ namespace MachineLearning
             mImGui?.Dispose();
             mDisplayedTexture?.Dispose();
             mComputeFence?.Dispose();
-            mForwardPropagationData?.ActivationBuffer?.Dispose();
+            mBufferData?.ActivationBuffer?.Dispose();
 
             mLibrary?.Dispose();
             GraphicsContext?.Dispose();
@@ -277,7 +277,7 @@ namespace MachineLearning
         private void RunNeuralNetwork(int[] imageNumbers)
         {
             // just run headless
-            var input = imageNumbers.Select(number => mDataset!.GetInput(number - 1)).ToArray();
+            var inputs = imageNumbers.Select(number => mDataset!.GetInput(number - 1)).ToArray();
 
             var context = GraphicsContext!;
             var queue = context.Device.GetQueue(CommandQueueFlags.Compute);
@@ -285,29 +285,24 @@ namespace MachineLearning
             var commandList = queue.Release();
             commandList.Begin();
 
-            IDeviceBuffer activationBuffer;
-            int stride, offset;
-
+            var data = NetworkDispatcher.CreateBuffers(mNetwork!, inputs.Length);
             using (commandList.Context(GPUQueueType.Compute))
             {
-                var data = NetworkDispatcher.ForwardPropagation(commandList, mNetwork!, input);
+                NetworkDispatcher.ForwardPropagation(commandList, data, inputs);
 
                 commandList.PushStagingObject(data.PreSigmoidBuffer);
                 commandList.PushStagingObject(data.SizeBuffer);
                 commandList.PushStagingObject(data.DataBuffer);
-
-                activationBuffer = data.ActivationBuffer;
-                stride = data.ActivationStride;
-                offset = data.ActivationOffset;
+                commandList.PushStagingObject(data.DeltaBuffer);
             }
 
             commandList.End();
             queue.Submit(commandList);
             queue.ClearCache();
 
-            using (activationBuffer)
+            using (data.ActivationBuffer)
             {
-                var confidence = NetworkDispatcher.GetConfidenceValues(activationBuffer, stride, offset, input.Length, mNetwork!.LayerSizes);
+                var confidence = NetworkDispatcher.GetConfidenceValues(data);
                 for (int i = 0; i < confidence.Length; i++)
                 {
                     var passConfidence = confidence[i];
@@ -438,13 +433,7 @@ namespace MachineLearning
             bool fenceSignaled = mComputeFence!.IsSignaled();
             if (mReadBuffer && fenceSignaled)
             {
-                var data = mForwardPropagationData!.Value;
-                var activationBuffer = data.ActivationBuffer;
-                
-                int stride = data.ActivationStride;
-                int offset = data.ActivationOffset;
-
-                mOutputs = NetworkDispatcher.GetConfidenceValues(activationBuffer, stride, offset, mPassCount, mNetwork!.LayerSizes);
+                mOutputs = NetworkDispatcher.GetConfidenceValues(mBufferData!.Value);
                 mPassIndex = 0;
 
                 mReadBuffer = false;
@@ -452,7 +441,9 @@ namespace MachineLearning
 
             ImGui.Begin("Network");
 
-            ImGui.Text("Enter image numbers to pass through the neural network, separated by commas; spaces allowed.");
+            ImGui.TextWrapped("Enter image numbers to pass through the neural network, separated by commas; spaces allowed.");
+            ImGui.TextWrapped("Note: it is not recommended to feed the training set through the network to test. Instead, use the test dataset.");
+
             ImGui.InputText("##input-string", ref mInputString, 512);
             ImGui.SameLine();
 
@@ -470,7 +461,7 @@ namespace MachineLearning
                 }
 
                 var imageNumbers = mInputString.Replace(" ", string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToArray();
-                var inputs = new float[mPassCount = imageNumbers.Length][];
+                var inputs = new float[imageNumbers.Length][];
 
                 for (int i = 0; i < imageNumbers.Length; i++)
                 {
@@ -491,14 +482,16 @@ namespace MachineLearning
                 commandList.Begin();
                 using (commandList.Context(GPUQueueType.Compute))
                 {
-                    var data = NetworkDispatcher.ForwardPropagation(commandList, mNetwork!, inputs);
+                    var data = NetworkDispatcher.CreateBuffers(mNetwork!, inputs.Length);
+                    NetworkDispatcher.ForwardPropagation(commandList, data, inputs);
 
                     commandList.PushStagingObject(data.PreSigmoidBuffer);
                     commandList.PushStagingObject(data.SizeBuffer);
                     commandList.PushStagingObject(data.DataBuffer);
+                    commandList.PushStagingObject(data.DeltaBuffer);
 
-                    mForwardPropagationData?.ActivationBuffer?.Dispose();
-                    mForwardPropagationData = data;
+                    mBufferData?.ActivationBuffer?.Dispose();
+                    mBufferData = data;
                 }
 
                 mComputeFence.Reset();
@@ -582,8 +575,7 @@ namespace MachineLearning
         private string mInputString;
         private float[][]? mOutputs;
         private bool mReadBuffer;
-        private ForwardPropagationBufferData? mForwardPropagationData;
-        private int mPassCount;
+        private DispatcherBufferData? mBufferData;
         private int mPassIndex;
         private IFence? mComputeFence;
 
