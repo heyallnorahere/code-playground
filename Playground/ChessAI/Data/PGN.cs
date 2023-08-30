@@ -1,4 +1,5 @@
 using LibChess;
+using Optick.NET;
 using System;
 using System.Collections.Generic;
 
@@ -14,6 +15,8 @@ namespace ChessAI.Data
     {
         public static PGN Parse(string text)
         {
+            using var parseEvent = OptickMacros.Event();
+
             var lines = text.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var moveString = string.Empty;
 
@@ -91,18 +94,15 @@ namespace ChessAI.Data
                 result.Attributes[terms[0]] = terms[1];
             }
 
-            result.ParseMoves(moveString);
+            ParseMoves(moveString, result.Moves);
             return result;
         }
 
-        public PGN()
+        public static void ParseMoves(string moveString, IList<PGNMove> moves)
         {
-            Attributes = new Dictionary<string, string>();
-            Moves = new List<PGNMove>();
-        }
+            using var parseEvent = OptickMacros.Event();
+            moves.Clear();
 
-        public readonly void ParseMoves(string moveString)
-        {
             using var board = Board.Create(); // creates a board with the default position
             using var engine = new Engine
             {
@@ -146,7 +146,7 @@ namespace ChessAI.Data
                             throw new ArgumentException("Invalid promotion!");
                         }
 
-                        Moves.Add(new PGNMove
+                        moves.Add(new PGNMove
                         {
                             Move = move,
                             Position = board.SerializeFEN()
@@ -163,6 +163,12 @@ namespace ChessAI.Data
                     throw new ArgumentException("Invalid final term!");
                 }
             }
+        }
+
+        public PGN()
+        {
+            Attributes = new Dictionary<string, string>();
+            Moves = new List<PGNMove>();
         }
 
         public Dictionary<string, string> Attributes;

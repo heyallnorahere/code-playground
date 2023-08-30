@@ -21,10 +21,16 @@ namespace MachineLearning
         public string Labels;
     }
 
-    public enum DatasetType
+    internal enum DatasetType
     {
         Training,
         Testing
+    }
+
+    internal struct DatasetImageSampler : ISamplerSettings
+    {
+        public AddressMode AddressMode => AddressMode.Repeat;
+        public SamplerFilter Filter => SamplerFilter.Nearest;
     }
 
     [ApplicationTitle("Machine learning test")]
@@ -174,21 +180,22 @@ namespace MachineLearning
         private void OnLoad()
         {
             var context = CreateGraphicsContext();
-            var swapchain = context.Swapchain;
 
+            var swapchain = context.Swapchain;
             if (swapchain is not null)
             {
                 swapchain.VSync = true;
             }
 
+            InitializeOptick();
+            InitializeImGui();
+
             mLibrary = new ShaderLibrary(context, Assembly.GetExecutingAssembly());
             mRenderer = context.CreateRenderer();
+            NetworkDispatcher.Initialize(mRenderer, mLibrary);
 
             mTrainer = new Trainer(context, 100, 0.1f); // initial batch size and learning rate
             mTrainer.OnBatchResults += OnBatchResults;
-
-            InitializeOptick();
-            InitializeImGui();
 
             LoadDataset(mSelectedDataset);
 
@@ -199,7 +206,7 @@ namespace MachineLearning
                 Usage = DeviceImageUsageFlags.CopyDestination | DeviceImageUsageFlags.Render,
                 Format = DeviceImageFormat.RGBA8_UNORM,
                 MipLevels = 1
-            }).CreateTexture(true);
+            }).CreateTexture(true, new DatasetImageSampler());
 
             if (File.Exists(networkFileName))
             {
