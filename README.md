@@ -41,15 +41,23 @@ cd $ROOT_DIR
 dotnet build -c $CONFIG
 ```
 
+**DISCLAIMER**: As of this commit, Release builds crash during shader translation. This is due to instruction optimizations during compilation that are not handled in translation. This will be addressed eventually.
+
 ## Running
 
-To run the Vulkan test application:
 ```bash
 # after building
 # where $ROOT_DIR is the root directory of the repository
+# $APPLICATION is the name of the application (e.g. VulkanTest)
 # and $CONFIG is the application configuration
-cd $ROOT_DIR/Playground/VulkanTest/bin/$CONFIG/net7.0
+cd $ROOT_DIR/Playground/$APPLICATION/bin/$CONFIG/net7.0
 
 # the framework loads the application dynamically
-dotnet CodePlayground.dll VulkanTest.dll
+dotnet CodePlayground.dll $APPLICATION.dll
 ```
+
+## "Playground" application
+
+- VulkanTest: Vulkan graphics test application
+- Ragdoll: WIP ragdoll simulation of skinned meshes. Not finished
+- MachineLearning: Neural network running in a compute shader. Backpropagation is implemented
