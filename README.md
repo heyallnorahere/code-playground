@@ -14,7 +14,7 @@ This project uses [.NET 7](https://dotnet.microsoft.com/en-us/download/dotnet/7.
 - [Optick](https://github.com/bombomby/optick) with Vulkan & (Windows) DirectX support ([Vulkan validation fix](https://github.com/qbojj/optick/tree/fix-vulkan))
 - `coptick` from my [.NET Optick bindings](https://github.com/yodasoda1219/Optick.NET)
 
-This project uses packages from GitHub package registries. As such, it's required that you use a personal access token. To create an appropriate config file for NuGet, paste the following template into a `nuget.config` file in this directory, and replace the appropriate sections:
+This project uses packages from GitHub package registries. As such, it's required that you use a personal access token. To create an appropriate config file for NuGet, paste the following template into a `nuget.config` file in the root directory, and replace the appropriate sections:
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>
@@ -53,11 +53,12 @@ dotnet build -c $CONFIG
 cd $ROOT_DIR/Playground/$APPLICATION/bin/$CONFIG/net7.0
 
 # the framework loads the application dynamically
-dotnet CodePlayground.dll $APPLICATION.dll
+dotnet CodePlayground.dll $APPLICATION.dll ...
 ```
 
 ## "Playground" applications
 
 - VulkanTest: Vulkan graphics test application
 - Ragdoll: WIP ragdoll simulation of skinned meshes. Not finished
-- MachineLearning: Neural network running in a compute shader. Backpropagation is implemented
+- MachineLearning: Neural network running in a compute shader
+- ChessAI: WIP chess neural network

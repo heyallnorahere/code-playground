@@ -1,3 +1,6 @@
 [submodule "Libraries/VMASharp/VMASharp"]
 	path = Libraries/VMASharp/VMASharp
 	url = https://github.com/sunkin351/VMASharp.git
+[submodule "Libraries/chess"]
+	path = Libraries/chess
+	url = https://github.com/yodasoda1219/chess.git

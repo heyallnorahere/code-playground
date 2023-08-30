@@ -20,7 +20,7 @@ namespace MachineLearning
 
     internal struct TrainerState
     {
-        public Dataset Data;
+        public IDataset Data;
         public Network Network;
 
         public DispatcherBufferData BufferData;
@@ -82,11 +82,14 @@ namespace MachineLearning
         public event Action<TrainerBatchResults>? OnBatchResults;
         public void Update(bool wait = false)
         {
+            using var updateEvent = OptickMacros.Event();
             var queue = mContext.Device.GetQueue(CommandQueueFlags.Compute);
 
             bool advanceBatch = mState.Batch is null;
             if (mState.Batch is not null && (wait || mFence.IsSignaled()))
             {
+                using var updateBatchEvent = OptickMacros.Event("Check batch");
+
                 var batch = mState.Batch.Value;
                 if (queue.ReleaseFence(mFence, wait))
                 {
@@ -127,6 +130,8 @@ namespace MachineLearning
 
             if (mRunning && advanceBatch)
             {
+                using var advanceBatchEvent = OptickMacros.Event("Advance batch");
+
                 int newBatchIndex = (mState.Batch?.BatchIndex ?? -1) + 1;
                 if (newBatchIndex >= BatchCount)
                 {
@@ -179,6 +184,7 @@ namespace MachineLearning
 
             if (!mRunning && mState.Initialized)
             {
+                using var disposeBuffersEvent = OptickMacros.Event("Dispose buffers");
                 queue.ReleaseFence(mFence, true);
 
                 mState.BufferData.SizeBuffer.Dispose();
@@ -231,8 +237,9 @@ namespace MachineLearning
             }
         }
 
-        public void Start(Dataset dataset, Network network)
+        public void Start(IDataset dataset, Network network)
         {
+            using var startEvent = OptickMacros.Event();
             if (mRunning)
             {
                 return;
@@ -272,6 +279,8 @@ namespace MachineLearning
 
         public void Stop()
         {
+            // remove? probably adds more overhead than its worth
+            using var stopEvent = OptickMacros.Event();
             if (!mRunning)
             {
                 return;

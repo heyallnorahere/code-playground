@@ -106,20 +106,25 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void CopyFromCPU(void* address, int size, int offset = 0)
         {
-            var deviceAddress = (void*)(mAllocation.Map() + (nint)offset);
+            using var copyEvent = OptickMacros.Event();
+
+            var deviceAddress = (void*)(mAllocation.Map() + offset);
             System.Buffer.MemoryCopy(address, deviceAddress, mSize, size);
             mAllocation.Unmap();
         }
 
         public unsafe void CopyToCPU(void* address, int size, int offset = 0)
         {
-            var deviceAddress = (void*)(mAllocation.Map() + (nint)offset);
+            using var copyEvent = OptickMacros.Event();
+
+            var deviceAddress = (void*)(mAllocation.Map() + offset);
             System.Buffer.MemoryCopy(deviceAddress, address, size, mSize);
             mAllocation.Unmap();
         }
 
         public unsafe void Map(BufferMapCallback callback)
         {
+            using var mapEvent = OptickMacros.Event();
             nint mapped = mAllocation.Map();
 
             var span = new Span<byte>((void*)mapped, mSize);

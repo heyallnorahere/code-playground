@@ -2,6 +2,7 @@
 using MachineLearning.Shaders;
 using Optick.NET;
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.InteropServices;
 
@@ -18,27 +19,39 @@ namespace MachineLearning
 
     public static class NetworkDispatcher
     {
-        private static readonly ShaderLibrary mLibrary;
-        private static readonly IRenderer mRenderer;
-        private static readonly IGraphicsContext mContext;
-        private static readonly int mMaxConcurrentPasses;
+        private static ShaderLibrary? mLibrary;
+        private static IRenderer? mRenderer;
+        private static IGraphicsContext? mContext;
+        private static int mMaxConcurrentPasses;
 
         public static int MaxConcurrentPasses => mMaxConcurrentPasses;
 
-        static NetworkDispatcher()
+        public static void Initialize(IRenderer renderer, ShaderLibrary library)
         {
-            var app = App.Instance;
-
-            mRenderer = app.Renderer;
-            mLibrary = app.Library;
+            mRenderer = renderer;
+            mLibrary = library;
             mContext = mLibrary.Context;
 
             var deviceInfo = mContext.Device.DeviceInfo;
             mMaxConcurrentPasses = (int)deviceInfo.MaxComputeWorkGroups.X;
         }
 
+        [MemberNotNull(nameof(mRenderer), nameof(mLibrary), nameof(mContext))]
+        private static void AssertInitialized()
+        {
+            if (mRenderer is not null && mLibrary is not null && mContext is not null)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException("The network dispatcher has not been initialized!");
+        }
+
         public static DispatcherBufferData CreateBuffers(Network network, int passCount)
         {
+            AssertInitialized();
+
+            using var createBuffersEvent = OptickMacros.Event();
             var reflectionView = mLibrary.CreateReflectionView<BackPropagation>(); // backprop shader accesses all resources
 
             var layerSizes = network.LayerSizes;
@@ -96,6 +109,9 @@ namespace MachineLearning
 
         public static void ForwardPropagation(ICommandList commandList, DispatcherBufferData buffers, float[][] inputs)
         {
+            AssertInitialized();
+
+            using var forwardPropagationEvent = OptickMacros.Event();
             using var dispatchEvent = OptickMacros.GPUEvent("Forward propagation");
 
             int inputCount = buffers.LayerSizes[0];
@@ -121,6 +137,8 @@ namespace MachineLearning
 
             buffers.ActivationBuffer.Map(data =>
             {
+                using var copyEvent = OptickMacros.Event("Copy inputs to activation buffer");
+
                 for (int i = 0; i < buffers.PassCount; i++)
                 {
                     var layerActivations = inputs[i];
@@ -166,6 +184,9 @@ namespace MachineLearning
 
         public static void BackPropagation(ICommandList commandList, DispatcherBufferData buffers, float[][] expected)
         {
+            AssertInitialized();
+
+            using var backPropagationEvent = OptickMacros.Event();
             using var dispatchEvent = OptickMacros.GPUEvent("Back propagation");
 
             int outputCount = buffers.LayerSizes[^1];
@@ -184,6 +205,8 @@ namespace MachineLearning
 
             buffers.DeltaBuffer.Map(data =>
             {
+                using var copyEvent = OptickMacros.Event("Copy expected outputs to delta buffer");
+
                 for (int i = 0; i < buffers.PassCount; i++)
                 {
                     var passExpected = expected[i];
@@ -234,6 +257,9 @@ namespace MachineLearning
 
         public static float[][] GetConfidenceValues(DispatcherBufferData buffers)
         {
+            AssertInitialized();
+            using var getConfidenceEvent = OptickMacros.Event();
+
             int layerCount = buffers.LayerSizes.Length;
             int confidenceCount = buffers.LayerSizes[^1];
 
@@ -243,6 +269,8 @@ namespace MachineLearning
             var results = new float[buffers.PassCount][];
             buffers.ActivationBuffer.Map(data =>
             {
+                using var copyEvent = OptickMacros.Event("Copy from activation buffer");
+
                 var floatSpan = MemoryMarshal.Cast<byte, float>(data);
                 for (int i = 0; i < buffers.PassCount; i++)
                 {
@@ -266,6 +294,9 @@ namespace MachineLearning
 
         public static Layer[] GetDeltas(DispatcherBufferData buffers)
         {
+            AssertInitialized();
+            using var getDeltasEvent = OptickMacros.Event();
+
             int dataMatrixSize = buffers.DataBuffer.Size - buffers.DataOffset;
             int deltaMatrixSize = dataMatrixSize * buffers.DeltaStride / buffers.DataStride;
             int deltaMatrixOffset = buffers.DeltaBuffer.Size - (deltaMatrixSize * buffers.PassCount);
@@ -273,6 +304,8 @@ namespace MachineLearning
             var deltas = new Layer[buffers.LayerSizes.Length - 1];
             buffers.DeltaBuffer.Map(data =>
             {
+                using var copyEvent = OptickMacros.Event("Copy from delta buffer");
+                
                 int layerOffset = 0;
                 for (int i = 0; i < deltas.Length; i++)
                 {

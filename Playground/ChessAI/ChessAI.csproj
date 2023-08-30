@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\CodePlayground.Graphics\CodePlayground.Graphics.csproj" />
+    <ProjectReference Include="..\..\Libraries\chess\csharp\LibChess\LibChess.csproj" />
+    <ProjectReference Include="..\MachineLearning\MachineLearning.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net7.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+</Project>

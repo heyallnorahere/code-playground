@@ -7,15 +7,25 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
-// dataset is pulled from https://yann.lecun.com/exdb/mnist/
 namespace MachineLearning
 {
+    public interface IDataset
+    {
+        public int Count { get; }
+        public int InputCount { get; }
+        public int OutputCount { get; }
+
+        public float[] GetInput(int index);
+        public float[] GetExpectedOutput(int index);
+    }
+
     public struct DatasetFileSource
     {
         public string Url, Cache;
     }
 
-    public sealed class Dataset
+    // dataset is pulled from https://yann.lecun.com/exdb/mnist/
+    public sealed class MNISTDatabase : IDataset
     {
         private static int ReadInt32WithEndianness(BinaryReader reader)
         {
@@ -74,12 +84,12 @@ namespace MachineLearning
             return result;
         }
 
-        public static Dataset Load(Stream imageStream, Stream labelStream)
+        public static MNISTDatabase Load(Stream imageStream, Stream labelStream)
         {
             var imageData = ReadImageData(imageStream);
             var labelData = ReadLabelData(labelStream);
 
-            return new Dataset(imageData, labelData);
+            return new MNISTDatabase(imageData, labelData);
         }
 
         private static async Task<Stream> PullAsync(HttpClient client, string url)
@@ -93,7 +103,7 @@ namespace MachineLearning
 
         // hack hacky hack hack
         // i dont care anymore
-        public static Dataset Load(DatasetFileSource images, DatasetFileSource labels)
+        public static MNISTDatabase Load(DatasetFileSource images, DatasetFileSource labels)
         {
             Stream? imageStream = null;
             Stream? labelStream = null;
@@ -170,7 +180,7 @@ namespace MachineLearning
             }
         }
 
-        public Dataset(float[,,] images, int[] labels)
+        public MNISTDatabase(float[,,] images, int[] labels)
         {
             mCount = images.GetLength(0);
             mWidth = images.GetLength(1);
@@ -232,10 +242,12 @@ namespace MachineLearning
             return result;
         }
 
-        public int Count => mCount;
         public int Width => mWidth;
         public int Height => mHeight;
-        public int InputSize => mWidth * mHeight;
+
+        public int Count => mCount;
+        public int InputCount => mWidth * mHeight;
+        public int OutputCount => 10;
 
         private readonly int mWidth, mHeight, mCount;
         private readonly int[] mLabels;

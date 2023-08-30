@@ -1,6 +1,7 @@
 using CodePlayground.Graphics;
 using MachineLearning.Shaders;
 using Newtonsoft.Json;
+using Optick.NET;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -18,6 +19,7 @@ namespace MachineLearning
             // we want to transform a vector of activations from the previous layer into a vector of partial Z values of the current layer
             // thus, current by previous size matrix
 
+            using var constructorEvent = OptickMacros.Event();
             Weights = new float[currentSize, previousSize];
             Biases = new float[currentSize];
         }
@@ -27,6 +29,8 @@ namespace MachineLearning
 
         public readonly void SerializeToBuffer(Action<float> pushFloat)
         {
+            using var serializeEvent = OptickMacros.Event();
+
             int currentSize = Weights.GetLength(0);
             int previousSize = Weights.GetLength(1);
 
@@ -45,8 +49,10 @@ namespace MachineLearning
             }
         }
 
-        public void Step(Layer delta, float learningRate)
+        public readonly void Step(Layer delta, float learningRate)
         {
+            using var stepEvent = OptickMacros.Event();
+
             int currentSize = Weights.GetLength(0);
             int previousSize = Weights.GetLength(1);
 
@@ -87,6 +93,8 @@ namespace MachineLearning
 
         public static Network Load(Stream stream, Encoding? encoding = null)
         {
+            using var loadEvent = OptickMacros.Event();
+
             using var reader = new StreamReader(stream, encoding: encoding ?? Encoding.UTF8, leaveOpen: true);
             using var jsonReader = new JsonTextReader(reader);
 
@@ -96,6 +104,8 @@ namespace MachineLearning
 
         public static void Save(Network network, Stream stream, Encoding? encoding = null)
         {
+            using var saveEvent = OptickMacros.Event();
+
             using var writer = new StreamWriter(stream, encoding: encoding ?? Encoding.UTF8, leaveOpen: true);
             using var jsonWriter = new JsonTextWriter(writer);
 
@@ -105,6 +115,8 @@ namespace MachineLearning
 
         public Network(IReadOnlyList<int> layerSizes)
         {
+            using var constructorEvent = OptickMacros.Event();
+
             mLayerSizes = layerSizes.ToArray();
             if (mLayerSizes.Length > MaxLayers)
             {
@@ -133,6 +145,8 @@ namespace MachineLearning
 
         public Network(NetworkData data)
         {
+            using var constructorEvent = OptickMacros.Event();
+
             int layerCount = data.LayerSizes.Length;
             if (data.Data.Length != layerCount - 1)
             {
@@ -177,11 +191,15 @@ namespace MachineLearning
 
         public void CreateBuffers(IGraphicsContext context, IReflectionView reflectionView, out IDeviceBuffer dataBuffer, out IDeviceBuffer sizeBuffer, out int dataStride, out int dataOffset)
         {
+            using var createBuffersEvent = OptickMacros.Event();
+
             int bufferSize = reflectionView.GetBufferSize(ShaderResources.SizeBufferName);
             sizeBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize);
 
             sizeBuffer.Map(data =>
             {
+                using var copyEvent = OptickMacros.Event("Copy to size buffer");
+
                 int layerCount = mLayerSizes.Length;
                 int offset = reflectionView.GetBufferOffset(ShaderResources.SizeBufferName, nameof(SizeBufferData.LayerCount));
                 BitConverter.GetBytes(layerCount).CopyTo(data[offset..(offset + Marshal.SizeOf<int>())]);
@@ -212,8 +230,11 @@ namespace MachineLearning
 
         public void UpdateBuffer(IDeviceBuffer dataBuffer, int bufferStride, int dataOffset)
         {
+            using var updateBufferEvent = OptickMacros.Event();
             dataBuffer.Map(data =>
             {
+                using var copyEvent = OptickMacros.Event("Copy to data buffer");
+
                 var values = new List<float>();
                 for (int i = 0; i < mLayers.Length; i++)
                 {
@@ -232,6 +253,8 @@ namespace MachineLearning
 
         public NetworkData GetData()
         {
+            using var getDataEvent = OptickMacros.Event();
+
             int layerCount = mLayerSizes.Length;
             var result = new NetworkData
             {

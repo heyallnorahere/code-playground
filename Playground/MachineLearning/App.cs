@@ -138,7 +138,7 @@ namespace MachineLearning
                 Cache = cachePath + "labels"
             };
 
-            mDataset = Dataset.Load(imageSource, labelSource);
+            mDataset = MNISTDatabase.Load(imageSource, labelSource);
         }
 
         private IDisposable GetSemaphore()
@@ -207,7 +207,7 @@ namespace MachineLearning
                 mNetwork = Network.Load(stream);
 
                 int inputCount = mNetwork.LayerSizes[0];
-                if (inputCount != mDataset.InputSize)
+                if (inputCount != mDataset.InputCount)
                 {
                     throw new ArgumentException("Input size mismatch!");
                 }
@@ -216,7 +216,7 @@ namespace MachineLearning
             {
                 mNetwork = new Network(new int[]
                 {
-                    mDataset.InputSize, // input
+                    mDataset.InputCount, // input
                     64, // arbitrary hidden layer sizes
                     16,
                     10
@@ -656,7 +656,7 @@ namespace MachineLearning
         private IRenderer? mRenderer;
 
         private Network? mNetwork;
-        private Dataset? mDataset;
+        private MNISTDatabase? mDataset;
 
         private ShaderLibrary? mLibrary;
         private int mCurrentFrame;
