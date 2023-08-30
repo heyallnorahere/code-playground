@@ -423,11 +423,6 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void Submit(VulkanCommandBuffer commandBuffer, VulkanQueueSubmitInfo info = default, bool wait = false)
         {
-            if (info.Fence is not null && IsFenceInQueue(info.Fence.Value))
-            {
-                throw new InvalidOperationException("The passed fence has already been submitted!");
-            }
-
             if (commandBuffer.IsRecording)
             {
                 commandBuffer.End();

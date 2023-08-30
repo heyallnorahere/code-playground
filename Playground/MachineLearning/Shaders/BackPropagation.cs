@@ -57,10 +57,13 @@ namespace MachineLearning.Shaders
                     s_PreSigmoidOffset += activationIncrement;
 
                     int previousLayerSize = ShaderResources.SizeBuffer.LayerSizes[i - 1];
-                    int blockSize = ForwardPropagation.GetDataBlockSize(currentLayerSize, previousLayerSize) * offsetFactor;
+                    int blockSize = ForwardPropagation.GetDataBlockSize(currentLayerSize, previousLayerSize);
 
-                    s_DataOffset += blockSize;
-                    s_DeltaOffset += blockSize;
+                    s_DeltaOffset += blockSize * offsetFactor;
+                    if (i < ShaderResources.PushConstants.CurrentLayer)
+                    {
+                        s_DataOffset += blockSize;
+                    }
                 }
             }
         }
@@ -125,6 +128,8 @@ namespace MachineLearning.Shaders
                 int previousLayerActivationOffset = s_ActivationOffset - previousLayerSize;
                 for (int i = 0; i < previousLayerSize; i++)
                 {
+                    // setting weight (currentNeuron, i) to biasDeltas[currentNeuron] * previousActivation[i]
+                    // dot product of delta vector and transposed activation vector
                     float previousActivation = ShaderResources.ActivationBuffer.Data[previousLayerActivationOffset + i];
                     ShaderResources.DeltaBuffer.Data[s_DeltaOffset + bufferRowOffset + i + 1] = previousActivation * biasDelta;
                 }
