@@ -56,7 +56,7 @@ cd $ROOT_DIR/Playground/$APPLICATION/bin/$CONFIG/net7.0
 dotnet CodePlayground.dll $APPLICATION.dll
 ```
 
-## "Playground" application
+## "Playground" applications
 
 - VulkanTest: Vulkan graphics test application
 - Ragdoll: WIP ragdoll simulation of skinned meshes. Not finished
