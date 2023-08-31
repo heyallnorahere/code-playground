@@ -32,12 +32,24 @@ namespace ChessAI
 
             if (move.StartsWith("O-O"))
             {
+                string castleMove = string.Empty;
+                for (int i = move.Length - 1; i >= 0; i--)
+                {
+                    char character = move[i];
+                    if (character == '+' || character == '#' || character == '?' || character == '!')
+                    {
+                        continue;
+                    }
+
+                    castleMove = character + castleMove;
+                }
+
                 bool queenside = false;
-                if (move.EndsWith("-O") && move.Length == 5)
+                if (castleMove.EndsWith("-O") && castleMove.Length == 5)
                 {
                     queenside = true;
                 }
-                else if (move.Length != 3)
+                else if (castleMove.Length != 3)
                 {
                     throw new ArgumentException("Invalid castle move!");
                 }
@@ -58,7 +70,7 @@ namespace ChessAI
                     Position = kings[0],
                     Destination = new Coord
                     {
-                        X = queenside ? 1 : Board.Width - 2,
+                        X = queenside ? 2 : Board.Width - 2,
                         Y = turn == PlayerColor.White ? 0 : Board.Width - 1
                     }
                 };

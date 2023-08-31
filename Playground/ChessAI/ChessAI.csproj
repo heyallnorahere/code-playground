@@ -12,6 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="sqlite-net-pcl" Version="$(SQLiteNETVersion)" />
     <PackageReference Include="ZstdNet" Version="$(ZstdNetVersion)" />
   </ItemGroup>
 

@@ -1,5 +1,6 @@
 using LibChess;
 using Optick.NET;
+using Silk.NET.Core;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -16,8 +17,33 @@ namespace ChessAI.Data
 
     public struct PGN
     {
-        public static async Task SplitAsync(TextReader reader, Action<PGN> callback)
+        private static bool Parse(string text, Action<PGN> callback, bool skip)
         {
+            if (skip)
+            {
+                try
+                {
+                    var pgn = Parse(text);
+                    callback.Invoke(pgn);
+                }
+                catch (Exception)
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                var pgn = Parse(text);
+                callback.Invoke(pgn);
+            }
+
+            return false;
+        }
+
+        public static async Task<int> SplitAsync(TextReader reader, Action<PGN> callback, bool skipOnError)
+        {
+            int skippedGames = 0;
+
             var builder = new StringBuilder();
             bool attributesEnded = false;
 
@@ -33,8 +59,11 @@ namespace ChessAI.Data
                 {
                     if (attributesEnded)
                     {
-                        var pgn = Parse(builder.ToString());
-                        callback.Invoke(pgn);
+                        string pgnText = builder.ToString();
+                        if (Parse(pgnText, callback, skipOnError))
+                        {
+                            skippedGames++;
+                        }
 
                         builder.Clear();
                         attributesEnded = false;
@@ -48,11 +77,12 @@ namespace ChessAI.Data
                 builder.Append(line);
             }
 
-            if (builder.Length > 0)
+            if (builder.Length > 0 && Parse(builder.ToString(), callback, skipOnError))
             {
-                var pgn = Parse(builder.ToString());
-                callback.Invoke(pgn);
+                skippedGames++;
             }
+
+            return skippedGames;
         }
 
         public static PGN Parse(string text)
@@ -65,71 +95,80 @@ namespace ChessAI.Data
             var result = new PGN();
             foreach (var line in lines)
             {
-                int attributeBracketPosition = line.IndexOf('[');
-                if (attributeBracketPosition < 0 || moveString.Length > 0)
+                var remainingLine = line;
+                while (remainingLine is not null)
                 {
+                    int attributeBracketPosition = remainingLine.IndexOf('[');
+                    if (attributeBracketPosition != 0 || moveString.Length > 0)
+                    {
+                        if (moveString.Length > 0)
+                        {
+                            moveString += ' ';
+                        }
+
+                        moveString += remainingLine;
+                        break;
+                    }
+
                     if (moveString.Length > 0)
                     {
-                        moveString += ' ';
+                        throw new ArgumentException("Invalid PGN - cannot set attributes after moves have been specified!");
                     }
 
-                    moveString += line;
-                    continue;
-                }
-
-                if (moveString.Length > 0)
-                {
-                    throw new ArgumentException("Invalid PGN - cannot set attributes after moves have been specified!");
-                }
-
-                int endBracketPosition = line.IndexOf(']');
-                if (endBracketPosition != line.Length - 1)
-                {
-                    throw new ArgumentException("Invalid PGN - malformed attribute line!");
-                }
-
-                string attributeData = line[(attributeBracketPosition + 1)..endBracketPosition]; // i could just substring 1..^1 but this is clearer
-                var splitTerms = attributeData.Split(' ');
-
-                var terms = new List<string>();
-                string? currentTerm = null;
-
-                foreach (var splitTerm in splitTerms)
-                {
-                    var newTerm = splitTerm.Replace("\"", null);
-                    int quoteCount = splitTerm.Length - newTerm.Length;
-
-                    if (quoteCount % 2 != 1)
+                    int endBracketPosition = remainingLine.IndexOf(']');
+                    if (endBracketPosition < 0)
                     {
-                        if (currentTerm is not null)
+                        throw new ArgumentException("Invalid PGN - malformed attribute line!");
+                    }
+
+                    string attributeData = remainingLine[(attributeBracketPosition + 1)..endBracketPosition]; // i could just substring 1..^1 but this is clearer
+                    var splitTerms = attributeData.Split(' ');
+
+                    var terms = new List<string>();
+                    string? currentTerm = null;
+
+                    foreach (var splitTerm in splitTerms)
+                    {
+                        var newTerm = splitTerm.Replace("\"", null);
+                        int quoteCount = splitTerm.Length - newTerm.Length;
+
+                        if (quoteCount % 2 != 1)
                         {
-                            currentTerm += ' ' + newTerm;
+                            if (currentTerm is not null)
+                            {
+                                currentTerm += ' ' + newTerm;
+                            }
+                            else
+                            {
+                                terms.Add(newTerm);
+                            }
                         }
                         else
                         {
-                            terms.Add(newTerm);
+                            if (currentTerm is null)
+                            {
+                                currentTerm = newTerm;
+                            }
+                            else
+                            {
+                                terms.Add($"{currentTerm} {newTerm}");
+                                currentTerm = null;
+                            }
                         }
                     }
-                    else
+
+                    if (terms.Count != 2)
                     {
-                        if (currentTerm is null)
-                        {
-                            currentTerm = newTerm;
-                        }
-                        else
-                        {
-                            terms.Add($"{currentTerm} {newTerm}");
-                            currentTerm = null;
-                        }
+                        throw new ArgumentException("Invalid PGN - attributes must have 2 terms!");
+                    }
+
+                    result.Attributes[terms[0]] = terms[1];
+                    if (endBracketPosition != remainingLine.Length - 1)
+                    {
+                        var remaining = remainingLine[(endBracketPosition + 1)..];
+                        remainingLine = remaining.Length > 0 ? remaining : null;
                     }
                 }
-
-                if (terms.Count != 2)
-                {
-                    throw new ArgumentException("Invalid PGN - attributes must have 2 terms!");
-                }
-
-                result.Attributes[terms[0]] = terms[1];
             }
 
             ParseMoves(moveString, result.Moves);
@@ -151,7 +190,7 @@ namespace ChessAI.Data
             bool shouldAdvanceTurn = true;
             bool ignore = false;
 
-            var terms = moveString.Split(' ');
+            var terms = moveString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             for (int i = 0; i < terms.Length; i++)
             {
                 var term = terms[i];
@@ -191,6 +230,11 @@ namespace ChessAI.Data
                     }
                     else
                     {
+                        if (term.Contains("..."))
+                        {
+                            continue;
+                        }
+
                         var move = engine.ParseMove(term, out PieceType? promotion);
                         if (!engine.CommitMove(move))
                         {

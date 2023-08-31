@@ -1,37 +1,200 @@
 ﻿using MachineLearning;
+using SQLite;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
+using ZstdNet;
 
 namespace ChessAI.Data
 {
-    internal sealed class Dataset : IDataset
+    public sealed class PositionData
     {
-        public static async Task PullAndLabelAsync(Dataset dataset, int year, int month)
+        public PositionData()
         {
-            string url = $"https://database.lichess.org/standard/lichess_db_standard_rated_{year:####}-{month:##}.pgn.zst";
-
-            using var client = new HttpClient();
-            using var response = await client.GetAsync(url);
-            response.EnsureSuccessStatusCode();
-
-            using var stream = await response.Content.ReadAsStreamAsync();
-            // todo: zstd decompression
-            using var reader = new StreamReader(stream);
-
-            await PGN.SplitAsync(reader, pgn => LabelPGN(dataset, pgn));
+            Position = string.Empty;
+            PieceMoved = string.Empty;
+            BestMove = string.Empty;
         }
 
-        private static void LabelPGN(Dataset dataset, PGN pgn)
+        [Unique, PrimaryKey]
+        public string Position { get; set; }
+        public string PieceMoved { get; set; }
+        public string BestMove { get; set; }
+    }
+
+    internal struct PGNData
+    {
+        public PGN PGN;
+        public UCIEngine Engine;
+        public Dataset Dataset;
+        public int Depth;
+    }
+
+    public sealed class Dataset : IDataset, IDisposable
+    {
+        private static readonly AutoResetEvent sPGNAdded, sThreadFinished;
+        private static readonly Queue<PGNData> sPGNQueue;
+        private static Thread? sPGNThread;
+
+        static Dataset()
         {
-            // todo: labelling pgns
+            sPGNAdded = new AutoResetEvent(false);
+            sThreadFinished = new AutoResetEvent(false);
+            sPGNQueue = new Queue<PGNData>();
+            sPGNThread = null;
+        }
+
+        public static async Task PullAndLabelAsync(Dataset dataset, UCIEngine engine, int year, int month, int depth)
+        {
+            string url = $"https://database.lichess.org/standard/lichess_db_standard_rated_{year:####}-{month:0#}.pgn.zst";
+
+            const string cacheDirectory = "cache";
+            string plaintextCache = $"{cacheDirectory}/lichess_{year:####}_{month:0#}.pgn";
+            string compressedCache = $"{plaintextCache}.zst";
+
+            if (!File.Exists(plaintextCache))
+            {
+                Stream compressedStream;
+                if (!File.Exists(compressedCache))
+                {
+                    if (!Directory.Exists(cacheDirectory))
+                    {
+                        Directory.CreateDirectory(cacheDirectory);
+                    }
+
+                    Console.WriteLine($"Pulling database from {url}");
+                    using var client = new HttpClient
+                    {
+                        Timeout = Timeout.InfiniteTimeSpan,
+                        MaxResponseContentBufferSize = int.MaxValue
+                    };
+
+                    var response = await client.GetAsync(url);
+                    response.EnsureSuccessStatusCode();
+                    compressedStream = await response.Content.ReadAsStreamAsync();
+
+                    using var cacheStream = new FileStream(compressedCache, FileMode.Create, FileAccess.Write);
+                    compressedStream.CopyTo(cacheStream);
+                    compressedStream.Position = 0;
+                }
+                else
+                {
+                    Console.WriteLine($"Reading cache file {compressedCache}");
+                    compressedStream = new FileStream(compressedCache, FileMode.Open, FileAccess.Read);
+                }
+
+                using (compressedStream)
+                {
+                    Console.WriteLine($"Decompressing & writing {compressedStream.Length} bytes...");
+
+                    using var zstdStream = new DecompressionStream(compressedStream);
+                    using var cacheStream = new FileStream(plaintextCache, FileMode.Create, FileAccess.Write);
+                    zstdStream.CopyTo(cacheStream);
+                }
+            }
+
+            using var decompressedStream = new FileStream(plaintextCache, FileMode.Open, FileAccess.Read);
+            using var reader = new StreamReader(decompressedStream);
+
+            Console.WriteLine($"Splitting & processing PGN file... ({decompressedStream.Length} bytes)");
+            if (sPGNThread is null)
+            {
+                sPGNThread = new Thread(EngineThread)
+                {
+                    Name = "PGN processing thread"
+                };
+
+                sPGNAdded.Reset();
+                sPGNThread.Start();
+            }
+
+            int skipped = await PGN.SplitAsync(reader, pgn =>
+            {
+                lock (sPGNQueue)
+                {
+                    bool setEvent = sPGNQueue.Count == 0;
+                    sPGNQueue.Enqueue(new PGNData
+                    {
+                        PGN = pgn,
+                        Engine = engine,
+                        Dataset = dataset,
+                        Depth = depth
+                    });
+
+                    if (setEvent)
+                    {
+                        sPGNAdded.Set();
+                    }
+                }
+            }, true);
+            Console.WriteLine($"{skipped} total games skipped due to errors!");
+
+            sPGNAdded.Set();
+            sThreadFinished.WaitOne();
+
+            sPGNThread = null;
+        }
+
+        private static void EngineThread()
+        {
+            int n = 0;
+            do
+            {
+                while (sPGNQueue.Count > 0)
+                {
+                    PGNData data;
+                    lock (sPGNQueue)
+                    {
+                        data = sPGNQueue.Dequeue();
+                    }
+
+                    Console.WriteLine($"Processing game {++n}");
+                    LabelPGN(data.Dataset, data.Engine, data.PGN, data.Depth);
+                }
+
+                sPGNAdded.WaitOne();
+            }
+            while (sPGNQueue.Count > 0);
+            sThreadFinished.Set();
+        }
+
+        public static void LabelPGN(Dataset dataset, UCIEngine engine, PGN pgn, int depth)
+        {
+            LabelPosition(dataset, engine, null, depth);
+            foreach (var move in pgn.Moves)
+            {
+                LabelPosition(dataset, engine, move.Position, depth);
+            }
+        }
+
+        public static void LabelPosition(Dataset dataset, UCIEngine engine, string? position, int depth)
+        {
+            engine.SetPosition(position);
+            var move = engine.Go(depth);
+
+            dataset.AddEntry(new PositionData
+            {
+                Position = position ?? "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                PieceMoved = move.Position.ToString(),
+                BestMove = move.Destination.ToString()
+            });
         }
 
         public Dataset(string path)
         {
-            // todo: load sqlite database
+            mConnection = new SQLiteConnection(path);
+
+            mConnection.CreateTable<PositionData>();
+            mMapping = mConnection.GetMapping<PositionData>();
         }
+
+        public void Dispose() => mConnection.Dispose();
+
+        public void AddEntry(PositionData data) => mConnection.Insert(data);
+        public bool Contains(string position) => mConnection.Find(position, mMapping) is not null;
 
         public int Count => throw new NotImplementedException();
         public int InputCount => throw new NotImplementedException();
@@ -39,5 +202,8 @@ namespace ChessAI.Data
 
         public float[] GetInput(int index) => throw new NotImplementedException();
         public float[] GetExpectedOutput(int index) => throw new NotImplementedException();
+
+        private readonly SQLiteConnection mConnection;
+        private readonly TableMapping mMapping;
     }
 }

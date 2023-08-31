@@ -14,6 +14,7 @@
         <SilkNETVersion>2.17.0</SilkNETVersion>
         <SixLaborsImageSharpVersion>3.0.1</SixLaborsImageSharpVersion>
         <SpirzzaInteropSpirvCrossVersion>0.0.1</SpirzzaInteropSpirvCrossVersion>
+        <SQLiteNETVersion>1.8.116</SQLiteNETVersion>
         <ZstdNetVersion>1.4.5</ZstdNetVersion>
     </PropertyGroup>
 

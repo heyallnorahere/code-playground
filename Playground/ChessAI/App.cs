@@ -2,6 +2,7 @@ using ChessAI.Data;
 using CodePlayground;
 using CodePlayground.Graphics;
 using System;
+using System.Runtime.CompilerServices;
 
 namespace ChessAI
 {
@@ -23,8 +24,8 @@ namespace ChessAI
                     CodePlayground.dll ChessAI.dll <command> [<argument>...]
 
                 Commands:
-                    label <year> <month>
-                        Pulls a month of games from the Lichess games database (https://database.lichess.org/), labels the dataset with Stockfish, and serializes it.
+                    label <year> <month> [depth] [command]
+                        Pulls a month of games from the Lichess games database (https://database.lichess.org/), labels the dataset with a UCI chess engine, and serializes it.
 
                     train <minimum> [batch size] [learning rate]
                         Trains the neural network until the average absolute cost of a batch reaches a minimum value, or until the program receives an interrupt command.
@@ -41,6 +42,12 @@ namespace ChessAI
 
                     month
                         In combination with the year, the month from which to pull from the Lichess database. Can be a string or an integer.
+
+                    depth:
+                        The depth at which to search while labeling. Default is infinite.
+
+                    command:
+                        The command with which to start up the UCI engine. Default is "stockfish"
 
                     minimum
                         The minimum average absolute cost of a batch. When this value is reached, training will cease.
@@ -59,6 +66,9 @@ namespace ChessAI
         {
             mHeadless = false;
             mCommand = CommandLineCommand.None;
+
+            mDepth = -1;
+            mEngine = "stockfish";
 
             Load += OnLoad;
             InputReady += OnInputReady;
@@ -111,6 +121,20 @@ namespace ChessAI
             if (mYear > currentTime.Year || (mYear == currentTime.Year && mMonth == currentTime.Month))
             {
                 throw new ArgumentException("Games from the specified timeframe have not been published!");
+            }
+
+            if (args.Length > 2)
+            {
+                var depthArgument = args[2];
+                if (depthArgument != "infinite")
+                {
+                    mDepth = int.Parse(depthArgument);
+                }
+
+                if (args.Length > 3)
+                {
+                    mEngine = args[3];
+                }
             }
         }
 
@@ -209,10 +233,16 @@ namespace ChessAI
 
         private void OnRender(FrameRenderInfo renderInfo)
         {
+            const string datasetPath = "dataset.sqlite";
             switch (mCommand)
             {
                 case CommandLineCommand.LabelData:
-                    // todo: label
+                    using (var engine = new UCIEngine(mEngine))
+                    {
+                        using var dataset = new Dataset(datasetPath);
+                        Dataset.PullAndLabelAsync(dataset, engine, mYear, mMonth, mDepth).Wait();
+                    }
+
                     break;
                 case CommandLineCommand.Train:
                     throw new NotImplementedException();
@@ -225,6 +255,9 @@ namespace ChessAI
 
         private bool mHeadless;
         private CommandLineCommand mCommand;
+
         private int mYear, mMonth;
+        private int mDepth;
+        private string mEngine;
     }
 }
