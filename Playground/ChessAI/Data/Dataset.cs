@@ -1,4 +1,5 @@
-﻿using MachineLearning;
+﻿using LibChess;
+using MachineLearning;
 using SQLite;
 using System;
 using System.Collections.Generic;
@@ -17,12 +18,14 @@ namespace ChessAI.Data
             Position = string.Empty;
             PieceMoved = string.Empty;
             BestMove = string.Empty;
+            Promotion = PieceType.None;
         }
 
         [Unique, PrimaryKey]
         public string Position { get; set; }
         public string PieceMoved { get; set; }
         public string BestMove { get; set; }
+        public PieceType Promotion { get; set; }
     }
 
     internal struct PGNData
@@ -35,13 +38,14 @@ namespace ChessAI.Data
 
     public sealed class Dataset : IDataset, IDisposable
     {
-        private static readonly AutoResetEvent sPGNAdded, sThreadFinished;
+        private static readonly AutoResetEvent sPGNAdded, sThreadStarted, sThreadFinished;
         private static readonly Queue<PGNData> sPGNQueue;
         private static Thread? sPGNThread;
 
         static Dataset()
         {
             sPGNAdded = new AutoResetEvent(false);
+            sThreadStarted = new AutoResetEvent(false);
             sThreadFinished = new AutoResetEvent(false);
             sPGNQueue = new Queue<PGNData>();
             sPGNThread = null;
@@ -113,9 +117,9 @@ namespace ChessAI.Data
 
             int skipped = await PGN.SplitAsync(reader, pgn =>
             {
+                sThreadStarted.WaitOne();
                 lock (sPGNQueue)
                 {
-                    bool setEvent = sPGNQueue.Count == 0;
                     sPGNQueue.Enqueue(new PGNData
                     {
                         PGN = pgn,
@@ -124,10 +128,7 @@ namespace ChessAI.Data
                         Depth = depth
                     });
 
-                    if (setEvent)
-                    {
-                        sPGNAdded.Set();
-                    }
+                    sPGNAdded.Set();
                 }
             }, true);
             Console.WriteLine($"{skipped} total games skipped due to errors!");
@@ -155,15 +156,20 @@ namespace ChessAI.Data
                     LabelPGN(data.Dataset, data.Engine, data.PGN, data.Depth);
                 }
 
+                sThreadStarted.Set();
                 sPGNAdded.WaitOne();
             }
             while (sPGNQueue.Count > 0);
+
             sThreadFinished.Set();
+            sThreadStarted.Reset();
         }
 
         public static void LabelPGN(Dataset dataset, UCIEngine engine, PGN pgn, int depth)
         {
+            engine.NewGame();
             LabelPosition(dataset, engine, null, depth);
+            
             foreach (var move in pgn.Moves)
             {
                 LabelPosition(dataset, engine, move.Position, depth);
@@ -172,14 +178,26 @@ namespace ChessAI.Data
 
         public static void LabelPosition(Dataset dataset, UCIEngine engine, string? position, int depth)
         {
+            string key = position ?? "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+            if (dataset.Contains(key))
+            {
+                return;
+            }
+
             engine.SetPosition(position);
             var move = engine.Go(depth);
+            if (move is null)
+            {
+                return;
+            }
 
+            var moveData = move!.Value;
             dataset.AddEntry(new PositionData
             {
-                Position = position ?? "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-                PieceMoved = move.Position.ToString(),
-                BestMove = move.Destination.ToString()
+                Position = key,
+                PieceMoved = moveData.Move.Position.ToString(),
+                BestMove = moveData.Move.Destination.ToString(),
+                Promotion = moveData.Promotion
             });
         }
 

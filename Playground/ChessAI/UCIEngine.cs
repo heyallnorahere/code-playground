@@ -8,6 +8,12 @@ using System.Threading.Tasks;
 
 namespace ChessAI
 {
+    public struct EngineMove
+    {
+        public Move Move;
+        public PieceType Promotion;
+    }
+
     public sealed class UCIEngine : IDisposable
     {
         public UCIEngine(string command)
@@ -28,22 +34,17 @@ namespace ChessAI
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = isWindows ? "cmd.exe" : "/bin/bash",
-                    Arguments = $"{(isWindows ? "/c" : "-c")} \"{command.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"",
+                    Arguments = $"{(isWindows ? "/c" : "-c")} {command}",
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardInput = true
                 }
             };
 
-            if (!mEngine.Start())
-            {
-                throw new InvalidOperationException("Failed to start engine!");
-            }
-
             mEngine.OutputDataReceived += (s, e) =>
             {
                 var data = e.Data;
-                if (data is null)
+                if (string.IsNullOrEmpty(data))
                 {
                     return;
                 }
@@ -51,6 +52,13 @@ namespace ChessAI
                 OnResponseReceived(data);
                 ResponseReceived?.Invoke(data);
             };
+
+            if (!mEngine.Start())
+            {
+                throw new InvalidOperationException("Failed to start engine!");
+            }
+
+            mEngine.BeginOutputReadLine();
         }
 
         ~UCIEngine()
@@ -84,15 +92,14 @@ namespace ChessAI
 
         private void OnResponseReceived(string data)
         {
+            Console.WriteLine($"[UCI] {data}");
             if (!mInitialized)
             {
-                SendCommand("uci");
-                WaitUntilReady();
+                mInitialized = true;
 
+                SendCommand("uci");
                 return;
             }
-
-            Console.WriteLine($"[UCI] {data}");
 
             if (data == "uciok")
             {
@@ -110,17 +117,33 @@ namespace ChessAI
             if (data.StartsWith(bestMovePrefix))
             {
                 int delimiterPosition = data.IndexOf(' ', bestMovePrefix.Length);
-
-                string bestMoveString = data[bestMovePrefix.Length..delimiterPosition];
-                if (bestMoveString.Length != 4)
+                if (delimiterPosition < 0)
                 {
-                    throw new ArgumentException("Moves should be exactly 4 characters long!");
+                    delimiterPosition = data.Length;
                 }
 
-                mBestMove = new Move
+                string bestMoveString = data[bestMovePrefix.Length..delimiterPosition];
+                if (bestMoveString == "(none)")
                 {
-                    Position = Coord.Parse(data[..2]),
-                    Destination = Coord.Parse(data[2..])
+                    mBestMove = null;
+                    mMoveReturned.Set();
+
+                    return;
+                }
+
+                if (bestMoveString.Length < 4)
+                {
+                    throw new ArgumentException("Moves should be at least 4 characters long!");
+                }
+
+                mBestMove = new EngineMove
+                {
+                    Move = new Move
+                    {
+                        Position = Coord.Parse(bestMoveString[..2]),
+                        Destination = Coord.Parse(bestMoveString[2..4])
+                    },
+                    Promotion = bestMoveString.Length > 4 ? ChessUtilities.ParseType(bestMoveString[4], true) : PieceType.None
                 };
 
                 mMoveReturned.Set();
@@ -200,6 +223,22 @@ namespace ChessAI
             await Task.Run(mReadyCheck.WaitOne);
         }
 
+        public void NewGame()
+        {
+            mUCIReady.WaitOne();
+            WaitUntilReady();
+
+            SendCommand("ucinewgame");
+        }
+
+        public async Task NewGameAsync()
+        {
+            await Task.Run(mUCIReady.WaitOne);
+            await WaitUntilReadyAsync();
+
+            await SendCommandAsync("ucinewgame");
+        }
+
         public void SetPosition(string? position)
         {
             mUCIReady.WaitOne();
@@ -218,7 +257,7 @@ namespace ChessAI
             await SendCommandAsync($"position {sentPosition}");
         }
 
-        public Move Go(int depth)
+        public EngineMove? Go(int depth)
         {
             mUCIReady.WaitOne();
             WaitUntilReady();
@@ -227,10 +266,10 @@ namespace ChessAI
             SendCommand($"go {depthSpec}");
 
             mMoveReturned.WaitOne();
-            return mBestMove!.Value;
+            return mBestMove;
         }
 
-        public async Task<Move> GoAsync(int depth)
+        public async Task<EngineMove?> GoAsync(int depth)
         {
             await Task.Run(mUCIReady.WaitOne);
             await WaitUntilReadyAsync();
@@ -239,11 +278,24 @@ namespace ChessAI
             await SendCommandAsync($"go {depthSpec}");
 
             await Task.Run(mMoveReturned.WaitOne);
-            return mBestMove!.Value;
+            return mBestMove;
         }
 
-        public void SendCommand(string command) => mEngine.StandardInput.WriteLine(command);
-        public async Task SendCommandAsync(string command) => await mEngine.StandardInput.WriteLineAsync(command);
+        public void SendCommand(string command)
+        {
+            Console.WriteLine($"[UCI] > {command}");
+
+            mEngine.StandardInput.WriteLine(command);
+            mEngine.StandardInput.Flush();
+        }
+
+        public async Task SendCommandAsync(string command)
+        {
+            Console.WriteLine($"[UCI] > {command}");
+
+            await mEngine.StandardInput.WriteLineAsync(command);
+            await mEngine.StandardInput.FlushAsync();
+        }
 
         public event Action<string>? ResponseReceived;
 
@@ -255,7 +307,7 @@ namespace ChessAI
         private readonly Dictionary<string, string?> mOptions;
         private readonly Dictionary<string, string> mID;
 
-        private Move? mBestMove;
+        private EngineMove? mBestMove;
         private readonly Process mEngine;
         private bool mDisposed, mInitialized;
     }
