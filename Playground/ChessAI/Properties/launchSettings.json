@@ -3,8 +3,9 @@
         "Pull & label dataset": {
             "commandName": "Executable",
             "executablePath": "$(TargetDir)\\CodePlayground.exe",
-            "commandLineArgs": "$(TargetPath) label 2023 07",
-            "workingDirectory": "$(TargetDir)"
+            "commandLineArgs": "$(TargetPath)",
+            "workingDirectory": "$(TargetDir)",
+            "nativeDebugging": true
         }
     }
 }
