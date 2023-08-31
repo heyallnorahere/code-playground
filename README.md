@@ -4,7 +4,13 @@
 
 ## Building
 
-This project uses [.NET 7](https://dotnet.microsoft.com/en-us/download/dotnet/7.0). Additionally, depending on your system, you may have to build and install the following projects to avoid runtime crashes:
+This project uses [.NET 7](https://dotnet.microsoft.com/en-us/download/dotnet/7.0).
+Building the project requires the following:
+- .NET 7 SDK
+- [CMake](https://cmake.org) >= v3.20
+- A C++ compiler that supports C++17
+
+Additionally, depending on your system, you may have to build and install the following projects to avoid runtime crashes:
 - [GLFW](https://github.com/glfw/glfw) or `libglfw3` on Ubuntu/Debian
 - [Assimp](https://github.com/assimp/assimp) or `libassimp5` on Ubuntu/Debian
 - [shaderc](https://github.com/google/shaderc)
@@ -33,11 +39,17 @@ This project uses packages from GitHub package registries. As such, it's require
 
 To build the project, simply run:
 ```bash
-# assuming the .NET executable is on the PATH
+# assuming the .NET and CMake executables are on the PATH
 # where $ROOT_DIR is the root directory of the repository
-cd $ROOT_DIR
+
+# building libchess
+# where $GENERATOR is the build system for your machine
+cd $ROOT_DIR/Libraries/chess
+cmake . -B build -G "$GENERATOR" -DCMAKE_BUILD_TYPE=$CONFIG # required for single-config generators
+cmake --build build -j 8 --config $CONFIG # required for multi-config generators
 
 # and $CONFIG is the application configuration (Debug or Release)
+cd $ROOT_DIR
 dotnet build -c $CONFIG
 ```
 

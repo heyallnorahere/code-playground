@@ -77,7 +77,7 @@ namespace ChessAI
             for (int i = move.Length - 1; i >= 0; i--)
             {
                 char character = move[i];
-                if (character == '+' || character == '#' || character == 'x')
+                if (character == '+' || character == '#' || character == 'x' || character == '?' || character == '!')
                 {
                     continue; // we dont care
                 }

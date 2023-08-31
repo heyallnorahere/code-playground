@@ -1,9 +1,9 @@
 {
     "profiles": {
-        "ChessAI": {
+        "Pull & label dataset": {
             "commandName": "Executable",
             "executablePath": "$(TargetDir)\\CodePlayground.exe",
-            "commandLineArgs": "$(TargetPath)",
+            "commandLineArgs": "$(TargetPath) label 2023 07",
             "workingDirectory": "$(TargetDir)"
         }
     }

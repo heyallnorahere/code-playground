@@ -11,4 +11,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="ZstdNet" Version="$(ZstdNetVersion)" />
+  </ItemGroup>
+
 </Project>

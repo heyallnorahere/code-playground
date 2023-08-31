@@ -2,6 +2,9 @@ using LibChess;
 using Optick.NET;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace ChessAI.Data
 {
@@ -13,6 +16,45 @@ namespace ChessAI.Data
 
     public struct PGN
     {
+        public static async Task SplitAsync(TextReader reader, Action<PGN> callback)
+        {
+            var builder = new StringBuilder();
+            bool attributesEnded = false;
+
+            string? line;
+            while ((line = await reader.ReadLineAsync()) is not null)
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                if (line.StartsWith('['))
+                {
+                    if (attributesEnded)
+                    {
+                        var pgn = Parse(builder.ToString());
+                        callback.Invoke(pgn);
+
+                        builder.Clear();
+                        attributesEnded = false;
+                    }
+                }
+                else if (!attributesEnded)
+                {
+                    attributesEnded = true;
+                }
+
+                builder.Append(line);
+            }
+
+            if (builder.Length > 0)
+            {
+                var pgn = Parse(builder.ToString());
+                callback.Invoke(pgn);
+            }
+        }
+
         public static PGN Parse(string text)
         {
             using var parseEvent = OptickMacros.Event();
@@ -24,7 +66,7 @@ namespace ChessAI.Data
             foreach (var line in lines)
             {
                 int attributeBracketPosition = line.IndexOf('[');
-                if (attributeBracketPosition < 0)
+                if (attributeBracketPosition < 0 || moveString.Length > 0)
                 {
                     if (moveString.Length > 0)
                     {
@@ -33,10 +75,6 @@ namespace ChessAI.Data
 
                     moveString += line;
                     continue;
-                }
-                else if (attributeBracketPosition > 0)
-                {
-                    throw new ArgumentException("Invalid PGN - malformed attribute line!");
                 }
 
                 if (moveString.Length > 0)
@@ -111,11 +149,29 @@ namespace ChessAI.Data
 
             int currentTurn = 0;
             bool shouldAdvanceTurn = true;
+            bool ignore = false;
 
             var terms = moveString.Split(' ');
             for (int i = 0; i < terms.Length; i++)
             {
                 var term = terms[i];
+                if (term.StartsWith('(') || term.StartsWith('{'))
+                {
+                    ignore = true;
+                    continue;
+                }
+
+                if (term.EndsWith(')') || term.EndsWith('}'))
+                {
+                    ignore = false;
+                    continue;
+                }
+
+                if (term.StartsWith(';') || ignore)
+                {
+                    continue;
+                }
+
                 if (i < terms.Length - 1)
                 {
                     if (shouldAdvanceTurn)
