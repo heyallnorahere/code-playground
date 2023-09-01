@@ -26,7 +26,7 @@ namespace ChessAI
                     CodePlayground.dll ChessAI.dll <command> [<argument>...]
 
                 Commands:
-                    label <year> <month> [depth] [command] [log uci]
+                    label <year> <month> [depth] [command]
                         Pulls a month of games from the Lichess games database (https://database.lichess.org/), labels the dataset with a UCI chess engine, and serializes it.
 
                     train <minimum> [batch size] [learning rate]
@@ -51,9 +51,6 @@ namespace ChessAI
                     command
                         The command with which to start up the UCI engine. Default is "stockfish"
 
-                    log uci
-                        Enable logging of UCI communication between the program and the UCI engine. Default is false.
-
                     minimum
                         The minimum average absolute cost of a batch. When this value is reached, training will cease.
 
@@ -74,7 +71,6 @@ namespace ChessAI
 
             mDepth = -1;
             mEngine = "stockfish";
-            mLogUCI = false;
 
             mCurrentBatch = 0;
             mBatchSize = 100;
@@ -144,10 +140,6 @@ namespace ChessAI
                 if (args.Length > 3)
                 {
                     mEngine = args[3];
-                    if (args.Length > 4)
-                    {
-                        mLogUCI = bool.Parse(args[4]);
-                    }
                 }
             }
         }
@@ -226,10 +218,13 @@ namespace ChessAI
             else
             {
                 int hiddenLayerSize = (int)float.Round((Dataset.NetworkInputCount + Dataset.NetworkOutputCount) / 2f);
+                int secondHiddenLayerSize = (int)float.Round((hiddenLayerSize + Dataset.NetworkOutputCount) / 2f);
+
                 mNetwork = new Network(new int[]
                 {
                     Dataset.NetworkInputCount,
                     hiddenLayerSize,
+                    secondHiddenLayerSize,
                     Dataset.NetworkOutputCount
                 });
             }
@@ -255,7 +250,8 @@ namespace ChessAI
 
             if (mCommand != CommandLineCommand.LabelData)
             {
-                CreateGraphicsContext();
+                var context = CreateGraphicsContext();
+                mRenderer = context.CreateRenderer();
 
                 var encoding = Encoding.UTF8;
                 LoadNetwork(encoding);
@@ -268,18 +264,25 @@ namespace ChessAI
             switch (mCommand)
             {
                 case CommandLineCommand.Train:
-                    mTrainer = new Trainer(GraphicsContext!, mBatchSize, mLearningRate);
-                    mTrainer.OnBatchResults += results =>
                     {
-                        Console.WriteLine($"Batch {++mCurrentBatch} results:");
-                        Console.WriteLine($"\tAverage absolute cost: {results.AverageAbsoluteCost}");
-                        // todo: vulkan query pool
+                        var context = GraphicsContext!;
 
-                        if (results.AverageAbsoluteCost < mMinimumAbsoluteAverageCost)
+                        mTrainer = new Trainer(context, mBatchSize, mLearningRate);
+                        mTrainer.OnBatchResults += results =>
                         {
-                            mTrainer.Stop();
-                        }
-                    };
+                            Console.WriteLine($"Batch {++mCurrentBatch} results:");
+                            Console.WriteLine($"\tAverage absolute cost: {results.AverageAbsoluteCost}");
+                            // todo: vulkan query pool
+
+                            if (results.AverageAbsoluteCost < mMinimumAbsoluteAverageCost)
+                            {
+                                mTrainer.Stop();
+                            }
+                        };
+
+                        mComputeLibrary = new ShaderLibrary(context, typeof(NetworkDispatcher).Assembly);
+                        NetworkDispatcher.Initialize(mRenderer!, mComputeLibrary);
+                    }
 
                     break;
                 case CommandLineCommand.GUI:
@@ -299,6 +302,7 @@ namespace ChessAI
             context?.Device?.ClearQueues();
 
             mTrainer?.Dispose();
+            mComputeLibrary?.Dispose();
             SerializeNetwork(Encoding.UTF8);
 
             context?.Dispose();
@@ -331,7 +335,7 @@ namespace ChessAI
                             }
                         };
 
-                        Dataset.PullAndLabelAsync(dataset, mEngine, mLogUCI, mYear, mMonth, mDepth).Wait();
+                        Dataset.PullAndLabelAsync(dataset, mEngine, mYear, mMonth, mDepth).Wait();
                     }
 
                     break;
@@ -362,11 +366,13 @@ namespace ChessAI
         private int mYear, mMonth;
         private int mDepth;
         private string mEngine;
-        private bool mLogUCI;
 
         private float mMinimumAbsoluteAverageCost, mLearningRate;
         private int mBatchSize;
         private Trainer? mTrainer;
         private int mCurrentBatch;
+
+        private ShaderLibrary? mComputeLibrary;
+        private IRenderer? mRenderer;
     }
 }

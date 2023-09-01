@@ -42,7 +42,7 @@ namespace ChessAI.Data
             sSubmittedFENs = new HashSet<string?>();
         }
 
-        public static async Task PullAndLabelAsync(Dataset dataset, string command, bool logUCI, int year, int month, int depth)
+        public static async Task PullAndLabelAsync(Dataset dataset, string command, int year, int month, int depth)
         {
             string url = $"https://database.lichess.org/standard/lichess_db_standard_rated_{year:####}-{month:0#}.pgn.zst";
 
@@ -94,32 +94,42 @@ namespace ChessAI.Data
             using var decompressedStream = new FileStream(plaintextCache, FileMode.Open, FileAccess.Read);
             using var reader = new StreamReader(decompressedStream);
 
-            using var pond = new Pond(command, logUCI, depth);
+            using var pond = new Pond(command, depth);
             pond.PositionDigested += digestion =>
             {
-                sSubmittedFENs.Remove(digestion.Position);
+                lock (sSubmittedFENs)
+                {
+                    sSubmittedFENs.Remove(digestion.Position);
+                }
+
                 if (digestion.BestMove is null)
                 {
                     return;
                 }
 
                 var moveData = digestion.BestMove.Value;
-                dataset.AddEntry(new PositionData
+                lock (dataset)
                 {
-                    ID = dataset.mCount,
-                    Position = digestion.Position,
-                    PieceMoved = moveData.Move.Position.ToString(),
-                    BestMove = moveData.Move.Destination.ToString(),
-                    Promotion = moveData.Promotion
-                });
+                    dataset.AddEntry(new PositionData
+                    {
+                        ID = dataset.mCount,
+                        Position = digestion.Position,
+                        PieceMoved = moveData.Move.Position.ToString(),
+                        BestMove = moveData.Move.Destination.ToString(),
+                        Promotion = moveData.Promotion
+                    });
+                }
             };
 
+            // start the stockfish worker thread
             pond.Start();
 
             Console.WriteLine($"Splitting & processing PGN file... ({decompressedStream.Length} bytes)");
             int skipped = await PGN.SplitAsync(reader, pgn => LabelPGN(dataset, pond, pgn), true);
 
+            // stop and wait for it to finish
             pond.Stop(true);
+
             Console.WriteLine("Finished labeling dataset");
             Console.WriteLine($"{skipped} total games skipped due to errors");
         }
@@ -135,9 +145,20 @@ namespace ChessAI.Data
 
         private static void FeedPond(Dataset dataset, Pond pond, string? fen)
         {
-            if (dataset.Contains(fen ?? Pond.DefaultFEN) || !sSubmittedFENs.Add(fen))
+            lock (dataset)
             {
-                return;
+                if (dataset.Contains(fen ?? Pond.DefaultFEN))
+                {
+                    return;
+                }
+            }
+
+            lock (sSubmittedFENs)
+            {
+                if (!sSubmittedFENs.Add(fen))
+                {
+                    return;
+                }
             }
 
             pond.Feed(fen);

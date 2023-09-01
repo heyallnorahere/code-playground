@@ -335,7 +335,7 @@ namespace ChessAI
     {
         public const string DefaultFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-        public Pond(string command, bool log, int depth)
+        public Pond(string command, int depth)
         {
             mDepth = depth;
             mFENQueue = new Queue<string?>();
@@ -345,11 +345,10 @@ namespace ChessAI
 
             int fishCount = Environment.ProcessorCount;
             mFish = new UCIEngine[fishCount];
-            mTasks = new Task<FENDigestionData>?[fishCount];
 
             for (int i = 0; i < fishCount; i++)
             {
-                mFish[i] = new UCIEngine(command, log);
+                mFish[i] = new UCIEngine(command, false);
             }
         }
 
@@ -422,10 +421,10 @@ namespace ChessAI
             }
         }
 
-        private async Task<FENDigestionData> Feed(UCIEngine engine, string? fen)
+        private FENDigestionData Feed(UCIEngine engine, string? fen)
         {
-            await engine.SetPositionAsync(fen);
-            var move = await engine.GoAsync(mDepth);
+            engine.SetPosition(fen);
+            var move = engine.Go(mDepth);
 
             return new FENDigestionData
             {
@@ -434,46 +433,31 @@ namespace ChessAI
             };
         }
 
-        private void TriggerDigestionEvent(int fishIndex)
-        {
-            var task = mTasks[fishIndex];
-            if (task is not null && task.IsCompleted)
-            {
-                PositionDigested?.Invoke(task.Result);
-                mTasks[fishIndex] = null;
-            }
-        }
-
         private void ThreadEntrypoint()
         {
-            do
+            Parallel.For(0, mFish.Length, i =>
             {
-                while (mFENQueue.Count > 0)
+                do
                 {
-                    for (int i = 0; i < mTasks.Length; i++)
+                    while (mFENQueue.Count > 0)
                     {
-                        TriggerDigestionEvent(i);
-                        if (mTasks[i] is null)
+                        string? fen;
+                        lock (mFENQueue)
                         {
-                            string? fen;
-                            lock (mFENQueue)
+                            if (!mFENQueue.TryDequeue(out fen))
                             {
-                                fen = mFENQueue.Dequeue();
+                                Thread.Sleep(1); // so CPU usage doesnt skyrocket
+                                continue;
                             }
-
-                            mTasks[i] = Task.Run(async () => await Feed(mFish[i], fen));
-                            break;
                         }
+
+                        var data = Feed(mFish[i], fen);
+                        PositionDigested?.Invoke(data);
                     }
 
-                    Thread.Sleep(1); // so CPU usage doesnt skyrocket
-                }
-            } while (mRunning);
-
-            for (int i = 0; i < mTasks.Length; i++)
-            {
-                TriggerDigestionEvent(i);
-            }
+                    Thread.Sleep(1);
+                } while (mRunning);
+            });
 
             mAttendant = null;
         }
@@ -483,7 +467,6 @@ namespace ChessAI
 
         private readonly Queue<string?> mFENQueue;
         private readonly UCIEngine[] mFish;
-        private readonly Task<FENDigestionData>?[] mTasks;
         private Thread? mAttendant;
         private bool mRunning, mDisposed;
         private readonly int mDepth;
