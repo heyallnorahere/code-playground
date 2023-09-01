@@ -161,6 +161,7 @@ namespace CodePlayground.Graphics.Vulkan
         public VulkanImage Image { get; }
         public bool OwnsImage { get; }
         public ISamplerSettings? SamplerSettings { get; }
+        public ulong ID => mID;
 
         IDeviceImage ITexture.Image => Image;
 

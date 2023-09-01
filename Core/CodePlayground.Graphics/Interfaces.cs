@@ -261,6 +261,7 @@ namespace CodePlayground.Graphics
         public bool FlipUVs { get; }
         public bool LeftHanded { get; }
         public MinimumDepth MinDepth { get; }
+        public bool ViewportFlipped { get; }
 
         public bool IsApplicable(WindowOptions options);
         public void Initialize(IWindow? window, GraphicsApplication application);
@@ -417,6 +418,7 @@ namespace CodePlayground.Graphics
         public IDeviceImage Image { get; }
         public bool OwnsImage { get; }
         public ISamplerSettings? SamplerSettings { get; }
+        public ulong ID { get; }
 
         public void InvalidateSampler();
     }
@@ -436,6 +438,7 @@ namespace CodePlayground.Graphics
 
     public interface IShader : IDisposable
     {
+        public ulong ID { get; }
         public ShaderStage Stage { get; }
         public string Entrypoint { get; }
         public IReadOnlyList<byte> Bytecode { get; }

@@ -189,7 +189,7 @@ namespace ChessAI
                                 break;
                             case "gui":
                                 mCommand = CommandLineCommand.GUI;
-                                throw new NotImplementedException();
+                                break;
                             default:
                                 throw new ArgumentException($"Unknown command: {command}");
                         }

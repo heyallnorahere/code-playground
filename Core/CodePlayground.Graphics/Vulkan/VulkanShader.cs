@@ -15,6 +15,8 @@ namespace CodePlayground.Graphics.Vulkan
     {
         private static readonly IReadOnlyDictionary<spvc_resource_type, ShaderResourceTypeFlags> sResourceTypeMap;
         private static readonly IReadOnlyDictionary<spvc_resource_type, StageIODirection> sResourceTypeIODirections;
+        private static ulong sCurrentID;
+
         static VulkanShader()
         {
             sResourceTypeMap = new Dictionary<spvc_resource_type, ShaderResourceTypeFlags>
@@ -32,6 +34,8 @@ namespace CodePlayground.Graphics.Vulkan
                 [spvc_resource_type.SPVC_RESOURCE_TYPE_STAGE_INPUT] = StageIODirection.In,
                 [spvc_resource_type.SPVC_RESOURCE_TYPE_STAGE_OUTPUT] = StageIODirection.Out
             };
+
+            sCurrentID = 0;
         }
 
         public VulkanShader(VulkanDevice device, IReadOnlyList<byte> data, ShaderStage stage, string entrypoint)
@@ -41,6 +45,7 @@ namespace CodePlayground.Graphics.Vulkan
             mEntrypoint = entrypoint;
             mSPIRV = data.ToArray();
             mDisposed = false;
+            mID = sCurrentID++;
 
             Load();
             Reflect();
@@ -391,6 +396,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         #endregion
 
+        public ulong ID => mID;
         public ShaderStage Stage => mStage;
         public string Entrypoint => mEntrypoint;
         public IReadOnlyList<byte> Bytecode => mSPIRV;
@@ -401,6 +407,7 @@ namespace CodePlayground.Graphics.Vulkan
         private ShaderModule mModule;
         private ShaderReflectionResult mReflectionData;
 
+        private readonly ulong mID;
         private readonly ShaderStage mStage;
         private readonly string mEntrypoint;
         private readonly byte[] mSPIRV;

@@ -796,6 +796,7 @@ namespace CodePlayground.Graphics.Vulkan
         public bool FlipUVs => true;
         public bool LeftHanded => true;
         public MinimumDepth MinDepth => MinimumDepth.Zero;
+        public bool ViewportFlipped => true;
 
         IGraphicsDevice IGraphicsContext.Device => mDevice!;
         ISwapchain? IGraphicsContext.Swapchain => mSwapchain;

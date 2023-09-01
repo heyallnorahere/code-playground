@@ -180,7 +180,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         ulong IBindableVulkanResource.ID => mID;
 
-        private readonly ulong mID;
+        protected readonly ulong mID;
         private readonly Dictionary<ulong, BoundPipelineData> mBoundPipelines;
     }
 
