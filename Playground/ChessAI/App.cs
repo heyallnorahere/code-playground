@@ -26,7 +26,7 @@ namespace ChessAI
                     CodePlayground.dll ChessAI.dll <command> [<argument>...]
 
                 Commands:
-                    label <year> <month> [depth] [command]
+                    label <year> <month> [depth] [command] [log uci]
                         Pulls a month of games from the Lichess games database (https://database.lichess.org/), labels the dataset with a UCI chess engine, and serializes it.
 
                     train <minimum> [batch size] [learning rate]
@@ -45,11 +45,14 @@ namespace ChessAI
                     month
                         In combination with the year, the month from which to pull from the Lichess database. Can be a string or an integer.
 
-                    depth:
+                    depth
                         The depth at which to search while labeling. Default is infinite.
 
-                    command:
+                    command
                         The command with which to start up the UCI engine. Default is "stockfish"
+
+                    log uci
+                        Enable logging of UCI communication between the program and the UCI engine. Default is false.
 
                     minimum
                         The minimum average absolute cost of a batch. When this value is reached, training will cease.
@@ -71,6 +74,7 @@ namespace ChessAI
 
             mDepth = -1;
             mEngine = "stockfish";
+            mLogUCI = false;
 
             mCurrentBatch = 0;
             mBatchSize = 100;
@@ -140,6 +144,10 @@ namespace ChessAI
                 if (args.Length > 3)
                 {
                     mEngine = args[3];
+                    if (args.Length > 4)
+                    {
+                        mLogUCI = bool.Parse(args[4]);
+                    }
                 }
             }
         }
@@ -312,7 +320,7 @@ namespace ChessAI
             switch (mCommand)
             {
                 case CommandLineCommand.LabelData:
-                    using (var engine = new UCIEngine(mEngine))
+                    using (var engine = new UCIEngine(mEngine, mLogUCI))
                     {
                         using var dataset = new Dataset(datasetPath);
                         Console.CancelKeyPress += (s, e) =>
@@ -355,6 +363,7 @@ namespace ChessAI
         private int mYear, mMonth;
         private int mDepth;
         private string mEngine;
+        private bool mLogUCI;
 
         private float mMinimumAbsoluteAverageCost, mLearningRate;
         private int mBatchSize;

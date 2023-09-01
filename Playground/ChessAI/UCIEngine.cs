@@ -16,10 +16,11 @@ namespace ChessAI
 
     public sealed class UCIEngine : IDisposable
     {
-        public UCIEngine(string command)
+        public UCIEngine(string command, bool log = false)
         {
             mDisposed = false;
             mInitialized = false;
+            mLog = log;
 
             mOptions = new Dictionary<string, string?>();
             mID = new Dictionary<string, string>();
@@ -92,7 +93,11 @@ namespace ChessAI
 
         private void OnResponseReceived(string data)
         {
-            Console.WriteLine($"[UCI] {data}");
+            if (mLog)
+            {
+                Console.WriteLine($"[UCI] {data}");
+            }
+            
             if (!mInitialized)
             {
                 mInitialized = true;
@@ -283,7 +288,10 @@ namespace ChessAI
 
         public void SendCommand(string command)
         {
-            Console.WriteLine($"[UCI] > {command}");
+            if (mLog)
+            {
+                Console.WriteLine($"[UCI] > {command}");
+            }
 
             mEngine.StandardInput.WriteLine(command);
             mEngine.StandardInput.Flush();
@@ -291,7 +299,10 @@ namespace ChessAI
 
         public async Task SendCommandAsync(string command)
         {
-            Console.WriteLine($"[UCI] > {command}");
+            if (mLog)
+            {
+                Console.WriteLine($"[UCI] > {command}");
+            }
 
             await mEngine.StandardInput.WriteLineAsync(command);
             await mEngine.StandardInput.FlushAsync();
@@ -309,6 +320,6 @@ namespace ChessAI
 
         private EngineMove? mBestMove;
         private readonly Process mEngine;
-        private bool mDisposed, mInitialized;
+        private bool mDisposed, mInitialized, mLog;
     }
 }
