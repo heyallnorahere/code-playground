@@ -21,7 +21,10 @@ namespace ChessAI.Data
             Promotion = PieceType.None;
         }
 
-        [Unique, PrimaryKey]
+        [PrimaryKey, Indexed]
+        public int ID { get; set; }
+
+        [Unique]
         public string Position { get; set; }
         public string PieceMoved { get; set; }
         public string BestMove { get; set; }
@@ -38,6 +41,9 @@ namespace ChessAI.Data
 
     public sealed class Dataset : IDataset, IDisposable
     {
+        public const int NetworkInputCount = Board.Width * Board.Width + 3; // data in a FEN string
+        public const int NetworkOutputCount = Board.Width * 4 + 4; // rank and file, source and destination, plus promotion piece types
+
         private static readonly AutoResetEvent sPGNAdded, sThreadStarted, sThreadFinished;
         private static readonly Queue<PGNData> sPGNQueue;
         private static Thread? sPGNThread;
@@ -169,7 +175,7 @@ namespace ChessAI.Data
         {
             engine.NewGame();
             LabelPosition(dataset, engine, null, depth);
-            
+
             foreach (var move in pgn.Moves)
             {
                 LabelPosition(dataset, engine, move.Position, depth);
@@ -194,6 +200,7 @@ namespace ChessAI.Data
             var moveData = move!.Value;
             dataset.AddEntry(new PositionData
             {
+                ID = dataset.mCount,
                 Position = key,
                 PieceMoved = moveData.Move.Position.ToString(),
                 BestMove = moveData.Move.Destination.ToString(),
@@ -204,24 +211,92 @@ namespace ChessAI.Data
         public Dataset(string path)
         {
             mConnection = new SQLiteConnection(path);
-
             mConnection.CreateTable<PositionData>();
-            mMapping = mConnection.GetMapping<PositionData>();
+            mCount = mConnection.Table<PositionData>().Count();
         }
 
         public void Dispose() => mConnection.Dispose();
 
-        public void AddEntry(PositionData data) => mConnection.Insert(data);
-        public bool Contains(string position) => mConnection.Find(position, mMapping) is not null;
+        public void AddEntry(PositionData data)
+        {
+            mConnection.Insert(data);
+            mCount++;
+        }
 
-        public int Count => throw new NotImplementedException();
-        public int InputCount => throw new NotImplementedException();
-        public int OutputCount => throw new NotImplementedException();
+        public bool Contains(string position) => mConnection.Find<PositionData>(data => data.Position == position) is not null;
 
-        public float[] GetInput(int index) => throw new NotImplementedException();
-        public float[] GetExpectedOutput(int index) => throw new NotImplementedException();
+        public int Count => mCount;
+        public int InputCount => NetworkInputCount;
+        public int OutputCount => NetworkOutputCount;
+
+        public float[] GetInput(int index)
+        {
+            var data = mConnection.Table<PositionData>().ElementAt(index);
+            using var board = Board.Create(data.Position);
+
+            if (board is null)
+            {
+                throw new InvalidOperationException("Failed to interpret FEN!");
+            }
+
+            var input = new float[NetworkInputCount];
+            for (int y = 0; y < Board.Width; y++)
+            {
+                int rankOffset = y * Board.Width;
+                for (int x = 0; x < Board.Width; x++)
+                {
+                    bool pieceExists = board.GetPiece((x, y), out PieceInfo piece);
+
+                    int pieceId = (int)piece.Type;
+                    if (pieceExists && piece.Color == PlayerColor.Black)
+                    {
+                        pieceId += Enum.GetValues<PieceType>().Length - 1;
+                    }
+
+                    int fileOffset = rankOffset + x;
+                    input[fileOffset] = pieceId;
+                }
+            }
+
+            int dataOffset = Board.Width * Board.Width;
+            var currentTurn = board.CurrentTurn;
+            var enPassantTarget = board.EnPassantTarget;
+
+            var whiteCastling = board.GetCastlingAvailability(PlayerColor.White);
+            var blackCastling = board.GetCastlingAvailability(PlayerColor.Black);
+
+            input[dataOffset] = (int)currentTurn;
+            input[dataOffset + 1] = (int)whiteCastling | ((int)blackCastling << 2);
+            input[dataOffset + 2] = enPassantTarget is null ? -1 : (enPassantTarget.Value.Y * Board.Width + enPassantTarget.Value.X);
+
+            return input;
+        }
+
+        public float[] GetExpectedOutput(int index)
+        {
+            var data = mConnection.Table<PositionData>().ElementAt(index);
+
+            var outputs = new float[NetworkOutputCount];
+            Array.Fill(outputs, 0f);
+
+            var piecePosition = Coord.Parse(data.PieceMoved);
+            var bestMove = Coord.Parse(data.BestMove);
+
+            outputs[piecePosition.X] = 1f;
+            outputs[Board.Width + piecePosition.Y] = 1f;
+            outputs[Board.Width * 2 + bestMove.X] = 1f;
+            outputs[Board.Width * 3 + bestMove.Y] = 1f;
+
+            var promotion = data.Promotion;
+            if (promotion != PieceType.None)
+            {
+                outputs[Board.Width * 4 + (int)promotion - 2] = 1f;
+            }
+
+            return outputs;
+        }
 
         private readonly SQLiteConnection mConnection;
-        private readonly TableMapping mMapping;
+        private int mCount;
     }
 }

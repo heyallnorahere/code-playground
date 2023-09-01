@@ -1,8 +1,10 @@
 using ChessAI.Data;
 using CodePlayground;
 using CodePlayground.Graphics;
+using MachineLearning;
 using System;
-using System.Runtime.CompilerServices;
+using System.IO;
+using System.Text;
 
 namespace ChessAI
 {
@@ -53,10 +55,10 @@ namespace ChessAI
                         The minimum average absolute cost of a batch. When this value is reached, training will cease.
 
                     batch size
-                        The size of one batch for the network to train on. Each batch will be a grouping out of which to average deltas.
+                        The size of one batch for the network to train on. Each batch will be a grouping out of which to average deltas. Default is 100.
 
                     learning rate
-                        The rate at which this network should learn. Merely a factor at which to scale the deltas.
+                        The rate at which this network should learn. Merely a factor at which to scale the deltas. Default is 0.1.
                 """;
 
             Console.WriteLine(usage);
@@ -69,6 +71,10 @@ namespace ChessAI
 
             mDepth = -1;
             mEngine = "stockfish";
+
+            mCurrentBatch = 0;
+            mBatchSize = 100;
+            mLearningRate = 0.1f;
 
             Load += OnLoad;
             InputReady += OnInputReady;
@@ -138,6 +144,24 @@ namespace ChessAI
             }
         }
 
+        private void ParseTrainingArguments(string[] args)
+        {
+            if (args.Length == 0)
+            {
+                throw new ArgumentException("Minimum not provided");
+            }
+
+            mMinimumAbsoluteAverageCost = float.Parse(args[0]);
+            if (args.Length > 1)
+            {
+                mBatchSize = int.Parse(args[1]);
+                if (args.Length > 2)
+                {
+                    mLearningRate = float.Parse(args[2]);
+                }
+            }
+        }
+
         protected override void ParseArguments()
         {
             try
@@ -148,19 +172,21 @@ namespace ChessAI
                     string command = args[0];
                     if (command != "help")
                     {
+                        var commandArguments = args[1..];
                         switch (command)
                         {
                             case "label":
                                 mCommand = CommandLineCommand.LabelData;
                                 mHeadless = true;
 
-                                ParseLabelArguments(args[1..]);
+                                ParseLabelArguments(commandArguments);
                                 break;
                             case "train":
                                 mCommand = CommandLineCommand.Train;
                                 mHeadless = true;
 
-                                throw new NotImplementedException();
+                                ParseTrainingArguments(commandArguments);
+                                break;
                             case "gui":
                                 mCommand = CommandLineCommand.GUI;
                                 throw new NotImplementedException();
@@ -181,6 +207,37 @@ namespace ChessAI
             mHeadless = true;
         }
 
+        private const string networkPath = "network.json";
+        private void LoadNetwork(Encoding? encoding = null)
+        {
+            if (File.Exists(networkPath))
+            {
+                using var stream = new FileStream(networkPath, FileMode.Open, FileAccess.Read);
+                mNetwork = Network.Load(stream, encoding);
+            }
+            else
+            {
+                int hiddenLayerSize = (int)float.Round((Dataset.NetworkInputCount + Dataset.NetworkOutputCount) / 2f);
+                mNetwork = new Network(new int[]
+                {
+                    Dataset.NetworkInputCount,
+                    hiddenLayerSize,
+                    Dataset.NetworkOutputCount
+                });
+            }
+        }
+
+        private void SerializeNetwork(Encoding? encoding = null)
+        {
+            if (mNetwork is null)
+            {
+                return;
+            }
+
+            using var stream = new FileStream(networkPath, FileMode.Create, FileAccess.Write);
+            Network.Save(mNetwork, stream, encoding);
+        }
+
         private void OnLoad()
         {
             if (mCommand == CommandLineCommand.None)
@@ -191,6 +248,10 @@ namespace ChessAI
             if (mCommand != CommandLineCommand.LabelData)
             {
                 CreateGraphicsContext();
+
+                var encoding = Encoding.UTF8;
+                LoadNetwork(encoding);
+                Console.CancelKeyPress += (s, e) => SerializeNetwork(encoding);
             }
 
             InitializeOptick();
@@ -199,7 +260,20 @@ namespace ChessAI
             switch (mCommand)
             {
                 case CommandLineCommand.Train:
-                    throw new NotImplementedException();
+                    mTrainer = new Trainer(GraphicsContext!, mBatchSize, mLearningRate);
+                    mTrainer.OnBatchResults += results =>
+                    {
+                        Console.WriteLine($"Batch {++mCurrentBatch} results:");
+                        Console.WriteLine($"\tAverage absolute cost: {results.AverageAbsoluteCost}");
+                        // todo: vulkan query pool
+
+                        if (results.AverageAbsoluteCost < mMinimumAbsoluteAverageCost)
+                        {
+                            mTrainer.Stop();
+                        }
+                    };
+
+                    break;
                 case CommandLineCommand.GUI:
                     throw new NotImplementedException();
             }
@@ -216,7 +290,8 @@ namespace ChessAI
             var context = GraphicsContext;
             context?.Device?.ClearQueues();
 
-            // todo: clean up
+            mTrainer?.Dispose();
+            SerializeNetwork(Encoding.UTF8);
 
             context?.Dispose();
         }
@@ -240,12 +315,32 @@ namespace ChessAI
                     using (var engine = new UCIEngine(mEngine))
                     {
                         using var dataset = new Dataset(datasetPath);
+                        Console.CancelKeyPress += (s, e) =>
+                        {
+                            lock (dataset)
+                            {
+                                Console.WriteLine("Closing database...");
+                                dataset.Dispose();
+                            }
+                        };
+
                         Dataset.PullAndLabelAsync(dataset, engine, mYear, mMonth, mDepth).Wait();
                     }
 
                     break;
                 case CommandLineCommand.Train:
-                    throw new NotImplementedException();
+                    using (var dataset = new Dataset(datasetPath))
+                    {
+                        Console.WriteLine($"Dataset of {dataset.Count} positions loaded");
+
+                        mTrainer!.Start(dataset, mNetwork!);
+                        while (mTrainer.Running)
+                        {
+                            mTrainer.Update(true);
+                        }
+                    }
+
+                    break;
                 case CommandLineCommand.GUI:
                     throw new NotImplementedException();
             }
@@ -255,9 +350,15 @@ namespace ChessAI
 
         private bool mHeadless;
         private CommandLineCommand mCommand;
+        private Network? mNetwork;
 
         private int mYear, mMonth;
         private int mDepth;
         private string mEngine;
+
+        private float mMinimumAbsoluteAverageCost, mLearningRate;
+        private int mBatchSize;
+        private Trainer? mTrainer;
+        private int mCurrentBatch;
     }
 }
