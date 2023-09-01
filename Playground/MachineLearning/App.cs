@@ -608,7 +608,7 @@ namespace MachineLearning
             var minAverageFlags = mUseMinimumAverageCost ? ImGuiInputTextFlags.None : ImGuiInputTextFlags.ReadOnly;
             ImGui.InputFloat("Minimum average cost", ref mMinimumAverageCost, 0.005f, 0.01f, "%f", minAverageFlags);
 
-            bool training = mTrainer!.Running;
+            bool training = mTrainer!.IsRunning;
             if (training)
             {
                 ImGui.BeginDisabled();

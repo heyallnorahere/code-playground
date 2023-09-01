@@ -320,9 +320,8 @@ namespace ChessAI
             switch (mCommand)
             {
                 case CommandLineCommand.LabelData:
-                    using (var engine = new UCIEngine(mEngine, mLogUCI))
+                    using (var dataset = new Dataset(datasetPath))
                     {
-                        using var dataset = new Dataset(datasetPath);
                         Console.CancelKeyPress += (s, e) =>
                         {
                             lock (dataset)
@@ -332,7 +331,7 @@ namespace ChessAI
                             }
                         };
 
-                        Dataset.PullAndLabelAsync(dataset, engine, mYear, mMonth, mDepth).Wait();
+                        Dataset.PullAndLabelAsync(dataset, mEngine, mLogUCI, mYear, mMonth, mDepth).Wait();
                     }
 
                     break;
@@ -342,7 +341,7 @@ namespace ChessAI
                         Console.WriteLine($"Dataset of {dataset.Count} positions loaded");
 
                         mTrainer!.Start(dataset, mNetwork!);
-                        while (mTrainer.Running)
+                        while (mTrainer.IsRunning)
                         {
                             mTrainer.Update(true);
                         }

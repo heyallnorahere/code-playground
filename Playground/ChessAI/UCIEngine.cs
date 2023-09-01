@@ -97,7 +97,7 @@ namespace ChessAI
             {
                 Console.WriteLine($"[UCI] {data}");
             }
-            
+
             if (!mInitialized)
             {
                 mInitialized = true;
@@ -320,6 +320,172 @@ namespace ChessAI
 
         private EngineMove? mBestMove;
         private readonly Process mEngine;
-        private bool mDisposed, mInitialized, mLog;
+        private readonly bool mLog;
+        private bool mDisposed, mInitialized;
+    }
+
+    public struct FENDigestionData
+    {
+        public string Position;
+        public EngineMove? BestMove;
+    }
+
+    // fishe
+    public sealed class Pond : IDisposable
+    {
+        public const string DefaultFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+        public Pond(string command, bool log, int depth)
+        {
+            mDepth = depth;
+            mFENQueue = new Queue<string?>();
+
+            mDisposed = false;
+            mRunning = false;
+
+            int fishCount = Environment.ProcessorCount;
+            mFish = new UCIEngine[fishCount];
+            mTasks = new Task<FENDigestionData>?[fishCount];
+
+            for (int i = 0; i < fishCount; i++)
+            {
+                mFish[i] = new UCIEngine(command, log);
+            }
+        }
+
+        ~Pond()
+        {
+            if (!mDisposed)
+            {
+                Dispose(false);
+                mDisposed = true;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (mDisposed)
+            {
+                return;
+            }
+
+            Dispose(true);
+            mDisposed = true;
+        }
+
+        private void Dispose(bool disposing)
+        {
+            Stop(true);
+
+            if (disposing)
+            {
+                foreach (var fish in mFish)
+                {
+                    fish.Dispose();
+                }
+            }
+        }
+
+        public void Start()
+        {
+            if (mRunning)
+            {
+                return;
+            }
+
+            mRunning = true;
+            if (mAttendant is null)
+            {
+                mAttendant = new Thread(ThreadEntrypoint)
+                {
+                    Name = "Attendant"
+                };
+
+                mAttendant.Start();
+            }
+        }
+
+        public void Stop(bool wait)
+        {
+            mRunning = false;
+            if (wait)
+            {
+                mAttendant?.Join();
+            }
+        }
+
+        public void Feed(string? fen)
+        {
+            lock (mFENQueue)
+            {
+                mFENQueue.Enqueue(fen);
+            }
+        }
+
+        private async Task<FENDigestionData> Feed(UCIEngine engine, string? fen)
+        {
+            await engine.SetPositionAsync(fen);
+            var move = await engine.GoAsync(mDepth);
+
+            return new FENDigestionData
+            {
+                Position = fen ?? DefaultFEN,
+                BestMove = move
+            };
+        }
+
+        private void TriggerDigestionEvent(int fishIndex)
+        {
+            var task = mTasks[fishIndex];
+            if (task is not null && task.IsCompleted)
+            {
+                PositionDigested?.Invoke(task.Result);
+                mTasks[fishIndex] = null;
+            }
+        }
+
+        private void ThreadEntrypoint()
+        {
+            do
+            {
+                while (mFENQueue.Count > 0)
+                {
+                    for (int i = 0; i < mTasks.Length; i++)
+                    {
+                        TriggerDigestionEvent(i);
+                        if (mTasks[i] is null)
+                        {
+                            string? fen;
+                            lock (mFENQueue)
+                            {
+                                fen = mFENQueue.Dequeue();
+                            }
+
+                            mTasks[i] = Task.Run(async () => await Feed(mFish[i], fen));
+                            break;
+                        }
+                    }
+
+                    Thread.Sleep(1); // so CPU usage doesnt skyrocket
+                }
+            } while (mRunning);
+
+            for (int i = 0; i < mTasks.Length; i++)
+            {
+                TriggerDigestionEvent(i);
+            }
+
+            mAttendant = null;
+        }
+
+        public event Action<FENDigestionData>? PositionDigested;
+        public bool IsRunning => mRunning;
+
+        private readonly Queue<string?> mFENQueue;
+        private readonly UCIEngine[] mFish;
+        private readonly Task<FENDigestionData>?[] mTasks;
+        private Thread? mAttendant;
+        private bool mRunning, mDisposed;
+        private readonly int mDepth;
     }
 }

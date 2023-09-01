@@ -31,33 +31,18 @@ namespace ChessAI.Data
         public PieceType Promotion { get; set; }
     }
 
-    internal struct PGNData
-    {
-        public PGN PGN;
-        public UCIEngine Engine;
-        public Dataset Dataset;
-        public int Depth;
-    }
-
     public sealed class Dataset : IDataset, IDisposable
     {
         public const int NetworkInputCount = Board.Width * Board.Width + 3; // data in a FEN string
         public const int NetworkOutputCount = Board.Width * 4 + 4; // rank and file, source and destination, plus promotion piece types
 
-        private static readonly AutoResetEvent sPGNAdded, sThreadStarted, sThreadFinished;
-        private static readonly Queue<PGNData> sPGNQueue;
-        private static Thread? sPGNThread;
-
+        private static readonly HashSet<string?> sSubmittedFENs;
         static Dataset()
         {
-            sPGNAdded = new AutoResetEvent(false);
-            sThreadStarted = new AutoResetEvent(false);
-            sThreadFinished = new AutoResetEvent(false);
-            sPGNQueue = new Queue<PGNData>();
-            sPGNThread = null;
+            sSubmittedFENs = new HashSet<string?>();
         }
 
-        public static async Task PullAndLabelAsync(Dataset dataset, UCIEngine engine, int year, int month, int depth)
+        public static async Task PullAndLabelAsync(Dataset dataset, string command, bool logUCI, int year, int month, int depth)
         {
             string url = $"https://database.lichess.org/standard/lichess_db_standard_rated_{year:####}-{month:0#}.pgn.zst";
 
@@ -109,103 +94,53 @@ namespace ChessAI.Data
             using var decompressedStream = new FileStream(plaintextCache, FileMode.Open, FileAccess.Read);
             using var reader = new StreamReader(decompressedStream);
 
+            using var pond = new Pond(command, logUCI, depth);
+            pond.PositionDigested += digestion =>
+            {
+                sSubmittedFENs.Remove(digestion.Position);
+                if (digestion.BestMove is null)
+                {
+                    return;
+                }
+
+                var moveData = digestion.BestMove.Value;
+                dataset.AddEntry(new PositionData
+                {
+                    ID = dataset.mCount,
+                    Position = digestion.Position,
+                    PieceMoved = moveData.Move.Position.ToString(),
+                    BestMove = moveData.Move.Destination.ToString(),
+                    Promotion = moveData.Promotion
+                });
+            };
+
+            pond.Start();
+
             Console.WriteLine($"Splitting & processing PGN file... ({decompressedStream.Length} bytes)");
-            if (sPGNThread is null)
-            {
-                sPGNThread = new Thread(EngineThread)
-                {
-                    Name = "PGN processing thread"
-                };
+            int skipped = await PGN.SplitAsync(reader, pgn => LabelPGN(dataset, pond, pgn), true);
 
-                sPGNAdded.Reset();
-                sPGNThread.Start();
-            }
-
-            int skipped = await PGN.SplitAsync(reader, pgn =>
-            {
-                sThreadStarted.WaitOne();
-                lock (sPGNQueue)
-                {
-                    sPGNQueue.Enqueue(new PGNData
-                    {
-                        PGN = pgn,
-                        Engine = engine,
-                        Dataset = dataset,
-                        Depth = depth
-                    });
-
-                    sPGNAdded.Set();
-                }
-            }, true);
-            Console.WriteLine($"{skipped} total games skipped due to errors!");
-
-            sPGNAdded.Set();
-            sThreadFinished.WaitOne();
-
-            sPGNThread = null;
+            pond.Stop(true);
+            Console.WriteLine("Finished labeling dataset");
+            Console.WriteLine($"{skipped} total games skipped due to errors");
         }
 
-        private static void EngineThread()
+        public static void LabelPGN(Dataset dataset, Pond pond, PGN pgn)
         {
-            int n = 0;
-            do
-            {
-                while (sPGNQueue.Count > 0)
-                {
-                    PGNData data;
-                    lock (sPGNQueue)
-                    {
-                        data = sPGNQueue.Dequeue();
-                    }
-
-                    Console.WriteLine($"Processing game {++n}");
-                    LabelPGN(data.Dataset, data.Engine, data.PGN, data.Depth);
-                }
-
-                sThreadStarted.Set();
-                sPGNAdded.WaitOne();
-            }
-            while (sPGNQueue.Count > 0);
-
-            sThreadFinished.Set();
-            sThreadStarted.Reset();
-        }
-
-        public static void LabelPGN(Dataset dataset, UCIEngine engine, PGN pgn, int depth)
-        {
-            engine.NewGame();
-            LabelPosition(dataset, engine, null, depth);
-
+            FeedPond(dataset, pond, null);
             foreach (var move in pgn.Moves)
             {
-                LabelPosition(dataset, engine, move.Position, depth);
+                FeedPond(dataset, pond, move.Position);
             }
         }
 
-        public static void LabelPosition(Dataset dataset, UCIEngine engine, string? position, int depth)
+        private static void FeedPond(Dataset dataset, Pond pond, string? fen)
         {
-            string key = position ?? "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-            if (dataset.Contains(key))
+            if (dataset.Contains(fen ?? Pond.DefaultFEN) || !sSubmittedFENs.Add(fen))
             {
                 return;
             }
 
-            engine.SetPosition(position);
-            var move = engine.Go(depth);
-            if (move is null)
-            {
-                return;
-            }
-
-            var moveData = move!.Value;
-            dataset.AddEntry(new PositionData
-            {
-                ID = dataset.mCount,
-                Position = key,
-                PieceMoved = moveData.Move.Position.ToString(),
-                BestMove = moveData.Move.Destination.ToString(),
-                Promotion = moveData.Promotion
-            });
+            pond.Feed(fen);
         }
 
         public Dataset(string path)

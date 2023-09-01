@@ -198,7 +198,7 @@ namespace MachineLearning
             }
         }
 
-        public bool Running => mRunning;
+        public bool IsRunning => mRunning;
 
         public int BatchCount
         {
