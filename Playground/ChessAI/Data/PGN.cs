@@ -19,6 +19,7 @@ namespace ChessAI.Data
     {
         private static bool Parse(string text, Action<PGN> callback, bool skip)
         {
+            using var parseEvent = OptickMacros.Event();
             if (skip)
             {
                 try
@@ -42,6 +43,7 @@ namespace ChessAI.Data
 
         public static async Task<int> SplitAsync(TextReader reader, Action<PGN> callback, bool skipOnError)
         {
+            using var splitEvent = OptickMacros.Event();
             int skippedGames = 0;
 
             var builder = new StringBuilder();
@@ -177,6 +179,8 @@ namespace ChessAI.Data
 
         public static void ParseMoves(string moveString, IList<PGNMove> moves)
         {
+            using var parseMovesEvent = OptickMacros.Event();
+
             using var parseEvent = OptickMacros.Event();
             moves.Clear();
 

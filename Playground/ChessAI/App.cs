@@ -258,7 +258,17 @@ namespace ChessAI
 
             if (mCommand != CommandLineCommand.LabelData)
             {
-                var context = CreateGraphicsContext();
+                CreateGraphicsContext();
+            }
+
+            InitializeOptick();
+            using var loadEvent = OptickMacros.Event();
+
+            if (mCommand != CommandLineCommand.LabelData)
+            {
+                using var nonLabelLoad = OptickMacros.Event("Graphics context & network initialization");
+
+                var context = GraphicsContext!;
                 mRenderer = context.CreateRenderer();
 
                 var encoding = Encoding.UTF8;
@@ -269,11 +279,12 @@ namespace ChessAI
                 NetworkDispatcher.Initialize(mRenderer, mComputeLibrary);
             }
 
-            InitializeOptick();
             switch (mCommand)
             {
                 case CommandLineCommand.Train:
                     {
+                        using var initEvent = OptickMacros.Event("Training initialization");
+
                         mTrainer = new Trainer(GraphicsContext!, mBatchSize, mLearningRate);
                         mTrainer.OnBatchResults += results =>
                         {
@@ -291,6 +302,8 @@ namespace ChessAI
                     break;
                 case CommandLineCommand.GUI:
                     {
+                        using var initEvent = OptickMacros.Event("GUI initialization");
+
                         const int textureSize = 1024;
                         const float minRadius = 0.2f;
                         const float maxRadius = 0.3f;
@@ -362,6 +375,8 @@ namespace ChessAI
         private void OnInputReady() => InitializeImGui();
         private void InitializeImGui()
         {
+            using var initEvent = OptickMacros.Event();
+
             var window = RootWindow;
             var inputContext = InputContext;
             var graphicsContext = GraphicsContext;
@@ -393,6 +408,8 @@ namespace ChessAI
 
         private void OnClose()
         {
+            using var closeEvent = OptickMacros.Event();
+
             var context = GraphicsContext;
             context?.Device?.ClearQueues();
 
@@ -409,6 +426,7 @@ namespace ChessAI
 
         private void OnUpdate(double delta)
         {
+            using var updateEvent = OptickMacros.Event();
             if (mCommand != CommandLineCommand.GUI || mImGui is null)
             {
                 return;
@@ -417,6 +435,7 @@ namespace ChessAI
             mImGui.NewFrame(delta);
             ImGui.ShowDemoWindow();
 
+            using (OptickMacros.Event("Batch renderer stats menu"))
             {
                 ImGui.Begin("Batch renderer stats");
 
@@ -444,6 +463,8 @@ namespace ChessAI
 
         private void OnRender(FrameRenderInfo renderInfo)
         {
+            using var renderEvent = OptickMacros.Event();
+
             const string datasetPath = "dataset.sqlite";
             switch (mCommand)
             {
@@ -486,7 +507,7 @@ namespace ChessAI
                         mBatchRenderer!.BeginFrame(commandList);
                         mBatchRenderer.PushRenderTarget(renderInfo.RenderTarget!, framebuffer, new Vector4(0f, 0f, 0f, 1f));
 
-                        // test render
+                        using (OptickMacros.Event("Test render"))
                         {
                             int width = framebuffer.Width;
                             int height = framebuffer.Height;

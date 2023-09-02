@@ -1,5 +1,6 @@
 ﻿using LibChess;
 using MachineLearning;
+using Optick.NET;
 using SQLite;
 using System;
 using System.Collections.Generic;
@@ -44,6 +45,7 @@ namespace ChessAI.Data
 
         public static async Task PullAndLabelAsync(Dataset dataset, string command, int year, int month, int depth)
         {
+            using var pullAndLabelEvent = OptickMacros.Event();
             string url = $"https://database.lichess.org/standard/lichess_db_standard_rated_{year:####}-{month:0#}.pgn.zst";
 
             const string cacheDirectory = "cache";
@@ -52,9 +54,10 @@ namespace ChessAI.Data
 
             if (!File.Exists(plaintextCache))
             {
-                Stream compressedStream;
+                using var decompressEvent = OptickMacros.Event("Decompress database");
                 if (!File.Exists(compressedCache))
                 {
+                    using var pullEvent = OptickMacros.Event("Pull database");
                     if (!Directory.Exists(cacheDirectory))
                     {
                         Directory.CreateDirectory(cacheDirectory);
@@ -67,28 +70,22 @@ namespace ChessAI.Data
                         MaxResponseContentBufferSize = int.MaxValue
                     };
 
-                    var response = await client.GetAsync(url);
+                    var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
                     response.EnsureSuccessStatusCode();
-                    compressedStream = await response.Content.ReadAsStreamAsync();
+                    using var responseStream = await response.Content.ReadAsStreamAsync();
 
+                    Console.WriteLine($"Writing to compressed cache file {compressedCache}");
                     using var cacheStream = new FileStream(compressedCache, FileMode.Create, FileAccess.Write);
-                    compressedStream.CopyTo(cacheStream);
-                    compressedStream.Position = 0;
-                }
-                else
-                {
-                    Console.WriteLine($"Reading cache file {compressedCache}");
-                    compressedStream = new FileStream(compressedCache, FileMode.Open, FileAccess.Read);
+                    responseStream.CopyTo(cacheStream);
                 }
 
-                using (compressedStream)
-                {
-                    Console.WriteLine($"Decompressing & writing {compressedStream.Length} bytes...");
+                Console.WriteLine($"Reading from compressed cache file {compressedCache}");
+                using var compressedStream = new FileStream(compressedCache, FileMode.Open, FileAccess.Read);
 
-                    using var zstdStream = new DecompressionStream(compressedStream);
-                    using var cacheStream = new FileStream(plaintextCache, FileMode.Create, FileAccess.Write);
-                    zstdStream.CopyTo(cacheStream);
-                }
+                Console.WriteLine($"Decompressing & writing {compressedStream.Length} bytes...");
+                using var zstdStream = new DecompressionStream(compressedStream);
+                using var decompressedCacheStream = new FileStream(plaintextCache, FileMode.Create, FileAccess.Write);
+                zstdStream.CopyTo(decompressedCacheStream);
             }
 
             using var decompressedStream = new FileStream(plaintextCache, FileMode.Open, FileAccess.Read);
@@ -121,14 +118,18 @@ namespace ChessAI.Data
                 }
             };
 
-            // start the stockfish worker thread
-            pond.Start();
+            int skipped;
+            using (OptickMacros.Event("Split & process PGN file"))
+            {
+                // start the stockfish worker thread
+                pond.Start();
 
-            Console.WriteLine($"Splitting & processing PGN file... ({decompressedStream.Length} bytes)");
-            int skipped = await PGN.SplitAsync(reader, pgn => LabelPGN(dataset, pond, pgn), true);
+                Console.WriteLine($"Splitting & processing PGN file... ({decompressedStream.Length} bytes)");
+                skipped = await PGN.SplitAsync(reader, pgn => LabelPGN(dataset, pond, pgn), true);
 
-            // stop and wait for it to finish
-            pond.Stop(true);
+                // stop and wait for it to finish
+                pond.Stop(true);
+            }
 
             Console.WriteLine("Finished labeling dataset");
             Console.WriteLine($"{skipped} total games skipped due to errors");
@@ -166,6 +167,8 @@ namespace ChessAI.Data
 
         public Dataset(string path)
         {
+            using var constructorEvent = OptickMacros.Event();
+
             mConnection = new SQLiteConnection(path);
             mConnection.CreateTable<PositionData>();
             mCount = mConnection.Table<PositionData>().Count();
@@ -175,11 +178,17 @@ namespace ChessAI.Data
 
         public void AddEntry(PositionData data)
         {
+            using var addEntryEvent = OptickMacros.Event();
+
             mConnection.Insert(data);
             mCount++;
         }
 
-        public bool Contains(string position) => mConnection.Find<PositionData>(data => data.Position == position) is not null;
+        public bool Contains(string position)
+        {
+            using var containsEvent = OptickMacros.Event();
+            return mConnection.Find<PositionData>(data => data.Position == position) is not null;
+        }
 
         public int Count => mCount;
         public int InputCount => NetworkInputCount;
@@ -187,6 +196,8 @@ namespace ChessAI.Data
 
         public float[] GetInput(int index)
         {
+            using var getInputEvent = OptickMacros.Event();
+
             var data = mConnection.Table<PositionData>().ElementAt(index);
             using var board = Board.Create(data.Position);
 
@@ -230,6 +241,7 @@ namespace ChessAI.Data
 
         public float[] GetExpectedOutput(int index)
         {
+            using var getOutputEvent = OptickMacros.Event();
             var data = mConnection.Table<PositionData>().ElementAt(index);
 
             var outputs = new float[NetworkOutputCount];

@@ -215,6 +215,7 @@ namespace ChessAI.GUI
 
         public BatchRenderer(IGraphicsContext context, IRenderer renderer, IFrameSynchronizationManager synchronizationManager)
         {
+            using var constructorEvent = OptickMacros.Event();
             mDisposed = false;
 
             mContext = context;
@@ -308,6 +309,7 @@ namespace ChessAI.GUI
 
         private void Dispose(bool disposing)
         {
+            using var disposeEvent = OptickMacros.Event();
             if (mCurrentScene.Active)
             {
                 throw new InvalidOperationException("A scene is currently rendering!");
@@ -358,6 +360,7 @@ namespace ChessAI.GUI
 
         public void BeginFrame(ICommandList commandList)
         {
+            using var beginFrameEvent = OptickMacros.Event();
             if (mCommandList is not null)
             {
                 throw new InvalidOperationException("A frame is already active!");
@@ -383,6 +386,7 @@ namespace ChessAI.GUI
 
         public void EndFrame()
         {
+            using var endFrameEvent = OptickMacros.Event();
             if (mCommandList is null)
             {
                 throw new InvalidOperationException("No frame is active!");
@@ -405,6 +409,7 @@ namespace ChessAI.GUI
 
         public void BeginScene(Matrix4x4 viewProjection)
         {
+            using var beginSceneEvent = OptickMacros.Event();
             if (mCurrentScene.Active)
             {
                 throw new InvalidOperationException("A scene is already active!");
@@ -425,6 +430,7 @@ namespace ChessAI.GUI
 
         public void EndScene()
         {
+            using var endSceneEvent = OptickMacros.Event();
             if (!mCurrentScene.Active)
             {
                 throw new InvalidOperationException("No scene is active!");
@@ -467,6 +473,8 @@ namespace ChessAI.GUI
 
         private void BeginBatch()
         {
+            using var beginBatchEvent = OptickMacros.Event();
+
             mCurrentScene.CurrentBatch.Shapes.Clear();
             mCurrentScene.CurrentBatch.Textures.Clear();
             mCurrentScene.CurrentBatch.Shader = typeof(BatchRender);
@@ -474,6 +482,8 @@ namespace ChessAI.GUI
 
         private static IDeviceBuffer PopOrCreateBuffer(RendererVertexData vertexData, IGraphicsContext context, DeviceBufferUsage usage, int size)
         {
+            using var popOrCreateEvent = OptickMacros.Event();
+
             var buffer = vertexData.PopBuffer(usage, size);
             buffer ??= context.CreateDeviceBuffer(usage, size);
             return buffer;
@@ -481,6 +491,7 @@ namespace ChessAI.GUI
 
         private void SubmitScenePipeline(ulong renderTarget, Type shader, IPipeline pipeline)
         {
+            using var submitPipelineEvent = OptickMacros.Event();
             if (!mCurrentScene.UsedPipelines.TryGetValue(renderTarget, out List<SceneUsedPipelineData>? renderTargetPipelineData))
             {
                 renderTargetPipelineData = mCurrentScene.UsedPipelines[renderTarget] = new List<SceneUsedPipelineData>();
@@ -495,6 +506,7 @@ namespace ChessAI.GUI
 
         private void FlushBatch()
         {
+            using var flushBatchEvent = OptickMacros.Event();
             if (mCommandList is null)
             {
                 throw new InvalidOperationException("No frame is active!");
@@ -522,93 +534,125 @@ namespace ChessAI.GUI
             var indices = new List<uint>();
 
             int quadCount = 0;
-            foreach (var shape in mCurrentScene.CurrentBatch.Shapes)
+            using (OptickMacros.Event("Generate batch vertices"))
             {
-                shape.GetVertices(FrontFace, this, out var shapeVertices, out var shapeIndices, out int shapeQuadCount);
-
-                quadCount += shapeQuadCount;
-                indices.AddRange(shapeIndices.Select(index => (uint)(index + vertices.Count)));
-                vertices.AddRange(shapeVertices);
-            }
-
-            int vertexBufferSize = vertices.Count * Marshal.SizeOf<RendererVertex>();
-            var vertexStagingBuffer = PopOrCreateBuffer(frameData.VertexData, mContext, DeviceBufferUsage.Staging, vertexBufferSize);
-            var vertexBuffer = PopOrCreateBuffer(frameData.VertexData, mContext, DeviceBufferUsage.Vertex, vertexBufferSize);
-
-            int indexBufferSize = indices.Count * Marshal.SizeOf<uint>();
-            var indexStagingBuffer = PopOrCreateBuffer(frameData.VertexData, mContext, DeviceBufferUsage.Staging, indexBufferSize);
-            var indexBuffer = PopOrCreateBuffer(frameData.VertexData, mContext, DeviceBufferUsage.Index, indexBufferSize);
-
-            vertexStagingBuffer.CopyFromCPU(vertices.ToArray());
-            indexStagingBuffer.CopyFromCPU(indices.ToArray());
-
-            var transferQueue = mContext.Device.GetQueue(CommandQueueFlags.Transfer);
-            var transferList = transferQueue.Release();
-
-            transferList.Begin();
-            using (transferList.Context(GPUQueueType.Transfer))
-            {
-                vertexStagingBuffer.CopyBuffers(transferList, vertexBuffer, vertexBufferSize);
-                indexStagingBuffer.CopyBuffers(transferList, indexBuffer, indexBufferSize);
-            }
-
-            SignalSemaphore(transferList);
-            transferList.End();
-            transferQueue.Submit(transferList);
-
-            if (mCurrentScene.CurrentBatch.Textures.Count > BatchRender.MaxTextures)
-            {
-                throw new InvalidOperationException($"No more than {BatchRender.MaxTextures} textures may be rendered in a single batch!");
-            }
-
-            IPipeline? pipeline = null;
-            if (frameData.Pipelines.TryGetValue(renderTargetID, out RenderTargetPipelineData renderTargetPipelines))
-            {
-                if (renderTargetPipelines.Data.TryGetValue(mCurrentScene.CurrentBatch.Shader, out UsedPipelineData usedPipelines))
+                foreach (var shape in mCurrentScene.CurrentBatch.Shapes)
                 {
-                    usedPipelines.Used.TryDequeue(out pipeline);
+                    shape.GetVertices(FrontFace, this, out var shapeVertices, out var shapeIndices, out int shapeQuadCount);
+
+                    quadCount += shapeQuadCount;
+                    indices.AddRange(shapeIndices.Select(index => (uint)(index + vertices.Count)));
+                    vertices.AddRange(shapeVertices);
                 }
             }
 
-            pipeline ??= mLibrary.LoadPipeline(mCurrentScene.CurrentBatch.Shader, new PipelineDescription
-            {
-                RenderTarget = renderTarget,
-                Type = PipelineType.Graphics,
-                FrameCount = 1,
-                Specification = mSpecification ??= new RendererPipelineSpecification(mContext.ViewportFlipped)
-            });
+            int vertexBufferSize, indexBufferSize;
+            IDeviceBuffer vertexStagingBuffer, vertexBuffer;
+            IDeviceBuffer indexStagingBuffer, indexBuffer;
 
-            pipeline.Bind(mCameraBuffer, nameof(BatchRender.u_CameraBuffer));
-            for (int i = 0; i < BatchRender.MaxTextures; i++)
+            using (OptickMacros.Event("Create batch vertex & index buffers"))
             {
-                var texture = i < mCurrentScene.CurrentBatch.Textures.Count ? mCurrentScene.CurrentBatch.Textures[i] : mWhiteTexture;
-                pipeline.Bind(texture, nameof(BatchRender.u_Textures), i);
+                vertexBufferSize = vertices.Count * Marshal.SizeOf<RendererVertex>();
+                vertexStagingBuffer = PopOrCreateBuffer(frameData.VertexData, mContext, DeviceBufferUsage.Staging, vertexBufferSize);
+                vertexBuffer = PopOrCreateBuffer(frameData.VertexData, mContext, DeviceBufferUsage.Vertex, vertexBufferSize);
+
+                indexBufferSize = indices.Count * Marshal.SizeOf<uint>();
+                indexStagingBuffer = PopOrCreateBuffer(frameData.VertexData, mContext, DeviceBufferUsage.Staging, indexBufferSize);
+                indexBuffer = PopOrCreateBuffer(frameData.VertexData, mContext, DeviceBufferUsage.Index, indexBufferSize);
+
+                vertexStagingBuffer.CopyFromCPU(vertices.ToArray());
+                indexStagingBuffer.CopyFromCPU(indices.ToArray());
             }
 
-            // the "frame" parameter only applies to pipelines used multiple frames in a row
-            pipeline.Bind(mCommandList, 0);
-            vertexBuffer.BindVertices(mCommandList, 0);
-            indexBuffer.BindIndices(mCommandList, DeviceBufferIndexType.UInt32);
-            mRenderer.RenderIndexed(mCommandList, 0, indices.Count);
+            using (OptickMacros.Event("Submit vertex & index buffer transfer list"))
+            {
+                var transferQueue = mContext.Device.GetQueue(CommandQueueFlags.Transfer);
+                var transferList = transferQueue.Release();
 
-            mStats.DrawCalls++;
-            mStats.QuadCount += quadCount;
-            mStats.TexturesPushed += mCurrentScene.CurrentBatch.Textures.Count;
+                transferList.Begin();
+                using (transferList.Context(GPUQueueType.Transfer))
+                {
+                    vertexStagingBuffer.CopyBuffers(transferList, vertexBuffer, vertexBufferSize);
+                    indexStagingBuffer.CopyBuffers(transferList, indexBuffer, indexBufferSize);
+                }
 
-            mStats.VertexCount += vertices.Count;
-            mStats.IndexCount += indices.Count;
+                SignalSemaphore(transferList);
+                transferList.End();
+                transferQueue.Submit(transferList);
+            }
 
-            mCurrentScene.VertexData.PushBuffer(DeviceBufferUsage.Staging, vertexStagingBuffer);
-            mCurrentScene.VertexData.PushBuffer(DeviceBufferUsage.Staging, indexStagingBuffer);
+            IPipeline? pipeline = null;
+            using (OptickMacros.Event("Acquire pipeline"))
+            {
+                if (frameData.Pipelines.TryGetValue(renderTargetID, out RenderTargetPipelineData renderTargetPipelines))
+                {
+                    if (renderTargetPipelines.Data.TryGetValue(mCurrentScene.CurrentBatch.Shader, out UsedPipelineData usedPipelines))
+                    {
+                        usedPipelines.Used.TryDequeue(out pipeline);
+                    }
+                }
 
-            mCurrentScene.VertexData.PushBuffer(DeviceBufferUsage.Vertex, vertexBuffer);
-            mCurrentScene.VertexData.PushBuffer(DeviceBufferUsage.Index, indexBuffer);
+                pipeline ??= mLibrary.LoadPipeline(mCurrentScene.CurrentBatch.Shader, new PipelineDescription
+                {
+                    RenderTarget = renderTarget,
+                    Type = PipelineType.Graphics,
+                    FrameCount = 1,
+                    Specification = mSpecification ??= new RendererPipelineSpecification(mContext.ViewportFlipped)
+                });
+            }
 
-            SubmitScenePipeline(renderTargetID, mCurrentScene.CurrentBatch.Shader, pipeline);
+            using (OptickMacros.Event("Bind batch resources"))
+            {
+                if (mCurrentScene.CurrentBatch.Textures.Count > BatchRender.MaxTextures)
+                {
+                    throw new InvalidOperationException($"No more than {BatchRender.MaxTextures} textures may be rendered in a single batch!");
+                }
+
+                pipeline.Bind(mCameraBuffer, nameof(BatchRender.u_CameraBuffer));
+                for (int i = 0; i < BatchRender.MaxTextures; i++)
+                {
+                    var texture = i < mCurrentScene.CurrentBatch.Textures.Count ? mCurrentScene.CurrentBatch.Textures[i] : mWhiteTexture;
+                    pipeline.Bind(texture, nameof(BatchRender.u_Textures), i);
+                }
+            }
+
+            using (OptickMacros.Event("Submit batch render commands"))
+            {
+                using var gpuEvent = OptickMacros.GPUEvent("Render batch");
+
+                // the "frame" parameter only applies to pipelines used multiple frames in a row
+                pipeline.Bind(mCommandList, 0);
+                vertexBuffer.BindVertices(mCommandList, 0);
+                indexBuffer.BindIndices(mCommandList, DeviceBufferIndexType.UInt32);
+                mRenderer.RenderIndexed(mCommandList, 0, indices.Count);
+            }
+
+            using (OptickMacros.Event("Increment stats"))
+            {
+                mStats.DrawCalls++;
+                mStats.QuadCount += quadCount;
+                mStats.TexturesPushed += mCurrentScene.CurrentBatch.Textures.Count;
+
+                mStats.VertexCount += vertices.Count;
+                mStats.IndexCount += indices.Count;
+            }
+
+            using (OptickMacros.Event("Submit batch buffers & pipeline to scene"))
+            {
+                mCurrentScene.VertexData.PushBuffer(DeviceBufferUsage.Staging, vertexStagingBuffer);
+                mCurrentScene.VertexData.PushBuffer(DeviceBufferUsage.Staging, indexStagingBuffer);
+
+                mCurrentScene.VertexData.PushBuffer(DeviceBufferUsage.Vertex, vertexBuffer);
+                mCurrentScene.VertexData.PushBuffer(DeviceBufferUsage.Index, indexBuffer);
+
+                SubmitScenePipeline(renderTargetID, mCurrentScene.CurrentBatch.Shader, pipeline);
+            }
         }
 
         public void NextBatch()
         {
+            using var nextBatchEvent = OptickMacros.Event();
+
             FlushBatch();
             BeginBatch();
         }
@@ -616,6 +660,7 @@ namespace ChessAI.GUI
         public void SetShader<T>() => SetShader(typeof(T));
         public void SetShader(Type type)
         {
+            using var setShaderEvent = OptickMacros.Event();
             if (!mCurrentScene.Active)
             {
                 throw new InvalidOperationException("No scene is active!");
@@ -630,6 +675,7 @@ namespace ChessAI.GUI
 
         public void PushRenderTarget(IRenderTarget renderTarget, IFramebuffer framebuffer, Vector4 clearColor)
         {
+            using var pushEvent = OptickMacros.Event();
             if (mCommandList is null)
             {
                 throw new InvalidOperationException("No frame is active!");
@@ -657,6 +703,7 @@ namespace ChessAI.GUI
 
         public void PopRenderTarget()
         {
+            using var popEvent = OptickMacros.Event();
             if (mCommandList is null)
             {
                 throw new InvalidOperationException("No frame is active!");
@@ -671,6 +718,7 @@ namespace ChessAI.GUI
 
         public void BeginRender()
         {
+            using var beginRenderEvent = OptickMacros.Event();
             if (mCommandList is null)
             {
                 throw new InvalidOperationException("No frame is active!");
@@ -691,6 +739,7 @@ namespace ChessAI.GUI
 
         public int PushBatchTexture(ITexture texture)
         {
+            using var pushTextureEvent = OptickMacros.Event();
             if (!mCurrentScene.Active)
             {
                 throw new InvalidOperationException("No scene is active!");
@@ -708,6 +757,7 @@ namespace ChessAI.GUI
 
         public void Submit(IRenderedShape shape)
         {
+            using var submitEvent = OptickMacros.Event();
             if (!mCurrentScene.Active)
             {
                 throw new InvalidOperationException("No scene is active!");
@@ -718,6 +768,7 @@ namespace ChessAI.GUI
 
         private IDisposable GetSemaphore()
         {
+            using var getSemaphoreEvent = OptickMacros.Event();
             if (!mUsedSemaphores.TryDequeue(out IDisposable? semaphore))
             {
                 semaphore = mContext.CreateSemaphore();
@@ -728,6 +779,7 @@ namespace ChessAI.GUI
 
         public void SignalSemaphore(ICommandList commandList)
         {
+            using var signalEvent = OptickMacros.Event();
             var semaphore = GetSemaphore();
 
             commandList.AddSemaphore(semaphore, SemaphoreUsage.Signal);
@@ -763,6 +815,8 @@ namespace ChessAI.GUI
     {
         public RenderedQuad()
         {
+            using var constructorEvent = OptickMacros.Event();
+
             mCenter = Vector2.Zero;
             mHalfSize = Vector2.One * 0.5f;
             mRotation = 0f;
@@ -809,6 +863,7 @@ namespace ChessAI.GUI
 
         public void GetVertices(PipelineFrontFace frontFace, BatchRenderer renderer, out RendererVertex[] vertices, out int[] indices, out int quadCount)
         {
+            using var getVerticesEvent = OptickMacros.Event();
             quadCount = 1;
 
             var factors = new Vector2[]
@@ -824,39 +879,45 @@ namespace ChessAI.GUI
             float sin = MathF.Sin(mRotation);
 
             vertices = new RendererVertex[factors.Length];
-            for (int i = 0; i < vertices.Length; i++)
+            using (OptickMacros.Event("Compute vertices"))
             {
-                var factor = factors[i];
-                var scaledSize = factor * mHalfSize;
-
-                var uv = factor / 2f + Vector2.One * 0.5f;
-                vertices[i] = new RendererVertex
+                for (int i = 0; i < vertices.Length; i++)
                 {
-                    Position = mCenter + new Vector2
+                    var factor = factors[i];
+                    var scaledSize = factor * mHalfSize;
+
+                    var uv = factor / 2f + Vector2.One * 0.5f;
+                    vertices[i] = new RendererVertex
                     {
-                        X = scaledSize.X * cos - scaledSize.Y * sin,
-                        Y = scaledSize.X * sin + scaledSize.Y * cos
-                    },
-                    Color = mColor,
-                    UV = renderer.Context.FlipUVs ? new Vector2(uv.X, 1f - uv.Y) : uv,
-                    TextureIndex = textureIndex
-                };
+                        Position = mCenter + new Vector2
+                        {
+                            X = scaledSize.X * cos - scaledSize.Y * sin,
+                            Y = scaledSize.X * sin + scaledSize.Y * cos
+                        },
+                        Color = mColor,
+                        UV = renderer.Context.FlipUVs ? new Vector2(uv.X, 1f - uv.Y) : uv,
+                        TextureIndex = textureIndex
+                    };
+                }
             }
 
-            indices = frontFace switch
+            using (OptickMacros.Event("Determine indices"))
             {
-                PipelineFrontFace.Clockwise => new int[]
+                indices = frontFace switch
                 {
+                    PipelineFrontFace.Clockwise => new int[]
+                    {
                     3, 1, 0,
                     3, 2, 1
-                },
-                PipelineFrontFace.CounterClockwise => new int[]
-                {
+                    },
+                    PipelineFrontFace.CounterClockwise => new int[]
+                    {
                     0, 1, 3,
                     1, 2, 3
-                },
-                _ => throw new ArgumentException("Invalid front face!")
-            };
+                    },
+                    _ => throw new ArgumentException("Invalid front face!")
+                };
+            }
         }
 
         private Vector2 mCenter, mHalfSize;

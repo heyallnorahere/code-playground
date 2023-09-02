@@ -1,4 +1,5 @@
 using LibChess;
+using Optick.NET;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -18,6 +19,8 @@ namespace ChessAI
     {
         public UCIEngine(string command, bool log = false)
         {
+            using var constructorEvent = OptickMacros.Event();
+
             mDisposed = false;
             mInitialized = false;
             mLog = log;
@@ -84,6 +87,8 @@ namespace ChessAI
 
         private void Dispose(bool disposing)
         {
+            using var disposeEvent = OptickMacros.Event();
+
             mEngine.Kill();
             if (disposing)
             {
@@ -93,6 +98,7 @@ namespace ChessAI
 
         private void OnResponseReceived(string data)
         {
+            using var responseEvent = OptickMacros.Event();
             if (mLog)
             {
                 Console.WriteLine($"[UCI] {data}");
@@ -208,12 +214,15 @@ namespace ChessAI
 
         public string? GetOption(string optionName)
         {
+            using var getOptionEvent = OptickMacros.Event();
+
             mOptions.TryGetValue(optionName, out var optionValue);
             return optionValue;
         }
 
         public void WaitUntilReady()
         {
+            using var waitEvent = OptickMacros.Event();
             mUCIReady.WaitOne();
 
             SendCommand("isready");
@@ -222,6 +231,7 @@ namespace ChessAI
 
         public async Task WaitUntilReadyAsync()
         {
+            using var waitEvent = OptickMacros.Event();
             await Task.Run(mUCIReady.WaitOne);
 
             await SendCommandAsync("isready");
@@ -230,6 +240,8 @@ namespace ChessAI
 
         public void NewGame()
         {
+            using var newGameEvent = OptickMacros.Event();
+
             mUCIReady.WaitOne();
             WaitUntilReady();
 
@@ -238,6 +250,8 @@ namespace ChessAI
 
         public async Task NewGameAsync()
         {
+            using var newGameEvent = OptickMacros.Event();
+
             await Task.Run(mUCIReady.WaitOne);
             await WaitUntilReadyAsync();
 
@@ -246,6 +260,8 @@ namespace ChessAI
 
         public void SetPosition(string? position)
         {
+            using var setPositionEvent = OptickMacros.Event();
+
             mUCIReady.WaitOne();
             WaitUntilReady();
 
@@ -255,6 +271,8 @@ namespace ChessAI
 
         public async Task SetPositionAsync(string? position)
         {
+            using var setPositionEvent = OptickMacros.Event();
+
             await Task.Run(mUCIReady.WaitOne);
             await WaitUntilReadyAsync();
 
@@ -264,6 +282,8 @@ namespace ChessAI
 
         public EngineMove? Go(int depth)
         {
+            using var goEvent = OptickMacros.Event();
+
             mUCIReady.WaitOne();
             WaitUntilReady();
 
@@ -276,6 +296,8 @@ namespace ChessAI
 
         public async Task<EngineMove?> GoAsync(int depth)
         {
+            using var goEvent = OptickMacros.Event();
+
             await Task.Run(mUCIReady.WaitOne);
             await WaitUntilReadyAsync();
 
@@ -288,6 +310,8 @@ namespace ChessAI
 
         public void SendCommand(string command)
         {
+            using var sendCommandEvent = OptickMacros.Event();
+
             if (mLog)
             {
                 Console.WriteLine($"[UCI] > {command}");
@@ -299,6 +323,8 @@ namespace ChessAI
 
         public async Task SendCommandAsync(string command)
         {
+            using var sendCommandEvent = OptickMacros.Event();
+
             if (mLog)
             {
                 Console.WriteLine($"[UCI] > {command}");
@@ -337,6 +363,8 @@ namespace ChessAI
 
         public Pond(string command, int depth)
         {
+            using var constructorEvent = OptickMacros.Event();
+
             mDepth = depth;
             mFENQueue = new Queue<string?>();
 
@@ -374,6 +402,7 @@ namespace ChessAI
 
         private void Dispose(bool disposing)
         {
+            using var disposeEvent = OptickMacros.Event();
             Stop(true);
 
             if (disposing)
@@ -387,6 +416,7 @@ namespace ChessAI
 
         public void Start()
         {
+            using var startEvent = OptickMacros.Event();
             if (mRunning)
             {
                 return;
@@ -406,6 +436,8 @@ namespace ChessAI
 
         public void Stop(bool wait)
         {
+            using var stopEvent = OptickMacros.Event();
+
             mRunning = false;
             if (wait)
             {
@@ -415,6 +447,7 @@ namespace ChessAI
 
         public void Feed(string? fen)
         {
+            using var feedEvent = OptickMacros.Event();
             lock (mFENQueue)
             {
                 mFENQueue.Enqueue(fen);
@@ -423,6 +456,8 @@ namespace ChessAI
 
         private FENDigestionData Feed(UCIEngine engine, string? fen)
         {
+            using var feedEvent = OptickMacros.Event();
+
             engine.SetPosition(fen);
             var move = engine.Go(mDepth);
 
@@ -437,6 +472,12 @@ namespace ChessAI
         {
             Parallel.For(0, mFish.Length, i =>
             {
+                int fishNumber = i + 1;
+
+                using var threadScope = new ThreadScope($"Pond attendant arm #{fishNumber}");
+                using var armFeedingEvent = OptickMacros.Event("Arm feeding");
+                OptickMacros.Tag("Fish number", fishNumber);
+
                 do
                 {
                     while (mFENQueue.Count > 0)
@@ -450,6 +491,9 @@ namespace ChessAI
                                 continue;
                             }
                         }
+
+                        using var feedFishEvent = OptickMacros.Event("Feed fish");
+                        OptickMacros.Tag("Fish number", fishNumber);
 
                         var data = Feed(mFish[i], fen);
                         PositionDigested?.Invoke(data);
