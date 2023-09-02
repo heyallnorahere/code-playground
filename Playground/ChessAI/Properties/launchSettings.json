@@ -3,7 +3,21 @@
         "Pull & label dataset": {
             "commandName": "Executable",
             "executablePath": "$(TargetDir)\\CodePlayground.exe",
-            "commandLineArgs": "$(TargetPath)",
+            "commandLineArgs": "$(TargetPath) label 2015 september 12",
+            "workingDirectory": "$(TargetDir)",
+            "nativeDebugging": true
+        },
+        "Train model": {
+            "commandName": "Executable",
+            "executablePath": "$(TargetDir)\\CodePlayground.exe",
+            "commandLineArgs": "$(TargetPath) train 0.05",
+            "workingDirectory": "$(TargetDir)",
+            "nativeDebugging": true
+        },
+        "GUI": {
+            "commandName": "Executable",
+            "executablePath": "$(TargetDir)\\CodePlayground.exe",
+            "commandLineArgs": "$(TargetPath) gui",
             "workingDirectory": "$(TargetDir)",
             "nativeDebugging": true
         }

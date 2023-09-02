@@ -1,9 +1,17 @@
 using ChessAI.Data;
+using ChessAI.GUI;
 using CodePlayground;
 using CodePlayground.Graphics;
+using ImGuiNET;
 using MachineLearning;
+using Optick.NET;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.IO;
+using System.Numerics;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace ChessAI
@@ -256,18 +264,17 @@ namespace ChessAI
                 var encoding = Encoding.UTF8;
                 LoadNetwork(encoding);
                 Console.CancelKeyPress += (s, e) => SerializeNetwork(encoding);
+
+                mComputeLibrary = new ShaderLibrary(context, typeof(NetworkDispatcher).Assembly);
+                NetworkDispatcher.Initialize(mRenderer, mComputeLibrary);
             }
 
             InitializeOptick();
-            InitializeImGui();
-
             switch (mCommand)
             {
                 case CommandLineCommand.Train:
                     {
-                        var context = GraphicsContext!;
-
-                        mTrainer = new Trainer(context, mBatchSize, mLearningRate);
+                        mTrainer = new Trainer(GraphicsContext!, mBatchSize, mLearningRate);
                         mTrainer.OnBatchResults += results =>
                         {
                             Console.WriteLine($"Batch {++mCurrentBatch} results:");
@@ -279,21 +286,109 @@ namespace ChessAI
                                 mTrainer.Stop();
                             }
                         };
-
-                        mComputeLibrary = new ShaderLibrary(context, typeof(NetworkDispatcher).Assembly);
-                        NetworkDispatcher.Initialize(mRenderer!, mComputeLibrary);
                     }
 
                     break;
                 case CommandLineCommand.GUI:
-                    throw new NotImplementedException();
+                    {
+                        const int textureSize = 1024;
+                        const float minRadius = 0.2f;
+                        const float maxRadius = 0.3f;
+
+                        var imageData = new Rgba32[textureSize * textureSize];
+                        for (int y = 0; y < textureSize; y++)
+                        {
+                            float distanceY = (y - textureSize / 2f) / textureSize;
+                            int rowOffset = y * textureSize;
+
+                            for (int x = 0; x < textureSize; x++)
+                            {
+                                float distanceX = (x - textureSize / 2f) / textureSize;
+                                float distance = MathF.Sqrt(distanceX * distanceX + distanceY * distanceY);
+                                int pixelOffset = rowOffset + x;
+
+                                float alpha = (distance - minRadius) / (maxRadius - minRadius);
+                                imageData[pixelOffset] = new Rgba32
+                                {
+                                    R = byte.MaxValue,
+                                    G = byte.MaxValue,
+                                    B = byte.MaxValue,
+                                    A = (byte)float.Round(byte.MaxValue * float.Clamp(alpha, 0f, 1f))
+                                };
+                            }
+                        }
+
+                        var context = GraphicsContext!;
+                        var swapchain = context.Swapchain!;
+
+                        mBatchRenderer = new BatchRenderer(context, mRenderer!, swapchain);
+                        InitializeImGui();
+
+                        mGeneratedTexture = context.CreateDeviceImage(new DeviceImageInfo
+                        {
+                            Size = new Size(textureSize, textureSize),
+                            Usage = DeviceImageUsageFlags.CopySource | DeviceImageUsageFlags.CopyDestination | DeviceImageUsageFlags.Render,
+                            Format = DeviceImageFormat.RGBA8_UNORM
+                        }).CreateTexture(true);
+
+                        var queue = context.Device.GetQueue(CommandQueueFlags.Transfer);
+                        var commandList = queue.Release();
+
+                        var stagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, imageData.Length * Marshal.SizeOf<Rgba32>());
+                        stagingBuffer.CopyFromCPU(imageData);
+                        commandList.PushStagingObject(stagingBuffer);
+
+                        commandList.Begin();
+                        using (commandList.Context(GPUQueueType.Transfer))
+                        {
+                            var image = mGeneratedTexture.Image;
+                            var layout = image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
+
+                            image.TransitionLayout(commandList, image.Layout, layout);
+                            image.CopyFromBuffer(commandList, stagingBuffer, layout);
+
+                            image.Layout = layout;
+                        }
+
+                        mBatchRenderer.SignalSemaphore(commandList);
+                        commandList.End();
+                        queue.Submit(commandList);
+                    }
+
+                    break;
             }
         }
 
         private void OnInputReady() => InitializeImGui();
         private void InitializeImGui()
         {
-            // todo: initialize imgui
+            var window = RootWindow;
+            var inputContext = InputContext;
+            var graphicsContext = GraphicsContext;
+            var swapchain = graphicsContext?.Swapchain;
+
+            if (window is null ||
+                inputContext is null ||
+                graphicsContext is null ||
+                swapchain is null ||
+                mImGui is not null)
+            {
+                return;
+            }
+
+            var queue = graphicsContext.Device.GetQueue(CommandQueueFlags.Transfer);
+            var commandList = queue.Release();
+
+            commandList.Begin();
+            using (commandList.Context(GPUQueueType.Transfer))
+            {
+                mImGui = new ImGuiController(graphicsContext, inputContext, window, swapchain.RenderTarget, swapchain.FrameCount);
+                mImGui.LoadFontAtlas(commandList);
+            }
+
+            mBatchRenderer?.SignalSemaphore(commandList);
+            commandList.End();
+            queue.Submit(commandList);
         }
 
         private void OnClose()
@@ -305,17 +400,46 @@ namespace ChessAI
             mComputeLibrary?.Dispose();
             SerializeNetwork(Encoding.UTF8);
 
+            mBatchRenderer?.Dispose();
+            mImGui?.Dispose();
+            mGeneratedTexture?.Dispose();
+
             context?.Dispose();
         }
 
         private void OnUpdate(double delta)
         {
-            if (mCommand != CommandLineCommand.GUI)
+            if (mCommand != CommandLineCommand.GUI || mImGui is null)
             {
                 return;
             }
 
-            throw new NotImplementedException();
+            mImGui.NewFrame(delta);
+            ImGui.ShowDemoWindow();
+
+            {
+                ImGui.Begin("Batch renderer stats");
+
+                var io = ImGui.GetIO();
+                ImGui.TextUnformatted($"FPS: {io.Framerate}");
+
+                var stats = mBatchRenderer!.Stats;
+                var type = stats.GetType();
+                var fields = type.GetFields(BindingFlags.Instance | BindingFlags.Public);
+
+                var device = GraphicsContext!.Device;
+                var deviceInfo = device.DeviceInfo;
+                ImGui.TextUnformatted($"Device name: {deviceInfo.Name}");
+                ImGui.TextUnformatted($"Device type: {deviceInfo.Type}");
+
+                foreach (var field in fields)
+                {
+                    var value = field.GetValue(stats);
+                    ImGui.TextUnformatted($"{field.Name}: {value?.ToString() ?? "null"}");
+                }
+
+                ImGui.End();
+            }
         }
 
         private void OnRender(FrameRenderInfo renderInfo)
@@ -331,6 +455,8 @@ namespace ChessAI
                             lock (dataset)
                             {
                                 Console.WriteLine("Closing database...");
+                                Console.WriteLine($"Position count: {dataset.Count}");
+
                                 dataset.Dispose();
                             }
                         };
@@ -353,7 +479,61 @@ namespace ChessAI
 
                     break;
                 case CommandLineCommand.GUI:
-                    throw new NotImplementedException();
+                    {
+                        var commandList = renderInfo.CommandList!;
+                        var framebuffer = renderInfo.Framebuffer!;
+
+                        mBatchRenderer!.BeginFrame(commandList);
+                        mBatchRenderer.PushRenderTarget(renderInfo.RenderTarget!, framebuffer, new Vector4(0f, 0f, 0f, 1f));
+
+                        // test render
+                        {
+                            int width = framebuffer.Width;
+                            int height = framebuffer.Height;
+                            float aspectRatio = (float)width / height;
+
+                            var math = new MatrixMath(GraphicsContext!);
+                            var viewProjection = math.Orthographic(-0.5f * aspectRatio, 0.5f * aspectRatio, -0.5f, 0.5f, -1f, 1f);
+                            mBatchRenderer.BeginScene(viewProjection);
+
+                            mBatchRenderer.Submit(new RenderedQuad
+                            {
+                                Position = Vector2.Zero,
+                                Size = new Vector2(0.5f, 0.75f),
+                                RotationDegrees = 45f,
+                                Color = new Vector4(1f, 0f, 0f, 1f),
+                                Texture = null
+                            });
+
+                            mBatchRenderer.Submit(new RenderedQuad
+                            {
+                                Position = Vector2.Zero,
+                                Size = new Vector2(0.25f, 0.5f),
+                                RotationDegrees = -27.5f,
+                                Color = new Vector4(0f, 1f, 0f, 1f),
+                                Texture = null
+                            });
+
+                            mBatchRenderer.Submit(new RenderedQuad
+                            {
+                                Position = Vector2.Zero,
+                                Size = Vector2.One * 0.125f,
+                                RotationDegrees = 0f,
+                                Color = new Vector4(0f, 0f, 1f, 1f),
+                                Texture = mGeneratedTexture
+                            });
+
+                            mBatchRenderer.EndScene();
+                        }
+
+                        mBatchRenderer.BeginRender();
+                        mImGui?.Render(commandList, mRenderer!, GraphicsContext!.Swapchain!.CurrentFrame);
+
+                        mBatchRenderer.PopRenderTarget();
+                        mBatchRenderer.EndFrame();
+                    }
+
+                    break;
             }
         }
 
@@ -371,6 +551,10 @@ namespace ChessAI
         private int mBatchSize;
         private Trainer? mTrainer;
         private int mCurrentBatch;
+
+        private BatchRenderer? mBatchRenderer;
+        private ImGuiController? mImGui;
+        private ITexture? mGeneratedTexture;
 
         private ShaderLibrary? mComputeLibrary;
         private IRenderer? mRenderer;

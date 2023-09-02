@@ -1,9 +1,19 @@
 using Optick.NET;
 using System;
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace CodePlayground.Graphics
 {
+    [StructLayout(LayoutKind.Explicit, Pack = 1, Size = sizeof(float) * Size * Size)]
+    public struct BufferMatrix
+    {
+        public const int Size = 4;
+
+        [FieldOffset(0)]
+        public unsafe fixed float Data[Size * Size];
+    }
+
     public sealed class MatrixMath
     {
         public delegate Matrix4x4 PerspectiveFunction(float fov, float aspectRatio, float nearPlane, float farPlane);
@@ -14,12 +24,37 @@ namespace CodePlayground.Graphics
         {
             mLeftHanded = context.LeftHanded;
             mMinDepth = context.MinDepth;
+            mMatrixType = context.MatrixType;
         }
 
-        public MatrixMath(bool leftHanded, MinimumDepth minDepth)
+        public MatrixMath(bool leftHanded, MinimumDepth minDepth, MatrixType matrixType)
         {
             mLeftHanded = leftHanded;
             mMinDepth = minDepth;
+            mMatrixType = matrixType;
+        }
+
+        public unsafe BufferMatrix TranslateMatrix(Matrix4x4 matrix)
+        {
+            var dst = new BufferMatrix();
+            for (int c = 0; c < BufferMatrix.Size; c++)
+            {
+                for (int r = 0; r < BufferMatrix.Size; r++)
+                {
+                    // opengl and vulkan are column-major
+                    // directx and metal are row-major
+                    int index = mMatrixType switch
+                    {
+                        MatrixType.OpenGL => c * BufferMatrix.Size + r,
+                        MatrixType.DirectX => r * BufferMatrix.Size + c,
+                        _ => throw new ArgumentException("Invalid matrix type!")
+                    };
+
+                    dst.Data[index] = matrix[r, c];
+                }
+            }
+
+            return dst;
         }
 
         // https://github.com/StudioCherno/Hazel/blob/master/Hazel/src/Hazel/Math/Math.cpp#L15
@@ -283,5 +318,6 @@ namespace CodePlayground.Graphics
 
         private readonly bool mLeftHanded;
         private readonly MinimumDepth mMinDepth;
+        private readonly MatrixType mMatrixType;
     }
 }

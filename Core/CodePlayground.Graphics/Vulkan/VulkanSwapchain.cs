@@ -589,6 +589,18 @@ namespace CodePlayground.Graphics.Vulkan
             mCurrentSyncFrame = (mCurrentSyncFrame + 1) % mSyncObjects.Length;
         }
 
+        public bool ReleaseFrame(int frame, bool wait)
+        {
+            var fence = mImageFences[frame];
+            if (fence.Handle == 0)
+            {
+                return false;
+            }
+
+            var queue = mDevice.GetQueue(CommandQueueFlags.Graphics);
+            return queue.ReleaseFence(fence, wait);
+        }
+
         public IRenderTarget RenderTarget => mRenderPass;
         public IFramebuffer CurrentFramebuffer => mFramebuffers[mCurrentImage].Framebuffer;
         public int CurrentFrame => (int)mCurrentImage;

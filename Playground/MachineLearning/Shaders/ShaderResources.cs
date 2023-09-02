@@ -61,7 +61,7 @@ namespace MachineLearning.Shaders
         [ShaderFieldName(DeltaBufferName, UseClassName = false)]
         public static NetworkDataBuffer DeltaBuffer;
 
-        [Layout(PushConstants = true)]
+        [Layout(PushConstant = true)]
         [ShaderFieldName(PushConstantBufferName, UseClassName = false)]
         public static NetworkPushConstantData PushConstants;
     }

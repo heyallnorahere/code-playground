@@ -38,6 +38,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         public StageIODirection Direction { get; set; }
         public int Location { get; set; }
         public string TypeName { get; set; }
+        public bool Flat { get; set; }
     }
 
     internal struct ShaderResource
@@ -45,6 +46,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         public string Layout { get; set; }
         public Type ResourceType { get; set; }
         public ShaderResourceType Type { get; set; }
+        public int ArraySize { get; set; }
     }
 
     internal enum ConditionalType

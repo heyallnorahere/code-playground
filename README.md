@@ -1,16 +1,15 @@
 # code-playground
 
-.NET 7 framework for simple setup of graphics projects
+Graphics framework written for .NET 7.
 
 ## Building
 
-This project uses [.NET 7](https://dotnet.microsoft.com/en-us/download/dotnet/7.0).
 Building the project requires the following:
-- .NET 7 SDK
+- [.NET 7 SDK]((https://dotnet.microsoft.com/en-us/download/dotnet/7.0))
 - [CMake](https://cmake.org) >= v3.20
 - A C++ compiler that supports C++17
 
-Additionally, depending on your system, you may have to build and install the following projects to avoid runtime crashes:
+Additionally, depending on your system, you may need to build and install the following projects to avoid runtime crashes:
 - [GLFW](https://github.com/glfw/glfw) or `libglfw3` on Ubuntu/Debian
 - [Assimp](https://github.com/assimp/assimp) or `libassimp5` on Ubuntu/Debian
 - [shaderc](https://github.com/google/shaderc)

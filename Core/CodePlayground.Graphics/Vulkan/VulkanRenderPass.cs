@@ -37,9 +37,16 @@ namespace CodePlayground.Graphics.Vulkan
     // referencing https://github.com/yodasoda1219/lighting/blob/main/lib/src/RenderPass.h
     public sealed class VulkanRenderPass : IRenderTarget
     {
+        private static ulong sCurrentID;
+        static VulkanRenderPass()
+        {
+            sCurrentID = 0;
+        }
+
         internal unsafe VulkanRenderPass(VulkanDevice device, VulkanRenderPassInfo info)
         {
             using var constructorEvent = OptickMacros.Event();
+            mID = sCurrentID++;
 
             int colorAttachmentCount = info.ColorAttachments?.Count ?? 0;
             int depthAttachmentCount = info.DepthAttachment is null ? 0 : 1;
@@ -269,11 +276,13 @@ namespace CodePlayground.Graphics.Vulkan
 
         public IReadOnlyList<AttachmentType> AttachmentTypes => mAttachmentTypes;
         public RenderPass RenderPass => mRenderPass;
+        public ulong ID => mID;
 
         private readonly RenderPass mRenderPass;
         private readonly VulkanDevice mDevice;
 
         private readonly List<AttachmentType> mAttachmentTypes;
+        private readonly ulong mID;
         private bool mDisposed;
     }
 }

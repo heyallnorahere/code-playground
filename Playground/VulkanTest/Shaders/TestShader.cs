@@ -72,7 +72,7 @@ namespace VulkanTest.Shaders
         [Layout(Set = 0, Binding = 2)]
         public static BoneTransformBufferData u_BoneTransformBuffer;
 
-        [Layout(PushConstants = true)]
+        [Layout(PushConstant = true)]
         public static PushConstantData u_PushConstants;
 
         [Layout(Set = 1, Binding = 0)]

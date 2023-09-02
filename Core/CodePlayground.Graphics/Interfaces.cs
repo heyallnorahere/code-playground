@@ -171,6 +171,12 @@ namespace CodePlayground.Graphics
         NegativeOne
     }
 
+    public enum MatrixType
+    {
+        OpenGL,
+        DirectX
+    }
+
     public struct DeviceImageInfo
     {
         public Size Size { get; set; }
@@ -262,6 +268,7 @@ namespace CodePlayground.Graphics
         public bool LeftHanded { get; }
         public MinimumDepth MinDepth { get; }
         public bool ViewportFlipped { get; }
+        public MatrixType MatrixType { get; }
 
         public bool IsApplicable(WindowOptions options);
         public void Initialize(IWindow? window, GraphicsApplication application);
@@ -347,17 +354,24 @@ namespace CodePlayground.Graphics
     public interface IRenderTarget : IDisposable
     {
         public IReadOnlyList<AttachmentType> AttachmentTypes { get; }
+        public ulong ID { get; }
 
         public void BeginRender(ICommandList commandList, IFramebuffer framebuffer, Vector4 clearColor);
         public void EndRender(ICommandList commandList);
     }
 
-    public interface ISwapchain
+    public interface IFrameSynchronizationManager
+    {
+        public int CurrentFrame { get; }
+        public int FrameCount { get; }
+
+        public bool ReleaseFrame(int frame, bool wait);
+    }
+
+    public interface ISwapchain : IFrameSynchronizationManager
     {
         public IRenderTarget RenderTarget { get; }
         public IFramebuffer CurrentFramebuffer { get; }
-        public int CurrentFrame { get; }
-        public int FrameCount { get; }
 
         public bool VSync { get; set; }
         public int Width { get; }

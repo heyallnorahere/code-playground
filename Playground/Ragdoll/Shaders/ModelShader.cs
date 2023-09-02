@@ -69,7 +69,7 @@ namespace Ragdoll.Shaders
         public static CameraBufferData u_CameraBuffer;
         [Layout(Set = 0, Binding = 1)]
         public static BoneBufferData u_BoneBuffer;
-        [Layout(PushConstants = true)]
+        [Layout(PushConstant = true)]
         public static PushConstantData u_PushConstants;
 
         [Layout(Set = 1, Binding = 0)]

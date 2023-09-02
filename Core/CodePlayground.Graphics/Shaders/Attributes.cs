@@ -112,8 +112,9 @@ namespace CodePlayground.Graphics.Shaders
             Set = Binding = 0;
             ResourceType = ShaderResourceType.Uniform;
             Format = ShaderImageFormat.RGBA8;
-            PushConstants = false;
+            PushConstant = false;
             Shared = false;
+            Flat = false;
         }
 
         public int Location { get; set; }
@@ -121,8 +122,9 @@ namespace CodePlayground.Graphics.Shaders
         public int Binding { get; set; }
         public ShaderResourceType ResourceType { get; set; }
         public ShaderImageFormat Format { get; set; }
-        public bool PushConstants { get; set; }
+        public bool PushConstant { get; set; }
         public bool Shared { get; set; }
+        public bool Flat { get; set; }
     }
 
     [AttributeUsage(AttributeTargets.Field, AllowMultiple = false, Inherited = true)]

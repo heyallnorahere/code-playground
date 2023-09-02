@@ -265,7 +265,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             return expressionString;
         }
 
-        private void ParseSignatureStructure(Type type, ICustomAttributeProvider provider, string identifierExpression, Action<Type, string, string, int> callback)
+        private void ParseSignatureStructure(Type type, ICustomAttributeProvider provider, string identifierExpression, Action<Type, string, string, int, bool> callback)
         {
             using var parseEvent = OptickMacros.Event();
             OptickMacros.Tag("Parsed structure", type);
@@ -281,7 +281,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     throw new ArgumentException($"Invalid GLSL shader variable: {id}");
                 }
 
-                callback.Invoke(type, identifierExpression, variableName, -1);
+                callback.Invoke(type, identifierExpression, variableName, -1, false);
                 return;
             }
 
@@ -292,7 +292,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 if (attribute.Location >= 0)
                 {
                     string destination = identifierExpression.Replace('.', '_');
-                    callback.Invoke(type, identifierExpression, destination, attribute.Location);
+                    callback.Invoke(type, identifierExpression, destination, attribute.Location, attribute.Flat);
                     return;
                 }
             }
@@ -361,12 +361,12 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     ArraySize = arraySize
                 });
 
-                if (fieldType != type && fieldType.IsValueType && !fieldType.IsPrimitive)
+                if (elementType != type && elementType.IsValueType && !elementType.IsPrimitive)
                 {
-                    dependencyInfo.Dependencies.Add(fieldType);
+                    dependencyInfo.Dependencies.Add(elementType);
 
-                    ProcessType(fieldType, shaderType);
-                    mStructDependencies[fieldType].Dependents.Add(type);
+                    ProcessType(elementType, shaderType);
+                    mStructDependencies[elementType].Dependents.Add(type);
                 }
             }
         }
@@ -422,7 +422,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
                     if (entrypoint)
                     {
-                        ParseSignatureStructure(parameter.ParameterType, parameter, name, (fieldType, expression, destination, location) =>
+                        ParseSignatureStructure(parameter.ParameterType, parameter, name, (fieldType, expression, destination, location, flat) =>
                         {
                             string inputName;
                             if (location >= 0)
@@ -432,7 +432,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 {
                                     Direction = StageIODirection.In,
                                     Location = location,
-                                    TypeName = GetTypeName(fieldType, type, true)
+                                    TypeName = GetTypeName(fieldType, type, true),
+                                    Flat = flat
                                 });
                             }
                             else
@@ -455,7 +456,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     var returnType = method.ReturnType;
                     var attributes = method.ReturnTypeCustomAttributes;
 
-                    ParseSignatureStructure(returnType, attributes, string.Empty, (fieldType, expression, destination, location) =>
+                    ParseSignatureStructure(returnType, attributes, string.Empty, (fieldType, expression, destination, location, flat) =>
                     {
                         string outputName;
                         if (location >= 0)
@@ -465,7 +466,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             {
                                 Direction = StageIODirection.Out,
                                 Location = location,
-                                TypeName = GetTypeName(fieldType, type, true)
+                                TypeName = GetTypeName(fieldType, type, true),
+                                Flat = flat
                             });
                         }
                         else
@@ -641,10 +643,24 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                     else if (!mStageResources.ContainsKey(fieldName))
                                     {
                                         var fieldType = field.FieldType;
+
+                                        int arraySize = -1;
+                                        if (fieldType.IsArray)
+                                        {
+                                            var arraySizeAttribute = field.GetCustomAttribute<ArraySizeAttribute>();
+                                            if (arraySizeAttribute is null)
+                                            {
+                                                throw new InvalidOperationException("Implicitly-sized resource arrays are not permitted!");
+                                            }
+
+                                            arraySize = (int)arraySizeAttribute.Length;
+                                            fieldType = fieldType.GetElementType() ?? throw new InvalidOperationException("Invalid array type!");
+                                        }
+
                                         ProcessType(fieldType, type, false);
 
                                         string layoutString;
-                                        if (layoutAttribute.PushConstants)
+                                        if (layoutAttribute.PushConstant)
                                         {
                                             layoutString = "push_constant";
                                         }
@@ -674,7 +690,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                         {
                                             Layout = layoutString,
                                             ResourceType = fieldType,
-                                            Type = layoutAttribute.ResourceType
+                                            Type = layoutAttribute.ResourceType,
+                                            ArraySize = arraySize
                                         });
                                     }
                                 }
@@ -1376,7 +1393,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             };
 
             var functionOrder = new List<MethodInfo>();
-            while (evaluationList.Count() > 0)
+            while (evaluationList.Any())
             {
                 var newEvaluationList = new HashSet<MethodInfo>();
                 foreach (var method in evaluationList)
@@ -1466,7 +1483,12 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             foreach (string fieldName in mStageIO.Keys)
             {
                 var fieldData = mStageIO[fieldName];
+
                 var direction = fieldData.Direction.ToString().ToLower();
+                if (fieldData.Flat)
+                {
+                    direction += " flat";
+                }
 
                 builder.AppendLine($"layout(location = {fieldData.Location}) {direction} {fieldData.TypeName} {fieldName};");
             }
@@ -1512,7 +1534,13 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     builder.Append(typeName + ' ');
                 }
 
-                builder.AppendLine(fieldName + ';');
+                string resourceNameDeclaration = fieldName;
+                if (resourceData.ArraySize >= 0)
+                {
+                    resourceNameDeclaration += $"[{resourceData.ArraySize}]";
+                }
+
+                builder.AppendLine(resourceNameDeclaration + ';');
             }
 
             foreach (string fieldName in mSharedVariables.Keys)
