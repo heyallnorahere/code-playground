@@ -8,6 +8,7 @@ using Silk.NET.Windowing;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
+using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -85,7 +86,7 @@ namespace ChessAI.GUI
                 int rowOffset = y * Board.Width;
                 for (int x = 0; x < Board.Width; x++)
                 {
-                    var color = (x + y) % 2 != 0 ? Vector3.One : new Vector3(0f, 0.5f, 0f);
+                    var color = (x + y) % 2 == 0 ? Vector3.One : new Vector3(0f, 0.5f, 0f);
                     gridData[rowOffset + x] = new Rgba32
                     {
                         R = (byte)float.Round(color.X * byte.MaxValue),
@@ -93,6 +94,55 @@ namespace ChessAI.GUI
                         B = (byte)float.Round(color.Z * byte.MaxValue),
                         A = byte.MaxValue
                     };
+                }
+            }
+
+            const int textureCount = 12; // 6 white pieces, 6 black pieces
+            var pieceBuffers = new IDeviceBuffer[textureCount];
+            mPieceTextures = new ITexture[textureCount];
+
+            var pieceTypes = Enum.GetValues<PieceType>();
+            var playerColors = Enum.GetValues<PlayerColor>();
+            var assembly = GetType().Assembly;
+
+            foreach (var type in pieceTypes)
+            {
+                if (type is PieceType.None)
+                {
+                    continue;
+                }
+
+                foreach (var color in playerColors)
+                {
+                    int index = GetPieceTextureIndex(new PieceInfo
+                    {
+                        Color = color,
+                        Type = type
+                    });
+
+                    string resourceName = $"ChessAI.Resources.Pieces.{color}_{type}.png";
+                    var stream = assembly.GetManifestResourceStream(resourceName);
+
+                    if (stream is null)
+                    {
+                        throw new FileNotFoundException("Failed to find piece texture!");
+                    }
+
+                    var image = Image.Load<Rgba32>(stream);
+                    var imageData = new Rgba32[image.Width * image.Height];
+
+                    int imageBufferSize = imageData.Length * Marshal.SizeOf<Rgba32>();
+                    var imageBuffer = pieceBuffers[index] = mContext.CreateDeviceBuffer(DeviceBufferUsage.Staging, imageBufferSize);
+
+                    image.CopyPixelDataTo(imageData);
+                    imageBuffer.CopyFromCPU(imageData);
+
+                    mPieceTextures[index] = mContext.CreateDeviceImage(new DeviceImageInfo
+                    {
+                        Size = image.Size,
+                        Usage = DeviceImageUsageFlags.CopySource | DeviceImageUsageFlags.CopyDestination | DeviceImageUsageFlags.Render,
+                        Format = DeviceImageFormat.RGBA8_UNORM
+                    }).CreateTexture(true);
                 }
             }
 
@@ -108,13 +158,24 @@ namespace ChessAI.GUI
             commandList.Begin();
             using (commandList.Context(GPUQueueType.Transfer))
             {
-                var image = mGridTexture.Image;
-                var layout = image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
+                var gridImage = mGridTexture.Image;
+                var layout = gridImage.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
 
-                image.TransitionLayout(commandList, image.Layout, layout);
-                image.CopyFromBuffer(commandList, stagingBuffer, layout);
+                gridImage.TransitionLayout(commandList, gridImage.Layout, layout);
+                gridImage.CopyFromBuffer(commandList, stagingBuffer, layout);
 
-                image.Layout = layout;
+                gridImage.Layout = layout;
+                for (int i = 0; i < textureCount; i++)
+                {
+                    var pieceStagingBuffer = pieceBuffers[i];
+                    commandList.PushStagingObject(pieceStagingBuffer);
+
+                    var pieceImage = mPieceTextures[i].Image;
+                    pieceImage.TransitionLayout(commandList, pieceImage.Layout, layout);
+                    pieceImage.CopyFromBuffer(commandList, pieceStagingBuffer, layout);
+
+                    pieceImage.Layout = layout;
+                }
             }
 
             commandList.AddSemaphore(mSemaphore, SemaphoreUsage.Signal);
@@ -152,6 +213,11 @@ namespace ChessAI.GUI
 
                 mGridTexture.Dispose();
                 mSemaphore.Dispose();
+
+                foreach (var texture in mPieceTextures)
+                {
+                    texture.Dispose();
+                }
             }
         }
 
@@ -192,43 +258,46 @@ namespace ChessAI.GUI
                 ImGui.End();
             }
 
-            if (!ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow | ImGuiHoveredFlags.AllowWhenBlockedByPopup) && !ImGui.IsAnyItemHovered())
+            using (OptickMacros.Category("Mouse events", Category.Input))
             {
-                var size = mWindow.FramebufferSize;
-                int min = int.Min(size.X, size.Y);
-                int max = int.Max(size.X, size.Y);
-
-                float aspectRatio = (float)max / min;
-                float offset = (aspectRatio - 1f) / 2f;
-
-                var clickOffset = Vector2.Zero;
-                if (size.X > size.Y)
+                if (!ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow | ImGuiHoveredFlags.AllowWhenBlockedByPopup) && !ImGui.IsAnyItemHovered())
                 {
-                    clickOffset.X = offset;
-                }
-                else
-                {
-                    clickOffset.Y = offset;
-                }
+                    var size = mWindow.FramebufferSize;
+                    int min = int.Min(size.X, size.Y);
+                    int max = int.Max(size.X, size.Y);
 
-                var clickPosition = mMousePosition / min - clickOffset;
-                if (clickPosition.X >= 0f && clickPosition.X <= 1f &&
-                    clickPosition.Y >= 0f && clickPosition.Y <= 1f)
-                {
-                    if (mMouseDown)
+                    float aspectRatio = (float)max / min;
+                    float offset = (aspectRatio - 1f) / 2f;
+
+                    var clickOffset = Vector2.Zero;
+                    if (size.X > size.Y)
                     {
-                        Console.WriteLine($"Mouse clicked at {clickPosition}");
+                        clickOffset.X = offset;
+                    }
+                    else
+                    {
+                        clickOffset.Y = offset;
                     }
 
-                    if (mMouseUp)
+                    var clickPosition = mMousePosition / min - clickOffset;
+                    if (clickPosition.X >= 0f && clickPosition.X <= 1f &&
+                        clickPosition.Y >= 0f && clickPosition.Y <= 1f)
                     {
-                        Console.WriteLine($"Mouse released at {clickPosition}");
+                        if (mMouseDown)
+                        {
+                            Console.WriteLine($"Mouse clicked at {clickPosition}");
+                        }
+
+                        if (mMouseUp)
+                        {
+                            Console.WriteLine($"Mouse released at {clickPosition}");
+                        }
                     }
                 }
+
+                mMouseDown = false;
+                mMouseUp = false;
             }
-
-            mMouseDown = false;
-            mMouseUp = false;
         }
 
         public void Render(BatchRenderer renderer)
@@ -266,10 +335,35 @@ namespace ChessAI.GUI
             {
                 Position = renderOffset + Vector2.One * 0.5f,
                 Size = Vector2.One,
-                RotationDegrees = 0f,
+                RotationRadians = 0f,
                 Color = Vector4.One,
                 Texture = mGridTexture
             });
+
+            using (OptickMacros.Event("Render pieces"))
+            {
+                for (int y = 0; y < Board.Width; y++)
+                {
+                    for (int x = 0; x < Board.Width; x++)
+                    {
+                        var boardPosition = new Coord(x, mColor != PlayerColor.White ? (Board.Width - y - 1) : y);
+                        if (mBoard.GetPiece(boardPosition, out PieceInfo piece))
+                        {
+                            var position = new Vector2(x + 0.5f, y + 0.5f) * TileWidth + renderOffset;
+                            var texture = GetPieceTexture(piece);
+
+                            renderer.Submit(new RenderedQuad
+                            {
+                                Position = position,
+                                Size = Vector2.One * TileWidth * 0.85f,
+                                RotationRadians = 0f,
+                                Color = Vector4.One,
+                                Texture = texture
+                            });
+                        }
+                    }
+                }
+            }
 
             renderer.EndScene();
         }
@@ -278,6 +372,23 @@ namespace ChessAI.GUI
         {
             mBoard.Dispose();
             mEngine.Board = mBoard = Board.Create(fen) ?? throw new ArgumentException("Invalid FEN string!");
+        }
+
+        private static int GetPieceTextureIndex(PieceInfo piece)
+        {
+            int index = (int)piece.Type - 1;
+            if (piece.Color != PlayerColor.White && piece.Type != PieceType.None)
+            {
+                index += 6; // total number of pieces
+            }
+
+            return index;
+        }
+
+        private ITexture GetPieceTexture(PieceInfo piece)
+        {
+            int index = GetPieceTextureIndex(piece);
+            return mPieceTextures[index];
         }
 
         private readonly IGraphicsContext mContext;
@@ -290,6 +401,7 @@ namespace ChessAI.GUI
         private Board mBoard;
         private readonly Engine mEngine;
 
+        private readonly ITexture[] mPieceTextures;
         private readonly ITexture mGridTexture;
         private readonly IDisposable mSemaphore;
         private bool mUseSemaphore;

@@ -14,6 +14,10 @@
   <ItemGroup>
     <PackageReference Include="sqlite-net-pcl" Version="$(SQLiteNETVersion)" />
     <PackageReference Include="ZstdNet" Version="$(ZstdNetVersion)" />
+
+    <Resources Include="Resources\**\*" />
+    <Content Remove="@(Resources)" />
+    <EmbeddedResource Include="@(Resources)" />
   </ItemGroup>
 
 </Project>
