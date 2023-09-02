@@ -206,37 +206,7 @@ namespace ChessAI.Data
                 throw new InvalidOperationException("Failed to interpret FEN!");
             }
 
-            var input = new float[NetworkInputCount];
-            for (int y = 0; y < Board.Width; y++)
-            {
-                int rankOffset = y * Board.Width;
-                for (int x = 0; x < Board.Width; x++)
-                {
-                    bool pieceExists = board.GetPiece((x, y), out PieceInfo piece);
-
-                    int pieceId = (int)piece.Type;
-                    if (pieceExists && piece.Color == PlayerColor.Black)
-                    {
-                        pieceId += Enum.GetValues<PieceType>().Length - 1;
-                    }
-
-                    int fileOffset = rankOffset + x;
-                    input[fileOffset] = pieceId;
-                }
-            }
-
-            int dataOffset = Board.Width * Board.Width;
-            var currentTurn = board.CurrentTurn;
-            var enPassantTarget = board.EnPassantTarget;
-
-            var whiteCastling = board.GetCastlingAvailability(PlayerColor.White);
-            var blackCastling = board.GetCastlingAvailability(PlayerColor.Black);
-
-            input[dataOffset] = (int)currentTurn;
-            input[dataOffset + 1] = (int)whiteCastling | ((int)blackCastling << 2);
-            input[dataOffset + 2] = enPassantTarget is null ? -1 : (enPassantTarget.Value.Y * Board.Width + enPassantTarget.Value.X);
-
-            return input;
+            return board.GetNetworkInput();
         }
 
         public float[] GetExpectedOutput(int index)

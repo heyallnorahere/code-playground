@@ -304,75 +304,24 @@ namespace ChessAI
                     {
                         using var initEvent = OptickMacros.Event("GUI initialization");
 
-                        const int textureSize = 1024;
-                        const float minRadius = 0.2f;
-                        const float maxRadius = 0.3f;
-
-                        var imageData = new Rgba32[textureSize * textureSize];
-                        for (int y = 0; y < textureSize; y++)
-                        {
-                            float distanceY = (y - textureSize / 2f) / textureSize;
-                            int rowOffset = y * textureSize;
-
-                            for (int x = 0; x < textureSize; x++)
-                            {
-                                float distanceX = (x - textureSize / 2f) / textureSize;
-                                float distance = MathF.Sqrt(distanceX * distanceX + distanceY * distanceY);
-                                int pixelOffset = rowOffset + x;
-
-                                float alpha = (distance - minRadius) / (maxRadius - minRadius);
-                                imageData[pixelOffset] = new Rgba32
-                                {
-                                    R = byte.MaxValue,
-                                    G = byte.MaxValue,
-                                    B = byte.MaxValue,
-                                    A = (byte)float.Round(byte.MaxValue * float.Clamp(alpha, 0f, 1f))
-                                };
-                            }
-                        }
-
                         var context = GraphicsContext!;
                         var swapchain = context.Swapchain!;
 
                         mBatchRenderer = new BatchRenderer(context, mRenderer!, swapchain);
                         InitializeImGui();
-
-                        mGeneratedTexture = context.CreateDeviceImage(new DeviceImageInfo
-                        {
-                            Size = new Size(textureSize, textureSize),
-                            Usage = DeviceImageUsageFlags.CopySource | DeviceImageUsageFlags.CopyDestination | DeviceImageUsageFlags.Render,
-                            Format = DeviceImageFormat.RGBA8_UNORM
-                        }).CreateTexture(true);
-
-                        var queue = context.Device.GetQueue(CommandQueueFlags.Transfer);
-                        var commandList = queue.Release();
-
-                        var stagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, imageData.Length * Marshal.SizeOf<Rgba32>());
-                        stagingBuffer.CopyFromCPU(imageData);
-                        commandList.PushStagingObject(stagingBuffer);
-
-                        commandList.Begin();
-                        using (commandList.Context(GPUQueueType.Transfer))
-                        {
-                            var image = mGeneratedTexture.Image;
-                            var layout = image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
-
-                            image.TransitionLayout(commandList, image.Layout, layout);
-                            image.CopyFromBuffer(commandList, stagingBuffer, layout);
-
-                            image.Layout = layout;
-                        }
-
-                        mBatchRenderer.SignalSemaphore(commandList);
-                        commandList.End();
-                        queue.Submit(commandList);
+                        InitializeChessController();
                     }
 
                     break;
             }
         }
 
-        private void OnInputReady() => InitializeImGui();
+        private void OnInputReady()
+        {
+            InitializeImGui();
+            InitializeChessController();
+        }
+
         private void InitializeImGui()
         {
             using var initEvent = OptickMacros.Event();
@@ -406,6 +355,26 @@ namespace ChessAI
             queue.Submit(commandList);
         }
 
+        private void InitializeChessController()
+        {
+            using var initEvent = OptickMacros.Event();
+
+            var window = RootWindow;
+            var inputContext = InputContext;
+            var graphicsContext = GraphicsContext;
+            
+            if (window is null ||
+                inputContext is null ||
+                graphicsContext is null ||
+                mNetwork is null ||
+                mChessController is not null)
+            {
+                return;
+            }
+
+            mChessController = new ChessController(inputContext, window, graphicsContext, mNetwork);
+        }
+
         private void OnClose()
         {
             using var closeEvent = OptickMacros.Event();
@@ -419,7 +388,7 @@ namespace ChessAI
 
             mBatchRenderer?.Dispose();
             mImGui?.Dispose();
-            mGeneratedTexture?.Dispose();
+            mChessController?.Dispose();
 
             context?.Dispose();
         }
@@ -433,8 +402,6 @@ namespace ChessAI
             }
 
             mImGui.NewFrame(delta);
-            ImGui.ShowDemoWindow();
-
             using (OptickMacros.Event("Batch renderer stats menu"))
             {
                 ImGui.Begin("Batch renderer stats");
@@ -459,6 +426,8 @@ namespace ChessAI
 
                 ImGui.End();
             }
+
+            mChessController?.Update();
         }
 
         private void OnRender(FrameRenderInfo renderInfo)
@@ -507,45 +476,7 @@ namespace ChessAI
                         mBatchRenderer!.BeginFrame(commandList);
                         mBatchRenderer.PushRenderTarget(renderInfo.RenderTarget!, framebuffer, new Vector4(0f, 0f, 0f, 1f));
 
-                        using (OptickMacros.Event("Test render"))
-                        {
-                            int width = framebuffer.Width;
-                            int height = framebuffer.Height;
-                            float aspectRatio = (float)width / height;
-
-                            var math = new MatrixMath(GraphicsContext!);
-                            var viewProjection = math.Orthographic(-0.5f * aspectRatio, 0.5f * aspectRatio, -0.5f, 0.5f, -1f, 1f);
-                            mBatchRenderer.BeginScene(viewProjection);
-
-                            mBatchRenderer.Submit(new RenderedQuad
-                            {
-                                Position = Vector2.Zero,
-                                Size = new Vector2(0.5f, 0.75f),
-                                RotationDegrees = 45f,
-                                Color = new Vector4(1f, 0f, 0f, 1f),
-                                Texture = null
-                            });
-
-                            mBatchRenderer.Submit(new RenderedQuad
-                            {
-                                Position = Vector2.Zero,
-                                Size = new Vector2(0.25f, 0.5f),
-                                RotationDegrees = -27.5f,
-                                Color = new Vector4(0f, 1f, 0f, 1f),
-                                Texture = null
-                            });
-
-                            mBatchRenderer.Submit(new RenderedQuad
-                            {
-                                Position = Vector2.Zero,
-                                Size = Vector2.One * 0.125f,
-                                RotationDegrees = 0f,
-                                Color = new Vector4(0f, 0f, 1f, 1f),
-                                Texture = mGeneratedTexture
-                            });
-
-                            mBatchRenderer.EndScene();
-                        }
+                        mChessController?.Render(mBatchRenderer);
 
                         mBatchRenderer.BeginRender();
                         mImGui?.Render(commandList, mRenderer!, GraphicsContext!.Swapchain!.CurrentFrame);
@@ -575,7 +506,7 @@ namespace ChessAI
 
         private BatchRenderer? mBatchRenderer;
         private ImGuiController? mImGui;
-        private ITexture? mGeneratedTexture;
+        private ChessController? mChessController;
 
         private ShaderLibrary? mComputeLibrary;
         private IRenderer? mRenderer;

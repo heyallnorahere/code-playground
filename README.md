@@ -19,7 +19,7 @@ Additionally, depending on your system, you may need to build and install the fo
 - [Optick](https://github.com/bombomby/optick) with Vulkan & (Windows) DirectX support ([Vulkan validation fix](https://github.com/qbojj/optick/tree/fix-vulkan))
 - `coptick` from my [.NET Optick bindings](https://github.com/yodasoda1219/Optick.NET)
 
-This project uses packages from GitHub package registries. As such, it's required that you use a personal access token. To create an appropriate config file for NuGet, paste the following template into a `nuget.config` file in the root directory, and replace the appropriate sections:
+This project uses packages from GitHub package registries. As such, it's required that you use a personal access token to pull packages. To create an appropriate config file for NuGet, paste the following template into a `nuget.config` file in the root directory of the respository, and replace the appropriate sections:
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>
@@ -30,7 +30,7 @@ This project uses packages from GitHub package registries. As such, it's require
         <github>
             <add key="Username" value="YOUR_USERNAME" />
             <add key="ClearTextPassword" value="YOUR_ACCESS_TOKEN" />
-            <!-- token must have the read:packages permission -->
+            <!-- token must have the "read:packages" permission -->
         </github>
     </packageSourceCredentials>
 </configuration>
@@ -38,8 +38,10 @@ This project uses packages from GitHub package registries. As such, it's require
 
 To build the project, simply run:
 ```bash
-# assuming the .NET and CMake executables are on the PATH
+# making sure we have all of the submodules up to date
 # where $ROOT_DIR is the root directory of the repository
+cd $ROOT_DIR
+git submodule update --init --recursive
 
 # building libchess
 # where $GENERATOR is the build system for your machine

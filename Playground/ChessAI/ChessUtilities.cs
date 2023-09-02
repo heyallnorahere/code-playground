@@ -1,6 +1,8 @@
+using ChessAI.Data;
 using LibChess;
 using Optick.NET;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace ChessAI
@@ -190,6 +192,89 @@ namespace ChessAI
             {
                 Position = candidates[0],
                 Destination = destination
+            };
+        }
+
+        public static float[] GetNetworkInput(this Board board)
+        {
+            var input = new float[Dataset.NetworkInputCount];
+            for (int y = 0; y < Board.Width; y++)
+            {
+                int rankOffset = y * Board.Width;
+                for (int x = 0; x < Board.Width; x++)
+                {
+                    bool pieceExists = board.GetPiece((x, y), out PieceInfo piece);
+
+                    int pieceId = (int)piece.Type;
+                    if (pieceExists && piece.Color == PlayerColor.Black)
+                    {
+                        pieceId += Enum.GetValues<PieceType>().Length - 1;
+                    }
+
+                    int fileOffset = rankOffset + x;
+                    input[fileOffset] = pieceId;
+                }
+            }
+
+            int dataOffset = Board.Width * Board.Width;
+            var currentTurn = board.CurrentTurn;
+            var enPassantTarget = board.EnPassantTarget;
+
+            var whiteCastling = board.GetCastlingAvailability(PlayerColor.White);
+            var blackCastling = board.GetCastlingAvailability(PlayerColor.Black);
+
+            input[dataOffset] = (int)currentTurn;
+            input[dataOffset + 1] = (int)whiteCastling | ((int)blackCastling << 2);
+            input[dataOffset + 2] = enPassantTarget is null ? -1 : (enPassantTarget.Value.Y * Board.Width + enPassantTarget.Value.X);
+
+            return input;
+        }
+
+        public static int FindBestElement<T>(this IReadOnlyList<T> data) where T : IComparable<T> => data.FindBestElement((a, b) => a.CompareTo(b));
+        public static int FindBestElement<T>(this IReadOnlyList<T> data, Comparison<T> comparison)
+        {
+            int result = -1;
+            for (int i = 0; i < data.Count; i++)
+            {
+                if (result >= 0 && comparison.Invoke(data[i], data[result]) <= 0)
+                {
+                    continue;
+                }
+
+                result = i;
+            }
+
+            return result;
+        }
+
+        public static EngineMove ParseNetworkOutput(float[] output)
+        {
+            if (output.Length != Dataset.NetworkOutputCount)
+            {
+                throw new ArgumentException("Output length mismatch!");
+            }
+
+            // if the confidence of promotion is less than 50%, we assume it just doesn't intend to promote
+            const int promotionOffset = Board.Width * 4;
+            int promotionIndex = output[promotionOffset..].FindBestElement();
+            var promotion = promotionIndex < 0 || output[promotionOffset + promotionIndex] < 0.5f ? PieceType.None : (PieceType)((int)PieceType.Queen + promotionIndex);
+
+            return new EngineMove
+            {
+                Move = new Move
+                {
+                    Position = new Coord
+                    {
+                        X = output[..Board.Width].FindBestElement(),
+                        Y = output[Board.Width..(Board.Width * 2)].FindBestElement()
+                    },
+                    Destination = new Coord
+                    {
+                        X = output[(Board.Width * 2)..(Board.Width * 3)].FindBestElement(),
+                        Y = output[(Board.Width * 3)..(Board.Width * 4)].FindBestElement()
+                    }
+                },
+                Promotion = promotion
             };
         }
     }

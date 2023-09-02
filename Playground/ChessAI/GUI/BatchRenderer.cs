@@ -41,7 +41,7 @@ namespace ChessAI.GUI
 
     public interface IRenderedShape
     {
-        public void GetVertices(PipelineFrontFace frontFace, BatchRenderer renderer, out RendererVertex[] vertices, out int[] indices, out int quadCount);
+        public void GetVertices(PipelineFrontFace frontFace, BatchRenderer renderer, IList<RendererVertex> vertices, IList<uint> indices, out int quadCount);
     }
 
     internal struct RenderBatch
@@ -194,12 +194,7 @@ namespace ChessAI.GUI
         }
 
         public PipelineBlendMode BlendMode => PipelineBlendMode.Default;
-        public PipelineFrontFace FrontFace => !mViewportFlipped ? BatchRenderer.FrontFace : BatchRenderer.FrontFace switch
-        {
-            PipelineFrontFace.Clockwise => PipelineFrontFace.CounterClockwise,
-            PipelineFrontFace.CounterClockwise => PipelineFrontFace.Clockwise,
-            _ => throw new ArgumentException("Invalid front face!")
-        };
+        public PipelineFrontFace FrontFace => BatchRenderer.FrontFace;
 
         public bool EnableDepthTesting => false;
         public bool DisableCulling => false;
@@ -538,11 +533,16 @@ namespace ChessAI.GUI
             {
                 foreach (var shape in mCurrentScene.CurrentBatch.Shapes)
                 {
-                    shape.GetVertices(FrontFace, this, out var shapeVertices, out var shapeIndices, out int shapeQuadCount);
+                    int previousIndexCount = indices.Count;
+                    int previousVertexCount = vertices.Count;
 
+                    shape.GetVertices(FrontFace, this, vertices, indices, out int shapeQuadCount);
                     quadCount += shapeQuadCount;
-                    indices.AddRange(shapeIndices.Select(index => (uint)(index + vertices.Count)));
-                    vertices.AddRange(shapeVertices);
+
+                    for (int i = previousIndexCount; i < indices.Count; i++)
+                    {
+                        indices[i] += (uint)previousVertexCount;
+                    }
                 }
             }
 
@@ -592,13 +592,21 @@ namespace ChessAI.GUI
                     }
                 }
 
-                pipeline ??= mLibrary.LoadPipeline(mCurrentScene.CurrentBatch.Shader, new PipelineDescription
+                if (pipeline is null)
                 {
-                    RenderTarget = renderTarget,
-                    Type = PipelineType.Graphics,
-                    FrameCount = 1,
-                    Specification = mSpecification ??= new RendererPipelineSpecification(mContext.ViewportFlipped)
-                });
+                    pipeline = mLibrary.LoadPipeline(mCurrentScene.CurrentBatch.Shader, new PipelineDescription
+                    {
+                        RenderTarget = renderTarget,
+                        Type = PipelineType.Graphics,
+                        FrameCount = 1,
+                        Specification = mSpecification ??= new RendererPipelineSpecification(mContext.ViewportFlipped)
+                    });
+                    
+                    for (int i = 0; i < BatchRender.MaxTextures; i++)
+                    {
+                        pipeline.Bind(mWhiteTexture, nameof(BatchRender.u_Textures), i);
+                    }
+                }
             }
 
             using (OptickMacros.Event("Bind batch resources"))
@@ -609,9 +617,9 @@ namespace ChessAI.GUI
                 }
 
                 pipeline.Bind(mCameraBuffer, nameof(BatchRender.u_CameraBuffer));
-                for (int i = 0; i < BatchRender.MaxTextures; i++)
+                for (int i = 0; i < mCurrentScene.CurrentBatch.Textures.Count; i++)
                 {
-                    var texture = i < mCurrentScene.CurrentBatch.Textures.Count ? mCurrentScene.CurrentBatch.Textures[i] : mWhiteTexture;
+                    var texture = mCurrentScene.CurrentBatch.Textures[i];
                     pipeline.Bind(texture, nameof(BatchRender.u_Textures), i);
                 }
             }
@@ -789,6 +797,7 @@ namespace ChessAI.GUI
         public RendererStats Stats => mStats;
         public IGraphicsContext Context => mContext;
         public ITexture WhiteTexture => mWhiteTexture;
+        public ICommandList? ComamndList => mCommandList;
 
         private readonly List<IDisposable> mSignaledSemaphores;
         private readonly Queue<IDisposable> mUsedSemaphores;
@@ -813,6 +822,18 @@ namespace ChessAI.GUI
 
     public sealed class RenderedQuad : IRenderedShape
     {
+        private static readonly Vector2[] sFactors;
+        static RenderedQuad()
+        {
+            sFactors = new Vector2[]
+            {
+                new Vector2(1f, 1f),
+                new Vector2(1f, -1f),
+                new Vector2(-1f, -1f),
+                new Vector2(-1f, 1f)
+            };
+        }
+
         public RenderedQuad()
         {
             using var constructorEvent = OptickMacros.Event();
@@ -861,33 +882,24 @@ namespace ChessAI.GUI
             set => mTexture = value;
         }
 
-        public void GetVertices(PipelineFrontFace frontFace, BatchRenderer renderer, out RendererVertex[] vertices, out int[] indices, out int quadCount)
+        public void GetVertices(PipelineFrontFace frontFace, BatchRenderer renderer, IList<RendererVertex> vertices, IList<uint> indices, out int quadCount)
         {
             using var getVerticesEvent = OptickMacros.Event();
             quadCount = 1;
-
-            var factors = new Vector2[]
-            {
-                new Vector2(1f, 1f),
-                new Vector2(1f, -1f),
-                new Vector2(-1f, -1f),
-                new Vector2(-1f, 1f)
-            };
 
             int textureIndex = renderer.PushBatchTexture(mTexture ?? renderer.WhiteTexture);
             float cos = MathF.Cos(mRotation);
             float sin = MathF.Sin(mRotation);
 
-            vertices = new RendererVertex[factors.Length];
             using (OptickMacros.Event("Compute vertices"))
             {
-                for (int i = 0; i < vertices.Length; i++)
+                for (int i = 0; i < sFactors.Length; i++)
                 {
-                    var factor = factors[i];
+                    var factor = sFactors[i];
                     var scaledSize = factor * mHalfSize;
 
                     var uv = factor / 2f + Vector2.One * 0.5f;
-                    vertices[i] = new RendererVertex
+                    vertices.Add(new RendererVertex
                     {
                         Position = mCenter + new Vector2
                         {
@@ -897,26 +909,31 @@ namespace ChessAI.GUI
                         Color = mColor,
                         UV = renderer.Context.FlipUVs ? new Vector2(uv.X, 1f - uv.Y) : uv,
                         TextureIndex = textureIndex
-                    };
+                    });
                 }
             }
 
             using (OptickMacros.Event("Determine indices"))
             {
-                indices = frontFace switch
+                var quadIndices = frontFace switch
                 {
-                    PipelineFrontFace.Clockwise => new int[]
+                    PipelineFrontFace.Clockwise => new uint[]
                     {
-                    3, 1, 0,
-                    3, 2, 1
+                        0, 1, 3,
+                        1, 2, 3
                     },
-                    PipelineFrontFace.CounterClockwise => new int[]
+                    PipelineFrontFace.CounterClockwise => new uint[]
                     {
-                    0, 1, 3,
-                    1, 2, 3
+                        3, 1, 0,
+                        3, 2, 1
                     },
                     _ => throw new ArgumentException("Invalid front face!")
                 };
+
+                foreach (uint index in quadIndices)
+                {
+                    indices.Add(index);
+                }
             }
         }
 
