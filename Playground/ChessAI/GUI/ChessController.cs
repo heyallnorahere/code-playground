@@ -21,11 +21,17 @@ namespace ChessAI.GUI
         public SamplerFilter Filter { get; set; }
     }
 
+    internal enum AIType
+    {
+        Player,
+        NeuralNetwork
+    }
+
     public sealed class ChessController : IDisposable
     {
         public const float TileWidth = 1f / Board.Width;
 
-        public ChessController(IInputContext inputContext, IWindow window, IGraphicsContext graphicsContext, Network mNetwork)
+        public ChessController(IInputContext inputContext, IWindow window, IGraphicsContext graphicsContext, Network network)
         {
             using var constructorEvent = OptickMacros.Event();
             mDisposed = false;
@@ -36,10 +42,18 @@ namespace ChessAI.GUI
             mFEN = string.Empty;
             mColor = PlayerColor.White;
 
+            mAIType = AIType.Player;
+            mNetwork = network;
+            mInvalidMove = false;
+
+            mPromotionFile = -1;
             mEngine = new Engine
             {
                 Board = mBoard = Board.Create()
             };
+
+            mEngine.Check += color => Console.WriteLine($"Check! {color}'s king is in check!");
+            mEngine.Checkmate += color => Console.WriteLine($"Checkmate! {color} has lost!");
 
             foreach (var mouse in inputContext.Mice)
             {
@@ -247,6 +261,26 @@ namespace ChessAI.GUI
                     ImGui.EndCombo();
                 }
 
+                if (ImGui.BeginCombo("AI type", mAIType.ToString()))
+                {
+                    var aiTypes = Enum.GetValues<AIType>();
+                    foreach (var type in aiTypes)
+                    {
+                        bool isSelected = type == mAIType;
+                        if (ImGui.Selectable(type.ToString(), isSelected))
+                        {
+                            mAIType = type;
+                        }
+
+                        if (isSelected)
+                        {
+                            ImGui.SetItemDefaultFocus();
+                        }
+                    }
+
+                    ImGui.EndCombo();
+                }
+
                 ImGui.InputTextWithHint("##fen", Pond.DefaultFEN, ref mFEN, 512);
                 ImGui.SameLine();
 
@@ -283,20 +317,67 @@ namespace ChessAI.GUI
                     if (clickPosition.X >= 0f && clickPosition.X <= 1f &&
                         clickPosition.Y >= 0f && clickPosition.Y <= 1f)
                     {
-                        if (mMouseDown)
+                        var mouseBoardPosition = clickPosition / TileWidth;
+
+                        int x = (int)float.Floor(mouseBoardPosition.X);
+                        int y = (int)float.Floor(mouseBoardPosition.Y);
+                        var boardPosition = new Coord(x, (mColor != PlayerColor.White) ? y : (Board.Width - (y + 1)));
+
+                        if (mMouseDown && mPromotionFile < 0 && mBoard.GetPiece(boardPosition, out _))
                         {
-                            Console.WriteLine($"Mouse clicked at {clickPosition}");
+                            mDraggedPiece = boardPosition;
                         }
 
-                        if (mMouseUp)
+                        bool canMove = mBoard.CurrentTurn == mColor || mInvalidMove || mAIType == AIType.Player;
+                        if (mMouseUp && canMove)
                         {
-                            Console.WriteLine($"Mouse released at {clickPosition}");
+                            if (mDraggedPiece is not null)
+                            {
+                                var piecePosition = mDraggedPiece.Value;
+                                if (mBoard.GetPiece(piecePosition, out PieceInfo draggedPiece) && draggedPiece.Color == mBoard.CurrentTurn)
+                                {
+                                    var move = new Move
+                                    {
+                                        Position = piecePosition,
+                                        Destination = boardPosition
+                                    };
+
+                                    if (mEngine.CommitMove(move))
+                                    {
+                                        mInvalidMove = false;
+                                        if (mEngine.ShouldPromote(mColor, true))
+                                        {
+                                            mPromotionFile = x;
+                                        }
+                                    }
+                                }
+                            }
+                            else if (mPromotionFile == x && y < 4)
+                            {
+                                var pieceType = (PieceType)((int)PieceType.Queen + y); // hacky
+                                mEngine.Promote(pieceType);
+
+                                mPromotionFile = -1;
+                            }
                         }
+                    }
+
+                    if (mMouseUp)
+                    {
+                        mDraggedPiece = null;
                     }
                 }
 
                 mMouseDown = false;
                 mMouseUp = false;
+            }
+
+            using (OptickMacros.Event("AI move"))
+            {
+                if (mAIType == AIType.NeuralNetwork)
+                {
+                    mInvalidMove = true; // not implemented
+                }
             }
         }
 
@@ -314,16 +395,18 @@ namespace ChessAI.GUI
             }
 
             var size = mWindow.FramebufferSize;
-            float aspectRatio = (float)size.X / size.Y;
+            int min = int.Min(size.X, size.Y);
+            int max = int.Max(size.X, size.Y);
+            float aspectRatio = (float)max / min;
 
             var ratioVector = Vector2.One;
-            if (aspectRatio > 1f)
+            if (size.X > size.Y)
             {
                 ratioVector.X = aspectRatio;
             }
             else
             {
-                ratioVector.Y = 1f / aspectRatio;
+                ratioVector.Y = aspectRatio;
             }
 
             var math = new MatrixMath(mContext);
@@ -340,28 +423,89 @@ namespace ChessAI.GUI
                 Texture = mGridTexture
             });
 
+            if (mPromotionFile >= 0)
+            {
+                renderer.Submit(new RenderedQuad
+                {
+                    Position = renderOffset + new Vector2(mPromotionFile + 0.5f, 6f) * TileWidth,
+                    Size = new Vector2(1f, 4f) * TileWidth,
+                    RotationRadians = 0f,
+                    Color = Vector4.One,
+                    Texture = null
+                });
+            }
+
             using (OptickMacros.Event("Render pieces"))
             {
+                IRenderedShape? draggedPiece = null;
                 for (int y = 0; y < Board.Width; y++)
                 {
                     for (int x = 0; x < Board.Width; x++)
                     {
                         var boardPosition = new Coord(x, mColor != PlayerColor.White ? (Board.Width - y - 1) : y);
-                        if (mBoard.GetPiece(boardPosition, out PieceInfo piece))
-                        {
-                            var position = new Vector2(x + 0.5f, y + 0.5f) * TileWidth + renderOffset;
-                            var texture = GetPieceTexture(piece);
 
-                            renderer.Submit(new RenderedQuad
+                        ITexture? pieceTexture = null;
+                        if (x == mPromotionFile && y >= Board.Width - 4)
+                        {
+                            int pieceOffset = Board.Width - (y + 1);
+                            var pieceType = (PieceType)((int)PieceType.Queen + pieceOffset);
+
+                            pieceTexture = GetPieceTexture(new PieceInfo
                             {
-                                Position = position,
-                                Size = Vector2.One * TileWidth * 0.85f,
-                                RotationRadians = 0f,
-                                Color = Vector4.One,
-                                Texture = texture
+                                Color = mColor,
+                                Type = pieceType
                             });
                         }
+                        else if (mBoard.GetPiece(boardPosition, out PieceInfo piece))
+                        {
+                            pieceTexture = GetPieceTexture(piece);
+                        }
+
+                        if (pieceTexture is not null)
+                        {
+                            Vector2 position;
+                            bool dragged;
+
+                            if (boardPosition != mDraggedPiece)
+                            {
+                                position = new Vector2(x + 0.5f, y + 0.5f) * TileWidth + renderOffset;
+                                dragged = false;
+                            }
+                            else
+                            {
+                                position = new Vector2
+                                {
+                                    X = mMousePosition.X / min,
+                                    Y = 1f - mMousePosition.Y / min
+                                };
+
+                                dragged = true;
+                            }
+
+                            var shape = new RenderedQuad
+                            {
+                                Position = position,
+                                Size = Vector2.One * TileWidth * 0.9f,
+                                RotationRadians = 0f,
+                                Color = Vector4.One,
+                                Texture = pieceTexture
+                            };
+
+                            if (dragged)
+                            {
+                                draggedPiece = shape;
+                            }
+                            else
+                            {
+                                renderer.Submit(shape);
+                            }
+                        }
                     }
+                }
+
+                if (draggedPiece is not null)
+                {
+                    renderer.Submit(draggedPiece);
                 }
             }
 
@@ -372,6 +516,10 @@ namespace ChessAI.GUI
         {
             mBoard.Dispose();
             mEngine.Board = mBoard = Board.Create(fen) ?? throw new ArgumentException("Invalid FEN string!");
+
+            mDraggedPiece = null;
+            mPromotionFile = -1;
+            mInvalidMove = false;
         }
 
         private static int GetPieceTextureIndex(PieceInfo piece)
@@ -393,8 +541,15 @@ namespace ChessAI.GUI
 
         private readonly IGraphicsContext mContext;
         private readonly IWindow mWindow;
+
         private Vector2 mMousePosition;
         private bool mMouseDown, mMouseUp;
+        private Coord? mDraggedPiece;
+        private int mPromotionFile;
+
+        private AIType mAIType;
+        private readonly Network mNetwork;
+        private bool mInvalidMove;
 
         private string mFEN;
         private PlayerColor mColor;
