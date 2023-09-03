@@ -476,6 +476,7 @@ namespace CodePlayground.Graphics
         public void Bind(ICommandList commandList, nint id);
         public void PushConstants(ICommandList commandList, BufferMapCallback callback);
 
+        // it is the implementation's responsibility to avoid duplicate bindings
         public bool Bind(IDeviceBuffer buffer, string name, int index = 0);
         public bool Bind(IDeviceImage image, string name, int index = 0);
         public bool Bind(ITexture texture, string name, int index = 0);

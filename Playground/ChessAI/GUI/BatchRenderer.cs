@@ -823,6 +823,7 @@ namespace ChessAI.GUI
     public sealed class RenderedQuad : IRenderedShape
     {
         private static readonly Vector2[] sFactors;
+        private static readonly uint[] mClockwiseIndices, mCounterClockwiseIndices;
         static RenderedQuad()
         {
             sFactors = new Vector2[]
@@ -831,6 +832,18 @@ namespace ChessAI.GUI
                 new Vector2(1f, -1f),
                 new Vector2(-1f, -1f),
                 new Vector2(-1f, 1f)
+            };
+
+            mClockwiseIndices = new uint[]
+            {
+                0, 1, 3,
+                1, 2, 3
+            };
+
+            mCounterClockwiseIndices = new uint[]
+            {
+                3, 1, 0,
+                3, 2, 1
             };
         }
 
@@ -917,16 +930,8 @@ namespace ChessAI.GUI
             {
                 var quadIndices = frontFace switch
                 {
-                    PipelineFrontFace.Clockwise => new uint[]
-                    {
-                        0, 1, 3,
-                        1, 2, 3
-                    },
-                    PipelineFrontFace.CounterClockwise => new uint[]
-                    {
-                        3, 1, 0,
-                        3, 2, 1
-                    },
+                    PipelineFrontFace.Clockwise => mClockwiseIndices,
+                    PipelineFrontFace.CounterClockwise => mCounterClockwiseIndices,
                     _ => throw new ArgumentException("Invalid front face!")
                 };
 

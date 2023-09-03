@@ -23,6 +23,13 @@ namespace CodePlayground.Graphics.Vulkan
         public string Name { get; set; }
     }
 
+    internal struct ReflectionCache
+    {
+        public ShaderStage Stage { get; set; }
+        public int Set { get; set; }
+        public int Binding { get; set; }
+    }
+
     internal struct DescriptorSetPipelineResources
     {
         public Dictionary<int, BindingPipelineResources> Bindings { get; set; }
@@ -100,6 +107,7 @@ namespace CodePlayground.Graphics.Vulkan
             mID = GenerateID();
             mCurrentDynamicID = 0;
 
+            mReflectionCache = new Dictionary<string, ReflectionCache>();
             mDynamicIDs = new Dictionary<nint, DynamicID>();
             mDescriptorSets = new Dictionary<int, VulkanPipelineDescriptorSet>();
             mDevice = context.Device;
@@ -220,6 +228,7 @@ namespace CodePlayground.Graphics.Vulkan
                 api.DestroyDescriptorSetLayout(mDevice.Device, setData.Layout, null);
             }
 
+            mReflectionCache.Clear();
             mLoaded = false;
         }
 
@@ -350,12 +359,37 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
+        private bool FindResource(string name, out ShaderStage stage, out int set, out int binding)
+        {
+            if (mReflectionCache.TryGetValue(name, out ReflectionCache cache))
+            {
+                stage = cache.Stage;
+                set = cache.Set;
+                binding = cache.Binding;
+
+                return true;
+            }
+
+            AssertLoaded();
+            if (mReflectionView!.FindResource(name, out stage, out set, out binding))
+            {
+                mReflectionCache.Add(name, new ReflectionCache
+                {
+                    Stage = stage,
+                    Set = set,
+                    Binding = binding
+                });
+
+                return true;
+            }
+
+            return false;
+        }
+
         public bool Bind(IBindableVulkanResource resource, string name, int index)
         {
             using var bindEvent = OptickMacros.Event();
-
-            AssertLoaded();
-            if (!mReflectionView!.FindResource(name, out _, out int set, out int binding))
+            if (!FindResource(name, out _, out int set, out int binding))
             {
                 return false;
             }
@@ -364,7 +398,7 @@ namespace CodePlayground.Graphics.Vulkan
             return true;
         }
 
-        private void BindResource(int set, int binding, int index, IBindableVulkanResource resource)
+        private bool BindResource(int set, int binding, int index, IBindableVulkanResource resource)
         {
             using var bindResourceEvent = OptickMacros.Event();
             if (!mBoundResources.TryGetValue(set, out DescriptorSetPipelineResources setData))
@@ -387,13 +421,14 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 if (existing.ID == resource.ID)
                 {
-                    return;
+                    return false;
                 }
 
                 existing.Unbind(set, binding, index, this, -1);
             }
 
             bindingData.BoundResources[index] = resource;
+            return true;
         }
 
         public void Bind(IBindableVulkanResource resource, int set, int binding, int index)
@@ -401,7 +436,10 @@ namespace CodePlayground.Graphics.Vulkan
             using var bindEvent = OptickMacros.Event();
 
             AssertLoaded();
-            BindResource(set, binding, index, resource);
+            if (!BindResource(set, binding, index, resource))
+            {
+                return;
+            }
 
             var sets = mDescriptorSets[set].Sets;
             resource.Bind(sets, set, binding, index, this, -1);
@@ -443,7 +481,7 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             }
 
-            if (!mReflectionView!.FindResource(name, out _, out int set, out int binding))
+            if (!FindResource(name, out _, out int set, out int binding))
             {
                 throw new ArgumentException($"Failed to find resource: {resource}");
             }
@@ -1082,6 +1120,7 @@ namespace CodePlayground.Graphics.Vulkan
         private Pipeline mPipeline;
         private PipelineLayout mLayout;
 
+        private readonly Dictionary<string, ReflectionCache> mReflectionCache;
         private readonly Dictionary<nint, DynamicID> mDynamicIDs;
         private readonly Dictionary<int, DescriptorSetPipelineResources> mBoundResources;
         private readonly Dictionary<int, VulkanPipelineDescriptorSet> mDescriptorSets;
