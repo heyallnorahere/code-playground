@@ -5,7 +5,7 @@ Graphics framework written for .NET 7.
 ## Building
 
 Building the project requires the following:
-- [.NET 7 SDK]((https://dotnet.microsoft.com/en-us/download/dotnet/7.0))
+- [.NET 7 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/7.0)
 - [CMake](https://cmake.org) >= v3.20
 - A C++ compiler that supports C++17
 
