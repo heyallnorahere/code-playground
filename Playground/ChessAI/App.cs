@@ -8,6 +8,7 @@ using Optick.NET;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using System.Reflection;
@@ -212,6 +213,7 @@ namespace ChessAI
             }
 
             PrintUsage();
+            mCommand = CommandLineCommand.None;
             mHeadless = true;
         }
 
@@ -225,16 +227,23 @@ namespace ChessAI
             }
             else
             {
-                int hiddenLayerSize = (int)float.Round((Dataset.NetworkInputCount + Dataset.NetworkOutputCount) / 2f);
-                int secondHiddenLayerSize = (int)float.Round((hiddenLayerSize + Dataset.NetworkOutputCount) / 2f);
-
-                mNetwork = new Network(new int[]
+                const int hiddenLayerCount = 2;
+                var layerSizes = new List<int>
                 {
                     Dataset.NetworkInputCount,
-                    hiddenLayerSize,
-                    secondHiddenLayerSize,
                     Dataset.NetworkOutputCount
-                });
+                };
+
+                for (int i = 0; i < hiddenLayerCount; i++)
+                {
+                    int previousLayerSize = layerSizes[^2];
+                    int nextLayerSize = layerSizes[^1];
+
+                    int hiddenLayerSize = (int)float.Round((previousLayerSize + nextLayerSize) / 2f);
+                    layerSizes.Insert(layerSizes.Count - 1, hiddenLayerSize);
+                }
+
+                mNetwork = new Network(layerSizes);
             }
         }
 

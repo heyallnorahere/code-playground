@@ -17,13 +17,14 @@ namespace ChessAI
 
     public sealed class UCIEngine : IDisposable
     {
-        public UCIEngine(string command, bool log = false)
+        public UCIEngine(string command, int timeout = 5000, bool log = false)
         {
             using var constructorEvent = OptickMacros.Event();
 
             mDisposed = false;
             mInitialized = false;
             mLog = log;
+            mTimeout = timeout;
 
             mOptions = new Dictionary<string, string?>();
             mID = new Dictionary<string, string>();
@@ -220,13 +221,21 @@ namespace ChessAI
             return optionValue;
         }
 
+        private void WaitForReadyCheck()
+        {
+            if (!mReadyCheck.WaitOne(mTimeout))
+            {
+                throw new TimeoutException("UCI command \"isready\" timed out!");
+            }
+        }
+
         public void WaitUntilReady()
         {
             using var waitEvent = OptickMacros.Event();
             mUCIReady.WaitOne();
 
             SendCommand("isready");
-            mReadyCheck.WaitOne();
+            WaitForReadyCheck();
         }
 
         public async Task WaitUntilReadyAsync()
@@ -235,7 +244,7 @@ namespace ChessAI
             await Task.Run(mUCIReady.WaitOne);
 
             await SendCommandAsync("isready");
-            await Task.Run(mReadyCheck.WaitOne);
+            await Task.Run(WaitForReadyCheck);
         }
 
         public void NewGame()
@@ -340,6 +349,7 @@ namespace ChessAI
 
         private readonly ManualResetEvent mUCIReady;
         private readonly AutoResetEvent mMoveReturned, mReadyCheck;
+        private readonly int mTimeout;
 
         private readonly Dictionary<string, string?> mOptions;
         private readonly Dictionary<string, string> mID;
@@ -361,7 +371,7 @@ namespace ChessAI
     {
         public const string DefaultFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-        public Pond(string command, int depth)
+        public Pond(string command, int depth, int timeout = 5000)
         {
             using var constructorEvent = OptickMacros.Event();
 
@@ -376,7 +386,7 @@ namespace ChessAI
 
             for (int i = 0; i < fishCount; i++)
             {
-                mFish[i] = new UCIEngine(command, false);
+                mFish[i] = new UCIEngine(command, timeout, false);
             }
         }
 
@@ -454,12 +464,12 @@ namespace ChessAI
             }
         }
 
-        private FENDigestionData Feed(UCIEngine engine, string? fen)
+        private async Task<FENDigestionData> FeedAsync(UCIEngine engine, string? fen)
         {
             using var feedEvent = OptickMacros.Event();
 
-            engine.SetPosition(fen);
-            var move = engine.Go(mDepth);
+            await engine.SetPositionAsync(fen);
+            var move = await engine.GoAsync(mDepth);
 
             return new FENDigestionData
             {
@@ -470,7 +480,7 @@ namespace ChessAI
 
         private void ThreadEntrypoint()
         {
-            Parallel.For(0, mFish.Length, i =>
+            Parallel.For(0, mFish.Length, async i =>
             {
                 int fishNumber = i + 1;
 
@@ -495,7 +505,18 @@ namespace ChessAI
                         using var feedFishEvent = OptickMacros.Event("Feed fish");
                         OptickMacros.Tag("Fish number", fishNumber);
 
-                        var data = Feed(mFish[i], fen);
+                        Console.WriteLine($"[Pond attendant] Feeding fish #{fishNumber} FEN string \"{fen}\"");
+
+                        FENDigestionData data;
+                        try
+                        {
+                            data = await FeedAsync(mFish[i], fen);
+                        }
+                        catch (Exception exc)
+                        {
+                            throw new AggregateException($"Error occurred while feeding fish {fishNumber}", exc);
+                        }
+
                         PositionDigested?.Invoke(data);
                     }
 
