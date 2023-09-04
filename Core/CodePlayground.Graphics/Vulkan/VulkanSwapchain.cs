@@ -163,19 +163,33 @@ namespace CodePlayground.Graphics.Vulkan
         public unsafe void Invalidate()
         {
             using var invalidateEvent = OptickMacros.Event();
-
             mDevice.ClearQueues();
+
+            Extent2D newExtent;
+            if (mNewSize is not null)
+            {
+                var newSize = mNewSize.Value;
+                mNewSize = null;
+
+                newExtent.Width = (uint)newSize.X;
+                newExtent.Height = (uint)newSize.Y;
+            }
+            else
+            {
+                newExtent = mExtent;
+            }
+
+            if (newExtent.Width == 0 || newExtent.Height == 0)
+            {
+                return;
+            }
 
             DestroyFramebuffers();
             mDepthBuffer.Dispose();
 
-            if (mNewSize is not null)
-            {
-                mExtent.Width = (uint)mNewSize.Value.X;
-                mExtent.Height = (uint)mNewSize.Value.Y;
-            }
-
+            mExtent = newExtent;
             var old = Create(mExtent);
+
             if (old.Handle != 0)
             {
                 mSwapchainExtension.DestroySwapchain(mDevice.Device, old, null);

@@ -125,11 +125,7 @@ namespace CodePlayground.Graphics
             if (ShouldRunHeadless)
             {
                 Load?.Invoke();
-                Render?.Invoke(new FrameRenderInfo
-                {
-                    Delta = 0,
-                    CurrentImage = 0
-                });
+                OnRender(0);
 
                 Closing?.Invoke();
             }
@@ -251,28 +247,32 @@ namespace CodePlayground.Graphics
                 }
                 else
                 {
-                    var device = mGraphicsContext.Device;
-                    var swapchain = mGraphicsContext.Swapchain;
-                    swapchain.AcquireImage();
-
-                    var queue = device.GetQueue(CommandQueueFlags.Graphics);
-                    var commandList = queue.Release();
-                    commandList.Begin();
-
-                    using (commandList.Context())
+                    var windowSize = mWindow!.FramebufferSize;
+                    if (windowSize.X != 0 && windowSize.Y != 0)
                     {
-                        Render?.Invoke(new FrameRenderInfo
-                        {
-                            Delta = delta,
-                            CommandList = commandList,
-                            RenderTarget = swapchain.RenderTarget,
-                            Framebuffer = swapchain.CurrentFramebuffer,
-                            CurrentImage = swapchain.CurrentFrame
-                        });
-                    }
+                        var device = mGraphicsContext.Device;
+                        var swapchain = mGraphicsContext.Swapchain;
+                        swapchain.AcquireImage();
 
-                    commandList.End();
-                    swapchain.Present(queue, commandList);
+                        var queue = device.GetQueue(CommandQueueFlags.Graphics);
+                        var commandList = queue.Release();
+                        commandList.Begin();
+
+                        using (commandList.Context())
+                        {
+                            Render?.Invoke(new FrameRenderInfo
+                            {
+                                Delta = delta,
+                                CommandList = commandList,
+                                RenderTarget = swapchain.RenderTarget,
+                                Framebuffer = swapchain.CurrentFramebuffer,
+                                CurrentImage = swapchain.CurrentFrame
+                            });
+                        }
+
+                        commandList.End();
+                        swapchain.Present(queue, commandList);
+                    }
                 }
             }
 
