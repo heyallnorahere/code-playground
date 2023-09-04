@@ -46,6 +46,10 @@ namespace ChessAI.GUI
             mNetwork = network;
             mInvalidMove = false;
 
+            mComputeFence = mContext.CreateFence(true);
+            mBufferData = NetworkDispatcher.CreateBuffers(mNetwork, 1);
+            mEvaluatingNetwork = false;
+
             mPromotionFile = -1;
             mEngine = new Engine
             {
@@ -232,6 +236,17 @@ namespace ChessAI.GUI
                 {
                     texture.Dispose();
                 }
+
+                var queue = mContext.Device.GetQueue(CommandQueueFlags.Compute);
+                queue.ReleaseFence(mComputeFence, true);
+
+                mBufferData.SizeBuffer.Dispose();
+                mBufferData.DataBuffer.Dispose();
+                mBufferData.ActivationBuffer.Dispose();
+                mBufferData.PreSigmoidBuffer.Dispose();
+                mBufferData.DeltaBuffer.Dispose();
+
+                mComputeFence.Dispose();
             }
         }
 
@@ -374,9 +389,58 @@ namespace ChessAI.GUI
 
             using (OptickMacros.Event("AI move"))
             {
-                if (mAIType == AIType.NeuralNetwork)
+                if (!mInvalidMove && mBoard.CurrentTurn != mColor)
                 {
-                    mInvalidMove = true; // not implemented
+                    switch (mAIType)
+                    {
+                        case AIType.NeuralNetwork:
+                            if (mComputeFence.IsSignaled())
+                            {
+                                var queue = mContext.Device.GetQueue(CommandQueueFlags.Compute);
+                                if (mEvaluatingNetwork)
+                                {
+                                    mEvaluatingNetwork = false;
+                                    queue.ReleaseFence(mComputeFence, true);
+
+                                    var outputs = NetworkDispatcher.GetConfidenceValues(mBufferData);
+                                    var move = ChessUtilities.ParseNetworkOutput(outputs[0]);
+
+                                    if (mEngine.CommitMove(move.Move))
+                                    {
+                                        bool shouldPromote = mEngine.ShouldPromote(mColor, true);
+                                        if ((shouldPromote && !mEngine.Promote(move.Promotion)) || (move.Promotion != PieceType.None && !shouldPromote))
+                                        {
+                                            mInvalidMove = true;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        mInvalidMove = true;
+                                    }
+                                }
+                                else
+                                {
+                                    queue.ReleaseFence(mComputeFence, true);
+                                    mComputeFence.Reset();
+
+                                    var input = mBoard.GetNetworkInput();
+                                    var commandList = queue.Release();
+
+                                    commandList.Begin();
+                                    using (commandList.Context(GPUQueueType.Compute))
+                                    {
+                                        NetworkDispatcher.ForwardPropagation(commandList, mBufferData, new float[][] { input });
+                                    }
+
+                                    commandList.End();
+                                    queue.Submit(commandList, fence: mComputeFence);
+
+                                    mEvaluatingNetwork = true;
+                                }
+                            }
+
+                            break;
+                    }
                 }
             }
         }
@@ -520,6 +584,10 @@ namespace ChessAI.GUI
             mDraggedPiece = null;
             mPromotionFile = -1;
             mInvalidMove = false;
+            mEvaluatingNetwork = false;
+
+            var queue = mContext.Device.GetQueue(CommandQueueFlags.Compute);
+            queue.ReleaseFence(mComputeFence, true);
         }
 
         private static int GetPieceTextureIndex(PieceInfo piece)
@@ -550,6 +618,10 @@ namespace ChessAI.GUI
         private AIType mAIType;
         private readonly Network mNetwork;
         private bool mInvalidMove;
+
+        private readonly IFence mComputeFence;
+        private DispatcherBufferData mBufferData;
+        private bool mEvaluatingNetwork;
 
         private string mFEN;
         private PlayerColor mColor;
