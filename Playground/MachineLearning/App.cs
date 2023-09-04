@@ -2,6 +2,7 @@ using CodePlayground;
 using CodePlayground.Graphics;
 using ImGuiNET;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Serialization;
 using Optick.NET;
 using SixLabors.ImageSharp;
@@ -53,7 +54,11 @@ namespace MachineLearning
                 {
                     NamingStrategy = new SnakeCaseNamingStrategy()
                 },
-                Formatting = Formatting.Indented
+                Formatting = Formatting.Indented,
+                Converters = new JsonConverter[]
+                {
+                    new StringEnumConverter()
+                }
             };
 
             sDatasetSources = new Dictionary<DatasetType, DatasetSource>

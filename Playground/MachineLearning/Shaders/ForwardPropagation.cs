@@ -48,6 +48,9 @@ namespace MachineLearning.Shaders
         }
 
         public static float Sigmoid(float x) => 1f / (1f + BuiltinFunctions.Exp(-x));
+        public static float ReLU(float x) => BuiltinFunctions.Max(0f, x);
+        public static float LeakyReLU(float x) => BuiltinFunctions.Max(x * 0.1f, x);
+        public static float NormalizedHyperbolicTangent(float x) => (BuiltinFunctions.Tanh(x) + 1f) / 2f;
 
         // all of the weights relating to this neuron and the bias of the neuron
         public static int GetDataBlockRowLength(int previousLayerSize) => previousLayerSize + 1;
@@ -86,10 +89,38 @@ namespace MachineLearning.Shaders
                     z += weight * previousActivation;
                 }
 
+                float activation;
+                ActivationFunction activationFunction = ShaderResources.DataBuffer.LayerActivationFunctions[currentLayer - 1];
+
+                // not using a switch because the jumps are janky
+                // and that is on my list! (nora)
+                if (activationFunction == ActivationFunction.Sigmoid)
+                {
+                    activation = Sigmoid(z);
+                }
+                else if (activationFunction == ActivationFunction.ReLU)
+                {
+                    activation = ReLU(z);
+                }
+                else if (activationFunction == ActivationFunction.LeakyReLU)
+                {
+                    activation = LeakyReLU(z);
+                }
+                else if (activationFunction == ActivationFunction.NormalizedHyperbolicTangent)
+                {
+                    activation = NormalizedHyperbolicTangent(z);
+                }
+                else
+                {
+                    // not implemented
+                    // cant exactly throw an exception
+                    activation = 0f;
+                }
+
                 // s_PreSigmoidOffset describes the offset of the z-values of the current layer
                 // s_ActivationOffset describes the offset of the activations of the previous layer
                 ShaderResources.PreSigmoidBuffer.Data[s_PreSigmoidOffset + currentNeuron] = z;
-                ShaderResources.ActivationBuffer.Data[s_ActivationOffset + previousLayerSize + currentNeuron] = Sigmoid(z);
+                ShaderResources.ActivationBuffer.Data[s_ActivationOffset + previousLayerSize + currentNeuron] = activation;
             }
         }
     }

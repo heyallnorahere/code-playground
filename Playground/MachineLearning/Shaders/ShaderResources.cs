@@ -24,6 +24,14 @@ namespace MachineLearning.Shaders
 
     public struct NetworkDataBuffer
     {
+        [ArraySize(Network.MaxLayers - 1)]
+        public ActivationFunction[] LayerActivationFunctions;
+
+        public float[] Data;
+    }
+
+    public struct NetworkArrayBuffer
+    {
         public float[] Data;
     }
 
@@ -51,15 +59,15 @@ namespace MachineLearning.Shaders
 
         [Layout(Set = 0, Binding = 2, ResourceType = ShaderResourceType.Storage)]
         [ShaderFieldName(ActivationBufferName, UseClassName = false)]
-        public static NetworkDataBuffer ActivationBuffer;
+        public static NetworkArrayBuffer ActivationBuffer;
 
         [Layout(Set = 0, Binding = 3, ResourceType = ShaderResourceType.Storage)]
         [ShaderFieldName(PreSigmoidBufferName, UseClassName = false)]
-        public static NetworkDataBuffer PreSigmoidBuffer;
+        public static NetworkArrayBuffer PreSigmoidBuffer;
 
         [Layout(Set = 0, Binding = 4, ResourceType = ShaderResourceType.Storage)]
         [ShaderFieldName(DeltaBufferName, UseClassName = false)]
-        public static NetworkDataBuffer DeltaBuffer;
+        public static NetworkArrayBuffer DeltaBuffer;
 
         [Layout(PushConstant = true)]
         [ShaderFieldName(PushConstantBufferName, UseClassName = false)]

@@ -96,6 +96,13 @@ namespace CodePlayground.Graphics.Shaders
         {
             throw new NotImplementedException();
         }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction("tanh")]
+        public static float Tanh(float x)
+        {
+            throw new NotImplementedException();
+        }
     }
 
     // specifically atomic operations

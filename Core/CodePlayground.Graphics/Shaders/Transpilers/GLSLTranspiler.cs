@@ -157,9 +157,17 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 throw new InvalidOperationException("Cannot use a non-value type as a shader type!");
             }
 
-            if (mDefinedTypeNames.ContainsKey(type))
+            if (mDefinedTypeNames.TryGetValue(type, out string? typeName))
             {
-                return mDefinedTypeNames[type];
+                return typeName;
+            }
+
+            if (type.IsEnum)
+            {
+                string underlyingName = GetTypeName(type.GetEnumUnderlyingType(), shaderType, true);
+                mDefinedTypeNames.Add(type, underlyingName);
+
+                return underlyingName;
             }
 
             if (attribute is not null)
@@ -319,7 +327,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         {
             using var processTypeEvent = OptickMacros.Event();
 
-            if (mStructDependencies.ContainsKey(type) || !type.IsValueType || type.IsPrimitive)
+            if (mStructDependencies.ContainsKey(type) || !type.IsValueType || type.IsPrimitive || type.IsEnum)
             {
                 return;
             }
@@ -361,7 +369,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     ArraySize = arraySize
                 });
 
-                if (elementType != type && elementType.IsValueType && !elementType.IsPrimitive)
+                if (elementType != type && elementType.IsValueType && !elementType.IsPrimitive && !elementType.IsEnum)
                 {
                     dependencyInfo.Dependencies.Add(elementType);
 

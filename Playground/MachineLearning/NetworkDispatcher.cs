@@ -11,8 +11,8 @@ namespace MachineLearning
     public struct DispatcherBufferData
     {
         public IDeviceBuffer ActivationBuffer, PreSigmoidBuffer, SizeBuffer, DataBuffer, DeltaBuffer;
-        public int ActivationOffset, DeltaOffset, DataOffset;
-        public int ActivationStride, DeltaStride, DataStride;
+        public int ActivationOffset, DeltaOffset, DataOffset, ActivationFunctionOffset;
+        public int ActivationStride, DeltaStride, DataStride, ActivationFunctionStride;
         public int PassCount;
         public int[] LayerSizes;
     }
@@ -76,7 +76,8 @@ namespace MachineLearning
             var activationBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Storage, activationBufferSize);
             var preSigmoidBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Storage, preSigmoidBufferSize);
 
-            network.CreateBuffers(mContext, reflectionView, out IDeviceBuffer dataBuffer, out IDeviceBuffer sizeBuffer, out int dataStride, out int dataOffset);
+            network.CreateBuffers(mContext, reflectionView, out IDeviceBuffer dataBuffer, out IDeviceBuffer sizeBuffer,
+                                  out int dataStride, out int dataOffset, out int activationFunctionStride, out int activationFunctionOffset);
 
             int deltaOffset = reflectionView.GetBufferOffset(ShaderResources.DeltaBufferName, $"{nameof(NetworkDataBuffer.Data)}[0]");
             endOffset = reflectionView.GetBufferOffset(ShaderResources.DeltaBufferName, $"{nameof(NetworkDataBuffer.Data)}[1]");
@@ -97,10 +98,12 @@ namespace MachineLearning
                 ActivationOffset = activationOffset,
                 DeltaOffset = deltaOffset,
                 DataOffset = dataOffset,
+                ActivationFunctionOffset = activationFunctionOffset,
 
                 ActivationStride = activationStride,
                 DeltaStride = deltaStride,
                 DataStride = dataStride,
+                ActivationFunctionStride = activationFunctionStride,
 
                 PassCount = passCount,
                 LayerSizes = layerSizes.ToArray()

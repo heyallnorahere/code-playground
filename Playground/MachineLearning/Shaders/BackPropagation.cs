@@ -25,6 +25,36 @@ namespace MachineLearning.Shaders
             return sigmoid * (1f - sigmoid);
         }
 
+        public static float ReLUPrime(float x)
+        {
+            if (x > 0f)
+            {
+                return 1f;
+            }
+            else
+            {
+                return 0f;
+            }
+        }
+
+        public static float LeakyReLUPrime(float x)
+        {
+            if (x > 0f)
+            {
+                return 1f;
+            }
+            else
+            {
+                return -0.1f;
+            }
+        }
+
+        public static float NormalizedHyperbolicTangentPrime(float x)
+        {
+            float tanh = BuiltinFunctions.Tanh(x);
+            return (1f - tanh * tanh) / 2f;
+        }
+
         private static void Initialize(uint workGroupId, uint workGroupCount)
         {
             int networkPass = (int)workGroupId;
@@ -122,7 +152,32 @@ namespace MachineLearning.Shaders
                 }
 
                 float z = ShaderResources.PreSigmoidBuffer.Data[s_PreSigmoidOffset + currentNeuron];
-                float biasDelta = preSigmoidBias * SigmoidPrime(z);
+                ActivationFunction activationFunction = ShaderResources.DataBuffer.LayerActivationFunctions[currentLayer - 1];
+
+                float activationPrime;
+                if (activationFunction == ActivationFunction.Sigmoid)
+                {
+                    activationPrime = SigmoidPrime(z);
+                }
+                else if (activationFunction == ActivationFunction.ReLU)
+                {
+                    activationPrime = ReLUPrime(z);
+                }
+                else if (activationFunction == ActivationFunction.LeakyReLU)
+                {
+                    activationPrime = LeakyReLUPrime(z);
+                }
+                else if (activationFunction == ActivationFunction.NormalizedHyperbolicTangent)
+                {
+                    activationPrime = NormalizedHyperbolicTangentPrime(z);
+                }
+                else
+                {
+                    // see forwardpropagation
+                    activationPrime = 0f;
+                }
+
+                float biasDelta = preSigmoidBias * activationPrime;
                 ShaderResources.DeltaBuffer.Data[s_DeltaOffset + bufferRowOffset] = biasDelta;
 
                 int previousLayerActivationOffset = s_ActivationOffset - previousLayerSize;

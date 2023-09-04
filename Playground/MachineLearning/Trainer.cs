@@ -118,7 +118,8 @@ namespace MachineLearning
                     });
 
                     mState.Network.Step(deltas, mLearningRate);
-                    mState.Network.UpdateBuffer(mState.BufferData.DataBuffer, mState.BufferData.DataStride, mState.BufferData.DataOffset);
+                    mState.Network.UpdateBuffer(mState.BufferData.DataBuffer, mState.BufferData.DataStride, mState.BufferData.DataOffset,
+                                                mState.BufferData.ActivationFunctionStride, mState.BufferData.ActivationFunctionOffset);
 
                     advanceBatch = true;
                 }

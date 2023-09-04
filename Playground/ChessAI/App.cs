@@ -244,6 +244,10 @@ namespace ChessAI
                 }
 
                 mNetwork = new Network(layerSizes);
+                for (int i = 0; i < mNetwork.LayerActivationFunctions.Length; i++)
+                {
+                    mNetwork.LayerActivationFunctions[i] = i < hiddenLayerCount ? ActivationFunction.LeakyReLU : ActivationFunction.NormalizedHyperbolicTangent;
+                }
             }
         }
 

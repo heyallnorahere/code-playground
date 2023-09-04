@@ -80,10 +80,19 @@ namespace MachineLearning
         }
     }
 
+    public enum ActivationFunction
+    {
+        Sigmoid,
+        ReLU,
+        LeakyReLU,
+        NormalizedHyperbolicTangent
+    }
+
     public struct NetworkData
     {
         public int[] LayerSizes;
         public Layer[] Data;
+        public ActivationFunction[]? LayerActivationFunctions;
     }
 
     public sealed class Network
@@ -122,7 +131,7 @@ namespace MachineLearning
             {
                 throw new ArgumentException($"Must have at most {MaxLayers} layers!");
             }
-        
+            
             mLayers = new Layer[mLayerSizes.Length - 1];
             for (int i = 0; i < mLayers.Length; i++)
             {
@@ -141,6 +150,9 @@ namespace MachineLearning
 
                 mLayers[i] = layer;
             }
+
+            mLayerActivationFunctions = new ActivationFunction[mLayers.Length];
+            Array.Fill(mLayerActivationFunctions, ActivationFunction.Sigmoid);
         }
 
         public Network(NetworkData data)
@@ -187,9 +199,26 @@ namespace MachineLearning
 
                 mLayers[i] = layer;
             }
+
+            if (data.LayerActivationFunctions is null)
+            {
+                mLayerActivationFunctions = new ActivationFunction[layerCount - 1];
+                Array.Fill(mLayerActivationFunctions, ActivationFunction.Sigmoid);
+            }
+            else
+            {
+                var activationFunctions = data.LayerActivationFunctions;
+                if (activationFunctions.Length != layerCount - 1)
+                {
+                    throw new ArgumentException("Activation function count mismatch!");
+                }
+
+                mLayerActivationFunctions = new ActivationFunction[layerCount - 1];
+                Array.Copy(activationFunctions, mLayerActivationFunctions, layerCount - 1);
+            }
         }
 
-        public void CreateBuffers(IGraphicsContext context, IReflectionView reflectionView, out IDeviceBuffer dataBuffer, out IDeviceBuffer sizeBuffer, out int dataStride, out int dataOffset)
+        public void CreateBuffers(IGraphicsContext context, IReflectionView reflectionView, out IDeviceBuffer dataBuffer, out IDeviceBuffer sizeBuffer, out int dataStride, out int dataOffset, out int activationStride, out int activationOffset)
         {
             using var createBuffersEvent = OptickMacros.Event();
 
@@ -224,11 +253,15 @@ namespace MachineLearning
                 elementCount += currentSize * (previousSize + 1);
             }
 
-            dataBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Storage, elementCount * dataStride + dataOffset);
-            UpdateBuffer(dataBuffer, dataStride, dataOffset);
+            activationOffset = reflectionView.GetBufferOffset(ShaderResources.DataBufferName, $"{nameof(NetworkDataBuffer.LayerActivationFunctions)}[0]");
+            endOffset = reflectionView.GetBufferOffset(ShaderResources.DataBufferName, $"{nameof(NetworkDataBuffer.LayerActivationFunctions)}[1]");
+            activationStride = endOffset - activationOffset;
+
+            dataBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Storage, int.Max(elementCount * dataStride + dataOffset, mLayerActivationFunctions.Length * activationStride + activationOffset));
+            UpdateBuffer(dataBuffer, dataStride, dataOffset, activationStride, activationOffset);
         }
 
-        public void UpdateBuffer(IDeviceBuffer dataBuffer, int bufferStride, int dataOffset)
+        public void UpdateBuffer(IDeviceBuffer dataBuffer, int bufferStride, int dataOffset, int activationStride, int activationOffset)
         {
             using var updateBufferEvent = OptickMacros.Event();
             dataBuffer.Map(data =>
@@ -246,10 +279,16 @@ namespace MachineLearning
                     int offset = i * bufferStride + dataOffset;
                     BitConverter.GetBytes(values[i]).CopyTo(data[offset..(offset + Marshal.SizeOf<float>())]);
                 }
+
+                for (int i = 0; i < mLayerActivationFunctions.Length; i++)
+                {
+                    var activationFunction = mLayerActivationFunctions[i];
+
+                    int offset = i * activationStride + activationOffset;
+                    BitConverter.GetBytes(activationOffset).CopyTo(data[offset..]);
+                }
             });
         }
-
-        public IReadOnlyList<int> LayerSizes => mLayerSizes;
 
         public NetworkData GetData()
         {
@@ -259,10 +298,13 @@ namespace MachineLearning
             var result = new NetworkData
             {
                 LayerSizes = new int[layerCount],
-                Data = new Layer[layerCount - 1]
+                Data = new Layer[layerCount - 1],
+                LayerActivationFunctions = new ActivationFunction[layerCount - 1]
             };
 
             Array.Copy(mLayerSizes, result.LayerSizes, layerCount);
+            Array.Copy(mLayerActivationFunctions, result.LayerActivationFunctions, layerCount - 1);
+
             for (int i = 0; i < layerCount - 1; i++)
             {
                 int currentSize = mLayerSizes[i + 1];
@@ -299,7 +341,11 @@ namespace MachineLearning
             }
         }
 
+        public IReadOnlyList<int> LayerSizes => mLayerSizes;
+        public ActivationFunction[] LayerActivationFunctions => mLayerActivationFunctions;
+
         private readonly int[] mLayerSizes;
         private readonly Layer[] mLayers;
+        private readonly ActivationFunction[] mLayerActivationFunctions;
     }
 }
