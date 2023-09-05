@@ -227,7 +227,7 @@ namespace ChessAI
             }
             else
             {
-                const int hiddenLayerCount = 2;
+                const int hiddenLayerCount = 4;
                 var layerSizes = new List<int>
                 {
                     Dataset.NetworkInputCount,

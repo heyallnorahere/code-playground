@@ -233,6 +233,13 @@ namespace MachineLearning
                     16,
                     10
                 });
+
+                mNetwork.SetActivationFunctions(new ActivationFunction[]
+                {
+                    ActivationFunction.LeakyReLU,
+                    ActivationFunction.LeakyReLU,
+                    ActivationFunction.NormalizedHyperbolicTangent
+                });
             }
 
             var queue = context.Device.GetQueue(CommandQueueFlags.Transfer);

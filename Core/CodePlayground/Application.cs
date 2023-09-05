@@ -174,6 +174,7 @@ namespace CodePlayground
             }
 
             mOptickApp = null;
+            mOptickCallbackHandle = null;
         }
 
         public event Action<State>? OptickStateChanged;

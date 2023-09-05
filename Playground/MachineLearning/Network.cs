@@ -341,6 +341,20 @@ namespace MachineLearning
             }
         }
 
+        public void SetActivationFunctions(IReadOnlyList<ActivationFunction> activationFunctions)
+        {
+            int activationLayerCount = mLayerActivationFunctions.Length;
+            if (activationFunctions.Count != activationLayerCount)
+            {
+                throw new ArgumentException("Layer count mismatch!");
+            }
+
+            for (int i = 0; i < activationLayerCount; i++)
+            {
+                mLayerActivationFunctions[i] = activationFunctions[i];
+            }
+        }
+
         public IReadOnlyList<int> LayerSizes => mLayerSizes;
         public ActivationFunction[] LayerActivationFunctions => mLayerActivationFunctions;
 
