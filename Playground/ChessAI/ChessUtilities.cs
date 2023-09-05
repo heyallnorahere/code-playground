@@ -257,7 +257,7 @@ namespace ChessAI
             // if the confidence of promotion is less than 50%, we assume it just doesn't intend to promote
             const int promotionOffset = Board.Width * 4;
             int promotionIndex = output[promotionOffset..].FindBestElement();
-            var promotion = promotionIndex < 0 || output[promotionOffset + promotionIndex] < 0.5f ? PieceType.None : (PieceType)((int)PieceType.Queen + promotionIndex);
+            var promotion = promotionIndex < 0 ? PieceType.None : (PieceType)((int)PieceType.Queen + promotionIndex);
 
             return new EngineMove
             {

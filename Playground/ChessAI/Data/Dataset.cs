@@ -1,5 +1,6 @@
 ﻿using LibChess;
 using MachineLearning;
+using Newtonsoft.Json;
 using Optick.NET;
 using SQLite;
 using System;
@@ -27,9 +28,23 @@ namespace ChessAI.Data
 
         [Unique]
         public string Position { get; set; }
+
         public string PieceMoved { get; set; }
         public string BestMove { get; set; }
         public PieceType Promotion { get; set; }
+    }
+
+    public sealed class NetworkInputData
+    {
+        public NetworkInputData()
+        {
+            Position = string.Empty;
+            NetworkInput = string.Empty;
+        }
+
+        [PrimaryKey, Unique]
+        public string Position { get; set; }
+        public string NetworkInput { get; set; }
     }
 
     public sealed class Dataset : IDataset, IDisposable
@@ -107,9 +122,9 @@ namespace ChessAI.Data
                 var moveData = digestion.BestMove.Value;
                 lock (dataset)
                 {
-                    dataset.AddEntry(new PositionData
+                    dataset.mConnection.Insert(new PositionData
                     {
-                        ID = dataset.mCount,
+                        ID = dataset.mCount++,
                         Position = digestion.Position,
                         PieceMoved = moveData.Move.Position.ToString(),
                         BestMove = moveData.Move.Destination.ToString(),
@@ -140,15 +155,36 @@ namespace ChessAI.Data
             FeedPond(dataset, pond, null);
             foreach (var move in pgn.Moves)
             {
-                FeedPond(dataset, pond, move.Position);
+                FeedPond(dataset, pond, move);
             }
         }
 
-        private static void FeedPond(Dataset dataset, Pond pond, string? fen)
+        private static void FeedPond(Dataset dataset, Pond pond, PGNMove? move)
         {
+            string usedFen = move?.Position ?? Pond.DefaultFEN;
             lock (dataset)
             {
-                if (dataset.Contains(fen ?? Pond.DefaultFEN))
+                if (dataset.mConnection.Find<NetworkInputData>(usedFen) is null)
+                {
+                    float[] networkInput;
+                    if (move is null)
+                    {
+                        using var board = Board.Create();
+                        networkInput = board.GetNetworkInput();
+                    }
+                    else
+                    {
+                        networkInput = move.Value.NetworkInput;
+                    }
+
+                    dataset.mConnection.Insert(new NetworkInputData
+                    {
+                        Position = usedFen,
+                        NetworkInput = JsonConvert.SerializeObject(networkInput, Formatting.None)
+                    });
+                }
+
+                if (dataset.mConnection.Find<PositionData>(data => data.Position == usedFen) is not null)
                 {
                     return;
                 }
@@ -156,13 +192,13 @@ namespace ChessAI.Data
 
             lock (sSubmittedFENs)
             {
-                if (!sSubmittedFENs.Add(fen))
+                if (!sSubmittedFENs.Add(move?.Position))
                 {
                     return;
                 }
             }
 
-            pond.Feed(fen);
+            pond.Feed(move?.Position);
         }
 
         public Dataset(string path)
@@ -171,24 +207,12 @@ namespace ChessAI.Data
 
             mConnection = new SQLiteConnection(path);
             mConnection.CreateTable<PositionData>();
+            mConnection.CreateTable<NetworkInputData>();
+
             mCount = mConnection.Table<PositionData>().Count();
         }
 
         public void Dispose() => mConnection.Dispose();
-
-        public void AddEntry(PositionData data)
-        {
-            using var addEntryEvent = OptickMacros.Event();
-
-            mConnection.Insert(data);
-            mCount++;
-        }
-
-        public bool Contains(string position)
-        {
-            using var containsEvent = OptickMacros.Event();
-            return mConnection.Find<PositionData>(data => data.Position == position) is not null;
-        }
 
         public int Count => mCount;
         public int InputCount => NetworkInputCount;
@@ -199,14 +223,26 @@ namespace ChessAI.Data
             using var getInputEvent = OptickMacros.Event();
 
             var data = mConnection.Table<PositionData>().ElementAt(index);
-            using var board = Board.Create(data.Position);
+            var networkInput = mConnection.Find<NetworkInputData>(data.Position);
 
-            if (board is null)
+            if (networkInput is null)
             {
-                throw new InvalidOperationException("Failed to interpret FEN!");
+                using var board = Board.Create(data.Position);
+                if (board is null)
+                {
+                    throw new ArgumentException("Invalid FEN string!");
+                }
+
+                return board.GetNetworkInput();
             }
 
-            return board.GetNetworkInput();
+            var input = JsonConvert.DeserializeObject<float[]>(networkInput.NetworkInput);
+            if (input is null)
+            {
+                throw new ArgumentException("Failed to deserialize network input!");
+            }
+
+            return input;
         }
 
         public float[] GetExpectedOutput(int index)
@@ -228,6 +264,8 @@ namespace ChessAI.Data
             var promotion = data.Promotion;
             if (promotion != PieceType.None)
             {
+                // subtracting 2 (magic number) because that is the enum offset of the queen
+                // promotion is assumed to be within the range of 2..5 because they are the only legal pieces to promote to
                 outputs[Board.Width * 4 + (int)promotion - 2] = 1f;
             }
 

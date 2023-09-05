@@ -1,6 +1,8 @@
 using CodePlayground.Graphics;
 using MachineLearning.Shaders;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
+using Newtonsoft.Json.Serialization;
 using Optick.NET;
 using System;
 using System.Collections.Generic;
@@ -100,6 +102,23 @@ namespace MachineLearning
         public const int MaxNeuronsPerLayer = 1024; // for now
         public const int MaxLayers = 16;
 
+        public static JsonSerializer JSON => sJSON;
+
+        private static readonly JsonSerializer sJSON;
+        static Network()
+        {
+            sJSON = new JsonSerializer
+            {
+                ContractResolver = new DefaultContractResolver
+                {
+                    NamingStrategy = new SnakeCaseNamingStrategy()
+                },
+                Formatting = Formatting.Indented
+            };
+
+            sJSON.Converters.Add(new StringEnumConverter());
+        }
+
         public static Network Load(Stream stream, Encoding? encoding = null)
         {
             using var loadEvent = OptickMacros.Event();
@@ -107,7 +126,7 @@ namespace MachineLearning
             using var reader = new StreamReader(stream, encoding: encoding ?? Encoding.UTF8, leaveOpen: true);
             using var jsonReader = new JsonTextReader(reader);
 
-            var data = App.Serializer.Deserialize<NetworkData>(jsonReader);
+            var data = sJSON.Deserialize<NetworkData>(jsonReader);
             return new Network(data);
         }
 
@@ -119,7 +138,7 @@ namespace MachineLearning
             using var jsonWriter = new JsonTextWriter(writer);
 
             var data = network.GetData();
-            App.Serializer.Serialize(jsonWriter, data);
+            sJSON.Serialize(jsonWriter, data);
         }
 
         public Network(IReadOnlyList<int> layerSizes)

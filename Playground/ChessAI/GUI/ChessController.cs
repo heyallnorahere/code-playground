@@ -407,14 +407,15 @@ namespace ChessAI.GUI
 
                                     if (mEngine.CommitMove(move.Move))
                                     {
-                                        bool shouldPromote = mEngine.ShouldPromote(mColor, true);
-                                        if ((shouldPromote && !mEngine.Promote(move.Promotion)) || (move.Promotion != PieceType.None && !shouldPromote))
+                                        if (mEngine.ShouldPromote(mColor, true) && !mEngine.Promote(move.Promotion))
                                         {
+                                            Console.WriteLine("Invalid engine move!");
                                             mInvalidMove = true;
                                         }
                                     }
                                     else
                                     {
+                                        Console.WriteLine("Invalid engine move!");
                                         mInvalidMove = true;
                                     }
                                 }

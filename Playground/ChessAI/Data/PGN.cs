@@ -13,6 +13,7 @@ namespace ChessAI.Data
     {
         public Move Move;
         public string Position;
+        public float[] NetworkInput;
     }
 
     public struct PGN
@@ -253,7 +254,8 @@ namespace ChessAI.Data
                         moves.Add(new PGNMove
                         {
                             Move = move,
-                            Position = board.SerializeFEN()
+                            Position = board.SerializeFEN(),
+                            NetworkInput = board.GetNetworkInput()
                         });
 
                         if (board.CurrentTurn == PlayerColor.White)
