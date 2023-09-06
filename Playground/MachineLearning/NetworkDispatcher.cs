@@ -26,6 +26,19 @@ namespace MachineLearning
 
         public static int MaxConcurrentPasses => mMaxConcurrentPasses;
 
+        private static int GetWorkGroupCount(int layerSize)
+        {
+            int remainder = layerSize % Network.WorkGroupThreadCount;
+            int groupCount = (layerSize - remainder) / Network.WorkGroupThreadCount;
+
+            if (remainder > 0)
+            {
+                groupCount++;
+            }
+
+            return groupCount;
+        }
+
         public static void Initialize(IRenderer renderer, ShaderLibrary library)
         {
             mRenderer = renderer;
@@ -194,7 +207,8 @@ namespace MachineLearning
                     });
                 });
 
-                mRenderer.DispatchCompute(commandList, buffers.PassCount, 1, 1);
+                int layerSize = buffers.LayerSizes[i + 1];
+                mRenderer.DispatchCompute(commandList, buffers.PassCount, GetWorkGroupCount(layerSize), 1);
             }
         }
 
@@ -267,7 +281,8 @@ namespace MachineLearning
                     });
                 });
 
-                mRenderer.DispatchCompute(commandList, buffers.PassCount, 1, 1);
+                int layerSize = buffers.LayerSizes[i];
+                mRenderer.DispatchCompute(commandList, buffers.PassCount, GetWorkGroupCount(layerSize), 1);
             }
         }
 
@@ -293,7 +308,13 @@ namespace MachineLearning
             commandList.PushStagingObject(pipeline);
             pipeline.Bind(commandList, 0);
 
-            mRenderer.DispatchCompute(commandList, buffers.LayerSizes.Length, 1, 1);
+            int maxLayerSize = -1;
+            for (int i = 1; i < buffers.LayerSizes.Length; i++)
+            {
+                maxLayerSize = int.Max(maxLayerSize, buffers.LayerSizes[i]);
+            }
+
+            mRenderer.DispatchCompute(commandList, buffers.LayerSizes.Length, GetWorkGroupCount(maxLayerSize), 1);
         }
 
         public static float[][] GetConfidenceValues(DispatcherBufferData buffers)

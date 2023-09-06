@@ -70,7 +70,7 @@ namespace MachineLearning
 
     public sealed class Network
     {
-        public const int MaxNeuronsPerLayer = 1024; // for now
+        public const int WorkGroupThreadCount = 32; // arbitrary power of two
         public const int MaxLayers = 16;
 
         public static JsonSerializer JSON => sJSON;

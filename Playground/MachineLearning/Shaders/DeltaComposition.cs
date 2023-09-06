@@ -39,21 +39,20 @@ namespace MachineLearning.Shaders
             }
         }
 
-        // i would add a second dimension, but most gpus dont support more than 1024 invocations per work group
-        // mine included
         [ShaderEntrypoint(ShaderStage.Compute)]
-        [NumThreads(Network.MaxNeuronsPerLayer, 1, 1)]
+        [NumThreads(Network.WorkGroupThreadCount, 1, 1)]
         public static void Entrypoint(ComputeInput input)
         {
             int currentLayer = (int)input.WorkGroupID.X + 1;
-            int currentNeuron = (int)input.InvocationID.X;
+            int currentNeuron = (int)input.InvocationID.X + Network.WorkGroupThreadCount * (int)input.WorkGroupID.Y;
 
-            if (currentNeuron == 0)
+            if (input.InvocationID.X == 0)
             {
                 Initialize(currentLayer);
             }
 
             BuiltinFunctions.Barrier();
+            
             int currentLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer];
             int previousLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer - 1];
 

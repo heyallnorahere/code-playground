@@ -57,11 +57,10 @@ namespace MachineLearning.Shaders
         public static int GetDataBlockSize(int currentLayerSize, int previousLayerSize) => GetDataBlockRowLength(previousLayerSize) * currentLayerSize;
 
         [ShaderEntrypoint(ShaderStage.Compute)]
-        [NumThreads(Network.MaxNeuronsPerLayer, 1, 1)]
+        [NumThreads(Network.WorkGroupThreadCount, 1, 1)]
         public static void Entrypoint(ComputeInput input)
         {
-            int currentNeuron = (int)input.InvocationID.X;
-            if (currentNeuron == 0)
+            if (input.InvocationID.X == 0)
             {
                 Initialize(input.WorkGroupID.X);
             }
@@ -71,6 +70,7 @@ namespace MachineLearning.Shaders
             int currentLayer = ShaderResources.PushConstants.CurrentLayer;
             int currentLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer];
 
+            int currentNeuron = (int)input.InvocationID.X + Network.WorkGroupThreadCount * (int)input.WorkGroupID.Y;
             if (currentNeuron < currentLayerSize)
             {
                 int previousLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer - 1];
