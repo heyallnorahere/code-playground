@@ -94,7 +94,6 @@ namespace MachineLearning
                 if (queue.ReleaseFence(mFence, wait))
                 {
                     var confidences = NetworkDispatcher.GetConfidenceValues(mState.BufferData);
-                    var deltas = NetworkDispatcher.GetDeltas(mState.BufferData);
 
                     int outputCount = mState.Network.LayerSizes[^1];
                     float averageAbsoluteCost = 0f;
@@ -116,10 +115,6 @@ namespace MachineLearning
                         AverageAbsoluteCost = averageAbsoluteCost,
                         ImageIndices = batch.ImageIndices
                     });
-
-                    mState.Network.Step(deltas, mLearningRate);
-                    mState.Network.UpdateBuffer(mState.BufferData.DataBuffer, mState.BufferData.DataStride, mState.BufferData.DataOffset,
-                                                mState.BufferData.ActivationFunctionStride, mState.BufferData.ActivationFunctionOffset);
 
                     advanceBatch = true;
                 }
@@ -177,6 +172,8 @@ namespace MachineLearning
                     NetworkDispatcher.ForwardPropagation(commandList, mState.BufferData, inputs);
                     commandList.ExecutionBarrier();
                     NetworkDispatcher.BackPropagation(commandList, mState.BufferData, expectedOutputs);
+                    commandList.ExecutionBarrier();
+                    NetworkDispatcher.DeltaComposition(commandList, mState.BufferData);
                 }
 
                 commandList.End();
@@ -186,14 +183,21 @@ namespace MachineLearning
             if (!mRunning && mState.Initialized)
             {
                 using var disposeBuffersEvent = OptickMacros.Event("Dispose buffers");
+
+                // we dont want to trip any validation layers
                 queue.ReleaseFence(mFence, true);
 
+                // update network
+                mState.Network.UpdateNetwork(mState.BufferData.DataBuffer, mState.BufferData.DataStride, mState.BufferData.DataOffset);
+
+                // dispose buffers
                 mState.BufferData.SizeBuffer.Dispose();
                 mState.BufferData.DataBuffer.Dispose();
                 mState.BufferData.ActivationBuffer.Dispose();
                 mState.BufferData.PreSigmoidBuffer.Dispose();
                 mState.BufferData.DeltaBuffer.Dispose();
 
+                // reset flags
                 mState.Batch = null;
                 mState.Initialized = false;
             }
@@ -268,7 +272,7 @@ namespace MachineLearning
                 Data = dataset,
                 Network = network,
 
-                BufferData = NetworkDispatcher.CreateBuffers(network, mBatchSize),
+                BufferData = NetworkDispatcher.CreateBuffers(network, mBatchSize, mLearningRate),
                 Initialized = true,
 
                 Batch = null,

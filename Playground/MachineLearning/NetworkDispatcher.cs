@@ -47,7 +47,7 @@ namespace MachineLearning
             throw new InvalidOperationException("The network dispatcher has not been initialized!");
         }
 
-        public static DispatcherBufferData CreateBuffers(Network network, int passCount)
+        public static DispatcherBufferData CreateBuffers(Network network, int passCount, float learningRate = 0f)
         {
             AssertInitialized();
 
@@ -59,12 +59,12 @@ namespace MachineLearning
             int outputCount = layerSizes[^1];
             int neuronTotal = layerSizes.Aggregate((a, b) => a + b);
 
-            int activationOffset = reflectionView.GetBufferOffset(ShaderResources.ActivationBufferName, $"{nameof(NetworkDataBuffer.Data)}[0]");
-            int endOffset = reflectionView.GetBufferOffset(ShaderResources.ActivationBufferName, $"{nameof(NetworkDataBuffer.Data)}[1]");
+            int activationOffset = reflectionView.GetBufferOffset(ShaderResources.ActivationBufferName, $"{nameof(NetworkArrayBuffer.Data)}[0]");
+            int endOffset = reflectionView.GetBufferOffset(ShaderResources.ActivationBufferName, $"{nameof(NetworkArrayBuffer.Data)}[1]");
             int activationStride = endOffset - activationOffset;
 
-            int preSigmoidOffset = reflectionView.GetBufferOffset(ShaderResources.PreSigmoidBufferName, $"{nameof(NetworkDataBuffer.Data)}[0]");
-            endOffset = reflectionView.GetBufferOffset(ShaderResources.PreSigmoidBufferName, $"{nameof(NetworkDataBuffer.Data)}[1]");
+            int preSigmoidOffset = reflectionView.GetBufferOffset(ShaderResources.PreSigmoidBufferName, $"{nameof(NetworkArrayBuffer.Data)}[0]");
+            endOffset = reflectionView.GetBufferOffset(ShaderResources.PreSigmoidBufferName, $"{nameof(NetworkArrayBuffer.Data)}[1]");
             int preSigmoidStride = endOffset - preSigmoidOffset;
 
             int activationCount = neuronTotal * passCount;
@@ -79,13 +79,26 @@ namespace MachineLearning
             network.CreateBuffers(mContext, reflectionView, out IDeviceBuffer dataBuffer, out IDeviceBuffer sizeBuffer,
                                   out int dataStride, out int dataOffset, out int activationFunctionStride, out int activationFunctionOffset);
 
-            int deltaOffset = reflectionView.GetBufferOffset(ShaderResources.DeltaBufferName, $"{nameof(NetworkDataBuffer.Data)}[0]");
-            endOffset = reflectionView.GetBufferOffset(ShaderResources.DeltaBufferName, $"{nameof(NetworkDataBuffer.Data)}[1]");
+            int deltaOffset = reflectionView.GetBufferOffset(ShaderResources.DeltaBufferName, $"{nameof(NetworkDeltaBuffer.Data)}[0]");
+            endOffset = reflectionView.GetBufferOffset(ShaderResources.DeltaBufferName, $"{nameof(NetworkDeltaBuffer.Data)}[1]");
             int deltaStride = endOffset - deltaOffset;
 
             // going to assume the data buffer has the same stride as the delta buffer
             int deltaBufferSize = deltaOffset + (outputCount * deltaStride + dataBuffer.Size - dataOffset) * passCount;
             var deltaBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Storage, deltaBufferSize);
+
+            // vast training optimization
+            // passing the ball into the gpus court
+            deltaBuffer.Map(data =>
+            {
+                // pass count
+                int passCountOffset = reflectionView.GetBufferOffset(ShaderResources.DeltaBufferName, nameof(NetworkDeltaBuffer.PassCount));
+                BitConverter.GetBytes(passCount).CopyTo(data[passCountOffset..]);
+
+                // learning rate
+                int learningRateOffset = reflectionView.GetBufferOffset(ShaderResources.DeltaBufferName, nameof(NetworkDeltaBuffer.LearningRate));
+                BitConverter.GetBytes(learningRate).CopyTo(data[learningRateOffset..]);
+            });
 
             return new DispatcherBufferData
             {
@@ -258,6 +271,31 @@ namespace MachineLearning
             }
         }
 
+        public static void DeltaComposition(ICommandList commandList, DispatcherBufferData buffers)
+        {
+            AssertInitialized();
+
+            using var deltaCompositionEvent = OptickMacros.Event();
+            using var gpuEvent = OptickMacros.GPUEvent("Delta composition");
+
+            var pipeline = mLibrary.LoadPipeline<DeltaComposition>(new PipelineDescription
+            {
+                RenderTarget = null,
+                Type = PipelineType.Compute,
+                FrameCount = 1,
+                Specification = null
+            });
+
+            pipeline.Bind(buffers.SizeBuffer, ShaderResources.SizeBufferName);
+            pipeline.Bind(buffers.DataBuffer, ShaderResources.DataBufferName);
+            pipeline.Bind(buffers.DeltaBuffer, ShaderResources.DeltaBufferName);
+
+            commandList.PushStagingObject(pipeline);
+            pipeline.Bind(commandList, 0);
+
+            mRenderer.DispatchCompute(commandList, buffers.LayerSizes.Length, 1, 1);
+        }
+
         public static float[][] GetConfidenceValues(DispatcherBufferData buffers)
         {
             AssertInitialized();
@@ -293,58 +331,6 @@ namespace MachineLearning
             });
 
             return results;
-        }
-
-        public static Layer[] GetDeltas(DispatcherBufferData buffers)
-        {
-            AssertInitialized();
-            using var getDeltasEvent = OptickMacros.Event();
-
-            int dataMatrixSize = buffers.DataBuffer.Size - buffers.DataOffset;
-            int deltaMatrixSize = dataMatrixSize * buffers.DeltaStride / buffers.DataStride;
-            int deltaMatrixOffset = buffers.DeltaBuffer.Size - (deltaMatrixSize * buffers.PassCount);
-
-            var deltas = new Layer[buffers.LayerSizes.Length - 1];
-            buffers.DeltaBuffer.Map(data =>
-            {
-                using var copyEvent = OptickMacros.Event("Copy from delta buffer");
-                
-                int layerOffset = 0;
-                for (int i = 0; i < deltas.Length; i++)
-                {
-                    int currentLayerSize = buffers.LayerSizes[i + 1];
-                    int previousLayerSize = buffers.LayerSizes[i];
-
-                    var delta = new Layer(currentLayerSize, previousLayerSize);
-                    int matrixRowLength = previousLayerSize + 1;
-
-                    for (int j = 0; j < buffers.PassCount; j++)
-                    {
-                        int matrixOffset = deltaMatrixOffset + layerOffset * buffers.DeltaStride + deltaMatrixSize * j;
-                        for (int y = 0; y < currentLayerSize; y++)
-                        {
-                            int matrixRowOffset = matrixRowLength * y;
-                            int biasDeltaOffset = matrixOffset + matrixRowOffset * buffers.DeltaStride;
-                            float biasDelta = BitConverter.ToSingle(data[biasDeltaOffset..]);
-
-                            delta.Biases[y] += biasDelta / buffers.PassCount;
-                            for (int x = 0; x < previousLayerSize; x++)
-                            {
-                                int matrixColumnOffset = matrixRowOffset + x + 1;
-                                int weightDeltaOffset = matrixOffset + matrixColumnOffset * buffers.DeltaStride;
-                                float weightDelta = BitConverter.ToSingle(data[weightDeltaOffset..]);
-
-                                delta.Weights[y, x] += weightDelta / buffers.PassCount;
-                            }
-                        }
-                    }
-
-                    deltas[i] = delta;
-                    layerOffset += matrixRowLength * currentLayerSize;
-                }
-            });
-
-            return deltas;
         }
     }
 }

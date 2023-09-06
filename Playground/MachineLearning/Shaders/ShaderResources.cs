@@ -9,9 +9,6 @@ namespace MachineLearning.Shaders
 
         [ShaderVariable(ShaderVariableID.WorkGroupID)]
         public Vector3<uint> WorkGroupID;
-
-        [ShaderVariable(ShaderVariableID.WorkGroupCount)]
-        public Vector3<uint> WorkGroupCount;
     }
 
     public struct SizeBufferData
@@ -26,6 +23,14 @@ namespace MachineLearning.Shaders
     {
         [ArraySize(Network.MaxLayers - 1)]
         public ActivationFunction[] LayerActivationFunctions;
+
+        public float[] Data;
+    }
+
+    public struct NetworkDeltaBuffer
+    {
+        public int PassCount;
+        public float LearningRate;
 
         public float[] Data;
     }
@@ -67,7 +72,7 @@ namespace MachineLearning.Shaders
 
         [Layout(Set = 0, Binding = 4, ResourceType = ShaderResourceType.Storage)]
         [ShaderFieldName(DeltaBufferName, UseClassName = false)]
-        public static NetworkArrayBuffer DeltaBuffer;
+        public static NetworkDeltaBuffer DeltaBuffer;
 
         [Layout(PushConstant = true)]
         [ShaderFieldName(PushConstantBufferName, UseClassName = false)]

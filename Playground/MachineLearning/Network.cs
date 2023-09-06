@@ -10,6 +10,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading.Tasks;
 
 // based off of https://github.com/yodasoda1219/cpu-neural-network/blob/main/NeuralNetwork/Network.cs
 namespace MachineLearning
@@ -47,36 +48,6 @@ namespace MachineLearning
                 for (int j = 0; j < previousSize; j++)
                 {
                     pushFloat(Weights[i, j]);
-                }
-            }
-        }
-
-        public readonly void Step(Layer delta, float learningRate)
-        {
-            using var stepEvent = OptickMacros.Event();
-
-            int currentSize = Weights.GetLength(0);
-            int previousSize = Weights.GetLength(1);
-
-            int deltaCurrentSize = delta.Weights.GetLength(0);
-            int deltaPreviousSize = delta.Weights.GetLength(1);
-
-            if (Biases.Length != currentSize || delta.Biases.Length != deltaCurrentSize)
-            {
-                throw new ArgumentException("Size mismatch!");
-            }
-
-            if (currentSize != deltaCurrentSize || previousSize != deltaPreviousSize)
-            {
-                throw new ArgumentException("Size mismatch!");
-            }
-
-            for (int y = 0; y < currentSize; y++)
-            {
-                Biases[y] -= delta.Biases[y] * learningRate;
-                for (int x = 0; x < previousSize; x++)
-                {
-                    Weights[y, x] -= delta.Weights[y, x] * learningRate;
                 }
             }
         }
@@ -280,7 +251,7 @@ namespace MachineLearning
             UpdateBuffer(dataBuffer, dataStride, dataOffset, activationStride, activationOffset);
         }
 
-        public void UpdateBuffer(IDeviceBuffer dataBuffer, int bufferStride, int dataOffset, int activationStride, int activationOffset)
+        public void UpdateBuffer(IDeviceBuffer dataBuffer, int dataStride, int dataOffset, int activationStride, int activationOffset)
         {
             using var updateBufferEvent = OptickMacros.Event();
             dataBuffer.Map(data =>
@@ -295,7 +266,7 @@ namespace MachineLearning
 
                 for (int i = 0; i < values.Count; i++)
                 {
-                    int offset = i * bufferStride + dataOffset;
+                    int offset = i * dataStride + dataOffset;
                     BitConverter.GetBytes(values[i]).CopyTo(data[offset..(offset + Marshal.SizeOf<float>())]);
                 }
 
@@ -347,17 +318,37 @@ namespace MachineLearning
             return result;
         }
 
-        public void Step(Layer[] deltas, float learningRate)
+        public void UpdateNetwork(IDeviceBuffer dataBuffer, int dataStride, int dataOffset)
         {
-            if (mLayers.Length != deltas.Length)
+            using var readBufferEvent = OptickMacros.Event();
+            dataBuffer.Map(data =>
             {
-                throw new ArgumentException("Layer count mismatch!");
-            }
+                using var copyEvent = OptickMacros.Event("Copy from data buffer");
 
-            for (int i = 0; i < mLayers.Length; i++)
-            {
-                mLayers[i].Step(deltas[i], learningRate);
-            }
+                int matrixOffset = 0;
+                for (int i = 0; i < mLayers.Length; i++)
+                {
+                    var layer = mLayers[i];
+
+                    int currentLayerSize = layer.Weights.GetLength(0);
+                    int previousLayerSize = layer.Weights.GetLength(1);
+
+                    for (int j = 0; j < currentLayerSize; j++)
+                    {
+                        int rowOffset = matrixOffset + j * (previousLayerSize + 1);
+                        int biasOffset = rowOffset * dataStride + dataOffset;
+
+                        layer.Biases[j] = BitConverter.ToSingle(data[biasOffset..]);
+                        for (int k = 0; k <  previousLayerSize; k++)
+                        {
+                            int weightOffset = (rowOffset + k + 1) * dataStride + dataOffset;
+                            layer.Weights[j, k] = BitConverter.ToSingle(data[weightOffset..]);
+                        }
+                    }
+
+                    matrixOffset += currentLayerSize * (previousLayerSize + 1);
+                };
+            });
         }
 
         public void SetActivationFunctions(IReadOnlyList<ActivationFunction> activationFunctions)

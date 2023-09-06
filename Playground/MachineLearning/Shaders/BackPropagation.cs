@@ -55,15 +55,14 @@ namespace MachineLearning.Shaders
             return (1f - tanh * tanh) / 2f;
         }
 
-        private static void Initialize(uint workGroupId, uint workGroupCount)
+        private static void Initialize(uint workGroupId)
         {
             int networkPass = (int)workGroupId;
-            int passCount = (int)workGroupCount;
 
             int lastLayer = ShaderResources.SizeBuffer.LayerCount - 1;
             int outputCount = ShaderResources.SizeBuffer.LayerSizes[lastLayer];
 
-            s_DeltaOffset = outputCount * passCount;
+            s_DeltaOffset = outputCount * ShaderResources.DeltaBuffer.PassCount;
             s_DeltaExpectedOffset = networkPass * outputCount;
 
             s_DataOffset = 0;
@@ -105,7 +104,7 @@ namespace MachineLearning.Shaders
             int currentNeuron = (int)input.InvocationID.X;
             if (currentNeuron == 0)
             {
-                Initialize(input.WorkGroupID.X, input.WorkGroupCount.X);
+                Initialize(input.WorkGroupID.X);
             }
 
             BuiltinFunctions.Barrier();

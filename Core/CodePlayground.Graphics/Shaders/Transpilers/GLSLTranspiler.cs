@@ -625,187 +625,188 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         else if (name.StartsWith("ld"))
                         {
                             string loadType = name[2..];
-
-                            string expression;
-                            if (instruction.Operand is FieldInfo field)
+                            if (!loadType.StartsWith("ind"))
                             {
-                                var fieldName = GetFieldName(field, type);
-                                var layoutAttribute = field.GetCustomAttribute<LayoutAttribute>();
-
-                                if (field.DeclaringType == type || field.IsStatic)
+                                string expression;
+                                if (instruction.Operand is FieldInfo field)
                                 {
-                                    if (layoutAttribute is null)
+                                    var fieldName = GetFieldName(field, type);
+                                    var layoutAttribute = field.GetCustomAttribute<LayoutAttribute>();
+
+                                    if (field.DeclaringType == type || field.IsStatic)
                                     {
-                                        throw new InvalidOperationException("Static and/or shader fields must have the Layout attribute applied!");
-                                    }
-                                    else if (layoutAttribute.Shared)
-                                    {
-                                        var fieldType = field.FieldType;
-                                        ProcessType(fieldType, type);
-
-                                        if (!mSharedVariables.ContainsKey(fieldName))
+                                        if (layoutAttribute is null)
                                         {
-                                            mSharedVariables.Add(fieldName, fieldType);
+                                            throw new InvalidOperationException("Static and/or shader fields must have the Layout attribute applied!");
                                         }
-                                    }
-                                    else if (!mStageResources.ContainsKey(fieldName))
-                                    {
-                                        var fieldType = field.FieldType;
-
-                                        int arraySize = -1;
-                                        if (fieldType.IsArray)
+                                        else if (layoutAttribute.Shared)
                                         {
-                                            var arraySizeAttribute = field.GetCustomAttribute<ArraySizeAttribute>();
-                                            if (arraySizeAttribute is null)
+                                            var fieldType = field.FieldType;
+                                            ProcessType(fieldType, type);
+
+                                            if (!mSharedVariables.ContainsKey(fieldName))
                                             {
-                                                throw new InvalidOperationException("Implicitly-sized resource arrays are not permitted!");
-                                            }
-
-                                            arraySize = (int)arraySizeAttribute.Length;
-                                            fieldType = fieldType.GetElementType() ?? throw new InvalidOperationException("Invalid array type!");
-                                        }
-
-                                        ProcessType(fieldType, type, false);
-
-                                        string layoutString;
-                                        if (layoutAttribute.PushConstant)
-                                        {
-                                            layoutString = "push_constant";
-                                        }
-                                        else
-                                        {
-                                            layoutString = $"set = {layoutAttribute.Set}, binding = {layoutAttribute.Binding}";
-
-                                            var primitiveTypeAttribute = fieldType.GetCustomAttribute<PrimitiveShaderTypeAttribute>();
-                                            if (primitiveTypeAttribute is null || primitiveTypeAttribute.TypeClass == PrimitiveShaderTypeClass.Value)
-                                            {
-                                                layoutString = "std140, " + layoutString;
-                                            }
-                                            else if (primitiveTypeAttribute.TypeClass == PrimitiveShaderTypeClass.Image)
-                                            {
-                                                var format = layoutAttribute.Format;
-                                                var formatEnumName = format.ToString();
-
-                                                var formatField = typeof(ShaderImageFormat).GetField(formatEnumName, BindingFlags.Static | BindingFlags.Public);
-                                                var fieldNameAttribute = formatField?.GetCustomAttribute<ShaderFieldNameAttribute>();
-
-                                                string formatString = fieldNameAttribute?.Name ?? formatEnumName.ToLower();
-                                                layoutString += ", " + formatString;
+                                                mSharedVariables.Add(fieldName, fieldType);
                                             }
                                         }
-
-                                        mStageResources.Add(fieldName, new ShaderResource
+                                        else if (!mStageResources.ContainsKey(fieldName))
                                         {
-                                            Layout = layoutString,
-                                            ResourceType = fieldType,
-                                            Type = layoutAttribute.ResourceType,
-                                            ArraySize = arraySize
-                                        });
-                                    }
-                                }
+                                            var fieldType = field.FieldType;
 
-                                if (!field.IsStatic)
-                                {
-                                    var parentExpression = evaluationStack.Pop();
-                                    expression = parentExpression != "this" ? $"{parentExpression}.{fieldName}" : fieldName;
+                                            int arraySize = -1;
+                                            if (fieldType.IsArray)
+                                            {
+                                                var arraySizeAttribute = field.GetCustomAttribute<ArraySizeAttribute>();
+                                                if (arraySizeAttribute is null)
+                                                {
+                                                    throw new InvalidOperationException("Implicitly-sized resource arrays are not permitted!");
+                                                }
 
-                                    if (inputFields.TryGetValue(expression, out string? inputName))
-                                    {
-                                        expression = inputName;
-                                    }
-                                }
-                                else
-                                {
-                                    expression = fieldName;
-                                }
-                            }
-                            else if (loadType.StartsWith("loc"))
-                            {
-                                int variableIndex;
-                                if (instruction.Operand is null)
-                                {
-                                    variableIndex = int.Parse(name[(name.Length - 1)..]);
-                                }
-                                else
-                                {
-                                    variableIndex = Convert.ToInt32(instruction.Operand);
-                                }
+                                                arraySize = (int)arraySizeAttribute.Length;
+                                                fieldType = fieldType.GetElementType() ?? throw new InvalidOperationException("Invalid array type!");
+                                            }
 
-                                expression = $"var_{variableIndex}";
-                            }
-                            else if (loadType.StartsWith("arg"))
-                            {
-                                int argumentIndex;
-                                if (instruction.Operand is null)
-                                {
-                                    argumentIndex = int.Parse(name[(name.Length - 1)..]);
-                                }
-                                else
-                                {
-                                    argumentIndex = Convert.ToInt32(instruction.Operand);
-                                }
+                                            ProcessType(fieldType, type, false);
 
-                                if (!method.IsStatic)
-                                {
-                                    argumentIndex--;
-                                }
+                                            string layoutString;
+                                            if (layoutAttribute.PushConstant)
+                                            {
+                                                layoutString = "push_constant";
+                                            }
+                                            else
+                                            {
+                                                layoutString = $"set = {layoutAttribute.Set}, binding = {layoutAttribute.Binding}";
 
-                                if (argumentIndex < 0)
-                                {
-                                    expression = "this";
-                                }
-                                else
-                                {
-                                    expression = parameterNames[argumentIndex];
-                                    if (inputFields.TryGetValue(expression, out string? inputName))
-                                    {
-                                        expression = inputName;
-                                    }
-                                }
-                            }
-                            else if (loadType.StartsWith("elem"))
-                            {
-                                var index = evaluationStack.Pop();
-                                var array = evaluationStack.Pop();
-                                expression = $"{array}[{index}]";
-                            }
-                            else if (instruction.Operand is string)
-                            {
-                                throw new InvalidOperationException("Strings are not permitted in shaders!");
-                            }
-                            else
-                            {
-                                string? parsedExpression = instruction.Operand?.ToString();
-                                if (parsedExpression is null)
-                                {
-                                    int lastSeparator = name.LastIndexOf('.');
-                                    if (lastSeparator >= 0)
-                                    {
-                                        var valueSegment = name[(lastSeparator + 1)..];
+                                                var primitiveTypeAttribute = fieldType.GetCustomAttribute<PrimitiveShaderTypeAttribute>();
+                                                if (primitiveTypeAttribute is null || primitiveTypeAttribute.TypeClass == PrimitiveShaderTypeClass.Value)
+                                                {
+                                                    layoutString = "std140, " + layoutString;
+                                                }
+                                                else if (primitiveTypeAttribute.TypeClass == PrimitiveShaderTypeClass.Image)
+                                                {
+                                                    var format = layoutAttribute.Format;
+                                                    var formatEnumName = format.ToString();
 
-                                        int factor = 1;
-                                        if (valueSegment.StartsWith('m'))
-                                        {
-                                            factor *= -1;
-                                            valueSegment = valueSegment[1..];
-                                        }
+                                                    var formatField = typeof(ShaderImageFormat).GetField(formatEnumName, BindingFlags.Static | BindingFlags.Public);
+                                                    var fieldNameAttribute = formatField?.GetCustomAttribute<ShaderFieldNameAttribute>();
 
-                                        if (int.TryParse(valueSegment, out int parsedInteger))
-                                        {
-                                            parsedExpression = valueSegment;
+                                                    string formatString = fieldNameAttribute?.Name ?? formatEnumName.ToLower();
+                                                    layoutString += ", " + formatString;
+                                                }
+                                            }
+
+                                            mStageResources.Add(fieldName, new ShaderResource
+                                            {
+                                                Layout = layoutString,
+                                                ResourceType = fieldType,
+                                                Type = layoutAttribute.ResourceType,
+                                                ArraySize = arraySize
+                                            });
                                         }
                                     }
+
+                                    if (!field.IsStatic)
+                                    {
+                                        var parentExpression = evaluationStack.Pop();
+                                        expression = parentExpression != "this" ? $"{parentExpression}.{fieldName}" : fieldName;
+
+                                        if (inputFields.TryGetValue(expression, out string? inputName))
+                                        {
+                                            expression = inputName;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        expression = fieldName;
+                                    }
+                                }
+                                else if (loadType.StartsWith("loc"))
+                                {
+                                    int variableIndex;
+                                    if (instruction.Operand is null)
+                                    {
+                                        variableIndex = int.Parse(name[(name.Length - 1)..]);
+                                    }
+                                    else
+                                    {
+                                        variableIndex = Convert.ToInt32(instruction.Operand);
+                                    }
+
+                                    expression = $"var_{variableIndex}";
+                                }
+                                else if (loadType.StartsWith("arg"))
+                                {
+                                    int argumentIndex;
+                                    if (instruction.Operand is null)
+                                    {
+                                        argumentIndex = int.Parse(name[(name.Length - 1)..]);
+                                    }
+                                    else
+                                    {
+                                        argumentIndex = Convert.ToInt32(instruction.Operand);
+                                    }
+
+                                    if (!method.IsStatic)
+                                    {
+                                        argumentIndex--;
+                                    }
+
+                                    if (argumentIndex < 0)
+                                    {
+                                        expression = "this";
+                                    }
+                                    else
+                                    {
+                                        expression = parameterNames[argumentIndex];
+                                        if (inputFields.TryGetValue(expression, out string? inputName))
+                                        {
+                                            expression = inputName;
+                                        }
+                                    }
+                                }
+                                else if (loadType.StartsWith("elem"))
+                                {
+                                    var index = evaluationStack.Pop();
+                                    var array = evaluationStack.Pop();
+                                    expression = $"{array}[{index}]";
+                                }
+                                else if (instruction.Operand is string)
+                                {
+                                    throw new InvalidOperationException("Strings are not permitted in shaders!");
+                                }
+                                else
+                                {
+                                    string? parsedExpression = instruction.Operand?.ToString();
+                                    if (parsedExpression is null)
+                                    {
+                                        int lastSeparator = name.LastIndexOf('.');
+                                        if (lastSeparator >= 0)
+                                        {
+                                            var valueSegment = name[(lastSeparator + 1)..];
+
+                                            int factor = 1;
+                                            if (valueSegment.StartsWith('m'))
+                                            {
+                                                factor *= -1;
+                                                valueSegment = valueSegment[1..];
+                                            }
+
+                                            if (int.TryParse(valueSegment, out int parsedInteger))
+                                            {
+                                                parsedExpression = valueSegment;
+                                            }
+                                        }
+                                    }
+
+                                    expression = parsedExpression ?? throw new InvalidOperationException("Null values are not permitted in shaders!");
                                 }
 
-                                expression = parsedExpression ?? throw new InvalidOperationException("Null values are not permitted in shaders!");
+                                evaluationStack.Push(expression);
                             }
-
-                            evaluationStack.Push(expression);
                         }
                         else if (name.StartsWith("st"))
                         {
                             var storeType = name[2..];
-
                             if (instruction.Operand is FieldInfo field)
                             {
                                 var expression = evaluationStack.Pop();
@@ -858,6 +859,13 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 var array = evaluationStack.Pop();
 
                                 builder.AppendLine($"{array}[{index}] = {expression};");
+                            }
+                            else if (storeType.StartsWith("ind"))
+                            {
+                                var value = evaluationStack.Pop();
+                                var address = evaluationStack.Pop();
+
+                                builder.AppendLine($"{address} = {value};");
                             }
                             else
                             {
@@ -1027,6 +1035,9 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                         builder.AppendLine("return;");
                                     }
 
+                                    break;
+                                case "dup":
+                                    evaluationStack.Push(evaluationStack.Peek());
                                     break;
                                 default:
                                     throw new InvalidOperationException($"Instruction {name} has not been implemented yet!");
@@ -1424,7 +1435,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         {
                             newEvaluationList.Add(method);
                         }
-                        
+
                         continue;
                     }
 
