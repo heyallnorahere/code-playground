@@ -116,7 +116,7 @@ namespace CodePlayground.Graphics.Vulkan
                 AddressModeV = addressMode,
                 AddressModeW = addressMode,
                 MipLodBias = 0f,
-                AnisotropyEnable = features.SamplerAnisotropy,
+                AnisotropyEnable = features.SamplerAnisotropy && filter != Filter.Nearest, // thanks intel
                 MaxAnisotropy = properties.Limits.MaxSamplerAnisotropy,
                 CompareEnable = false,
                 CompareOp = CompareOp.Always,
