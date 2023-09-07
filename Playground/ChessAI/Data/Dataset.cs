@@ -6,6 +6,7 @@ using SQLite;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,7 +14,6 @@ using ZstdNet;
 
 namespace ChessAI.Data
 {
-    [Table(nameof(PositionData), WithoutRowId = true)]
     public sealed class PositionData
     {
         public PositionData()
@@ -200,7 +200,7 @@ namespace ChessAI.Data
         {
             using var getInputEvent = OptickMacros.Event();
 
-            var data = mConnection.Table<PositionData>().ElementAt(index);
+            var data = mConnection.Query<PositionData>($"select * from {nameof(PositionData)} where {nameof(PositionData.ID)} == {index}").First();
             var input = JsonConvert.DeserializeObject<float[]>(data.NetworkInput);
 
             return input ?? throw new ArgumentException("Failed to deserialize network input!");
