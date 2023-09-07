@@ -187,7 +187,8 @@ namespace ChessAI.Data
             mConnection = new SQLiteConnection(path);
             mConnection.CreateTable<PositionData>();
 
-            mCount = mConnection.Table<PositionData>().Count();
+            mCache = mConnection.Table<PositionData>().ToArray();
+            mCount = mCache.Length;
         }
 
         public void Dispose() => mConnection.Dispose();
@@ -196,11 +197,23 @@ namespace ChessAI.Data
         public int InputCount => NetworkInputCount;
         public int OutputCount => NetworkOutputCount;
 
+        private void VerifyCache()
+        {
+            if (mCache.Length != mCount)
+            {
+                mCache = Array.Empty<PositionData>();
+                GC.Collect(); // we dont want to exceed max memory
+
+                mCache = mConnection.Table<PositionData>().ToArray();
+            }
+        }
+
         public float[] GetInput(int index)
         {
             using var getInputEvent = OptickMacros.Event();
+            VerifyCache();
 
-            var data = mConnection.Query<PositionData>($"select * from {nameof(PositionData)} where {nameof(PositionData.ID)} == {index}").First();
+            var data = mCache[index];
             var input = JsonConvert.DeserializeObject<float[]>(data.NetworkInput);
 
             return input ?? throw new ArgumentException("Failed to deserialize network input!");
@@ -209,8 +222,9 @@ namespace ChessAI.Data
         public float[] GetExpectedOutput(int index)
         {
             using var getOutputEvent = OptickMacros.Event();
-            var data = mConnection.Table<PositionData>().ElementAt(index);
+            VerifyCache();
 
+            var data = mCache[index];
             var outputs = new float[NetworkOutputCount];
             Array.Fill(outputs, 0f);
 
@@ -234,6 +248,7 @@ namespace ChessAI.Data
         }
 
         private readonly SQLiteConnection mConnection;
+        private PositionData[] mCache;
         private int mCount;
     }
 }
