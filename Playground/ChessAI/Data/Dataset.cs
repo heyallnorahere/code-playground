@@ -13,6 +13,7 @@ using ZstdNet;
 
 namespace ChessAI.Data
 {
+    [Table(nameof(PositionData), WithoutRowId = true)]
     public sealed class PositionData
     {
         public PositionData()
