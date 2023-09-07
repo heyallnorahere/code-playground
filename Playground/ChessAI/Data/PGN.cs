@@ -1,6 +1,5 @@
 using LibChess;
 using Optick.NET;
-using Silk.NET.Core;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -13,7 +12,6 @@ namespace ChessAI.Data
     {
         public Move Move;
         public string Position;
-        public float[] NetworkInput;
     }
 
     public struct PGN
@@ -254,8 +252,7 @@ namespace ChessAI.Data
                         moves.Add(new PGNMove
                         {
                             Move = move,
-                            Position = board.SerializeFEN(),
-                            NetworkInput = board.GetNetworkInput()
+                            Position = board.SerializeFEN()
                         });
 
                         if (board.CurrentTurn == PlayerColor.White)

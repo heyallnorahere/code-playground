@@ -18,6 +18,7 @@ namespace ChessAI.Data
         public PositionData()
         {
             Position = string.Empty;
+            NetworkInput = string.Empty;
             PieceMoved = string.Empty;
             BestMove = string.Empty;
             Promotion = PieceType.None;
@@ -28,23 +29,11 @@ namespace ChessAI.Data
 
         [Unique]
         public string Position { get; set; }
+        public string NetworkInput { get; set; }
 
         public string PieceMoved { get; set; }
         public string BestMove { get; set; }
         public PieceType Promotion { get; set; }
-    }
-
-    public sealed class NetworkInputData
-    {
-        public NetworkInputData()
-        {
-            Position = string.Empty;
-            NetworkInput = string.Empty;
-        }
-
-        [PrimaryKey, Unique]
-        public string Position { get; set; }
-        public string NetworkInput { get; set; }
     }
 
     public sealed class Dataset : IDataset, IDisposable
@@ -119,13 +108,22 @@ namespace ChessAI.Data
                     return;
                 }
 
+                using var board = Board.Create(digestion.Position);
+                if (board is null)
+                {
+                    throw new ArgumentException("Invalid FEN string!");
+                }
+
                 var moveData = digestion.BestMove.Value;
+                var networkInput = board.GetNetworkInput();
+
                 lock (dataset)
                 {
                     dataset.mConnection.Insert(new PositionData
                     {
                         ID = dataset.mCount++,
                         Position = digestion.Position,
+                        NetworkInput = JsonConvert.SerializeObject(networkInput, Formatting.None),
                         PieceMoved = moveData.Move.Position.ToString(),
                         BestMove = moveData.Move.Destination.ToString(),
                         Promotion = moveData.Promotion
@@ -155,35 +153,15 @@ namespace ChessAI.Data
             FeedPond(dataset, pond, null);
             foreach (var move in pgn.Moves)
             {
-                FeedPond(dataset, pond, move);
+                FeedPond(dataset, pond, move.Position);
             }
         }
 
-        private static void FeedPond(Dataset dataset, Pond pond, PGNMove? move)
+        private static void FeedPond(Dataset dataset, Pond pond, string? fen)
         {
-            string usedFen = move?.Position ?? Pond.DefaultFEN;
+            string usedFen = fen ?? Pond.DefaultFEN;
             lock (dataset)
             {
-                if (dataset.mConnection.Find<NetworkInputData>(usedFen) is null)
-                {
-                    float[] networkInput;
-                    if (move is null)
-                    {
-                        using var board = Board.Create();
-                        networkInput = board.GetNetworkInput();
-                    }
-                    else
-                    {
-                        networkInput = move.Value.NetworkInput;
-                    }
-
-                    dataset.mConnection.Insert(new NetworkInputData
-                    {
-                        Position = usedFen,
-                        NetworkInput = JsonConvert.SerializeObject(networkInput, Formatting.None)
-                    });
-                }
-
                 if (dataset.mConnection.Find<PositionData>(data => data.Position == usedFen) is not null)
                 {
                     return;
@@ -192,13 +170,13 @@ namespace ChessAI.Data
 
             lock (sSubmittedFENs)
             {
-                if (!sSubmittedFENs.Add(move?.Position))
+                if (!sSubmittedFENs.Add(fen))
                 {
                     return;
                 }
             }
 
-            pond.Feed(move?.Position);
+            pond.Feed(fen);
         }
 
         public Dataset(string path)
@@ -207,7 +185,6 @@ namespace ChessAI.Data
 
             mConnection = new SQLiteConnection(path);
             mConnection.CreateTable<PositionData>();
-            mConnection.CreateTable<NetworkInputData>();
 
             mCount = mConnection.Table<PositionData>().Count();
         }
@@ -223,26 +200,9 @@ namespace ChessAI.Data
             using var getInputEvent = OptickMacros.Event();
 
             var data = mConnection.Table<PositionData>().ElementAt(index);
-            var networkInput = mConnection.Find<NetworkInputData>(data.Position);
+            var input = JsonConvert.DeserializeObject<float[]>(data.NetworkInput);
 
-            if (networkInput is null)
-            {
-                using var board = Board.Create(data.Position);
-                if (board is null)
-                {
-                    throw new ArgumentException("Invalid FEN string!");
-                }
-
-                return board.GetNetworkInput();
-            }
-
-            var input = JsonConvert.DeserializeObject<float[]>(networkInput.NetworkInput);
-            if (input is null)
-            {
-                throw new ArgumentException("Failed to deserialize network input!");
-            }
-
-            return input;
+            return input ?? throw new ArgumentException("Failed to deserialize network input!");
         }
 
         public float[] GetExpectedOutput(int index)
