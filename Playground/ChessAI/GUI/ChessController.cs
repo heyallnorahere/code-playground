@@ -405,7 +405,8 @@ namespace ChessAI.GUI
                                     var outputs = NetworkDispatcher.GetConfidenceValues(mBufferData);
                                     var move = ChessUtilities.ParseNetworkOutput(outputs[0]);
 
-                                    if (mEngine.CommitMove(move.Move))
+                                    mBoard.GetPiece(move.Move.Position, out PieceInfo piece);
+                                    if (piece.Color != mColor && piece.Type != PieceType.None && mEngine.CommitMove(move.Move))
                                     {
                                         if (mEngine.ShouldPromote(mColor, true) && !mEngine.Promote(move.Promotion))
                                         {
