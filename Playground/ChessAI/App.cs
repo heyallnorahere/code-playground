@@ -286,7 +286,13 @@ namespace ChessAI
 
                 var encoding = Encoding.UTF8;
                 LoadNetwork(encoding);
-                Console.CancelKeyPress += (s, e) => SerializeNetwork(encoding);
+                Console.CancelKeyPress += (s, e) =>
+                {
+                    mTrainer?.Stop();
+                    mTrainer?.Update(true);
+
+                    SerializeNetwork(encoding);
+                };
 
                 mComputeLibrary = new ShaderLibrary(context, typeof(NetworkDispatcher).Assembly);
                 NetworkDispatcher.Initialize(mRenderer, mComputeLibrary);
@@ -375,7 +381,7 @@ namespace ChessAI
             var window = RootWindow;
             var inputContext = InputContext;
             var graphicsContext = GraphicsContext;
-            
+
             if (window is null ||
                 inputContext is null ||
                 graphicsContext is null ||
