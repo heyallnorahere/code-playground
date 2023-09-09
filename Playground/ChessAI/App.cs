@@ -258,8 +258,11 @@ namespace ChessAI
                 return;
             }
 
-            using var stream = new FileStream(networkPath, FileMode.Create, FileAccess.Write);
-            Network.Save(mNetwork, stream, encoding);
+            lock (mNetwork)
+            {
+                using var stream = new FileStream(networkPath, FileMode.Create, FileAccess.Write);
+                Network.Save(mNetwork, stream, encoding);
+            }
         }
 
         private void OnLoad()
@@ -288,8 +291,14 @@ namespace ChessAI
                 LoadNetwork(encoding);
                 Console.CancelKeyPress += (s, e) =>
                 {
-                    mTrainer?.Stop();
-                    mTrainer?.Update(true);
+                    if (mTrainer is not null)
+                    {
+                        lock (mTrainer)
+                        {
+                            mTrainer.Stop();
+                            mTrainer.Update(true);
+                        }
+                    }
 
                     SerializeNetwork(encoding);
                 };
@@ -482,7 +491,10 @@ namespace ChessAI
                         mTrainer!.Start(dataset, mNetwork!);
                         while (mTrainer.IsRunning)
                         {
-                            mTrainer.Update(true);
+                            lock (mTrainer)
+                            {
+                                mTrainer.Update(true);
+                            }
                         }
                     }
 

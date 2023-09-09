@@ -85,6 +85,11 @@ namespace MachineLearning
             using var updateEvent = OptickMacros.Event();
             var queue = mContext.Device.GetQueue(CommandQueueFlags.Compute);
 
+            if (!mState.Initialized)
+            {
+                return;
+            }
+
             bool advanceBatch = mState.Batch is null;
             if (mState.Batch is not null && (wait || mFence.IsSignaled()))
             {
@@ -180,7 +185,7 @@ namespace MachineLearning
                 queue.Submit(commandList, fence: mFence);
             }
 
-            if (!mRunning && mState.Initialized)
+            if (!mRunning)
             {
                 using var disposeBuffersEvent = OptickMacros.Event("Dispose buffers");
 

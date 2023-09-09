@@ -64,7 +64,7 @@ namespace MachineLearning
     public struct NetworkData
     {
         public int[] LayerSizes;
-        public Layer[] Data;
+        public Layer[] Layers;
         public ActivationFunction[]? LayerActivationFunctions;
     }
 
@@ -150,7 +150,7 @@ namespace MachineLearning
             using var constructorEvent = OptickMacros.Event();
 
             int layerCount = data.LayerSizes.Length;
-            if (data.Data.Length != layerCount - 1)
+            if (data.Layers.Length != layerCount - 1)
             {
                 throw new ArgumentException("Layer count mismatch!");
             }
@@ -165,7 +165,7 @@ namespace MachineLearning
                 int previousSize = mLayerSizes[i];
 
                 var layer = new Layer(currentSize, previousSize);
-                var existingLayer = data.Data[i];
+                var existingLayer = data.Layers[i];
 
                 if (existingLayer.Biases.Length != existingLayer.Weights.GetLength(0))
                 {
@@ -288,7 +288,7 @@ namespace MachineLearning
             var result = new NetworkData
             {
                 LayerSizes = new int[layerCount],
-                Data = new Layer[layerCount - 1],
+                Layers = new Layer[layerCount - 1],
                 LayerActivationFunctions = new ActivationFunction[layerCount - 1]
             };
 
@@ -312,7 +312,7 @@ namespace MachineLearning
                     }
                 }
 
-                result.Data[i] = layer;
+                result.Layers[i] = layer;
             }
 
             return result;

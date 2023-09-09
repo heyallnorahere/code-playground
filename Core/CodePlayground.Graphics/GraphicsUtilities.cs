@@ -194,5 +194,25 @@ namespace CodePlayground.Graphics
         {
             return new GPUContextScope(commandList.Address, queueType, node);
         }
+
+        public static void TransitionLayout(this IDeviceImage image, ICommandList commandList, DeviceImageLayoutName source, DeviceImageLayoutName destination)
+        {
+            var sourceLayout = image.GetLayout(source);
+            var destinationLayout = image.GetLayout(destination);
+
+            image.TransitionLayout(commandList, sourceLayout, destinationLayout);
+        }
+
+        public static void TransitionLayout(this IDeviceImage image, ICommandList commandList, DeviceImageLayoutName source, object destination)
+        {
+            var sourceLayout = image.GetLayout(source);
+            image.TransitionLayout(commandList, sourceLayout, destination);
+        }
+
+        public static void TransitionLayout(this IDeviceImage image, ICommandList commandList, object source, DeviceImageLayoutName destination)
+        {
+            var destinationLayout = image.GetLayout(destination);
+            image.TransitionLayout(commandList, source, destinationLayout);
+        }
     }
 }
