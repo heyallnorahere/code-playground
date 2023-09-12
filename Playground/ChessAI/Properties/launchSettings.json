@@ -1,23 +1,20 @@
 {
     "profiles": {
         "Pull & label dataset": {
-            "commandName": "Executable",
-            "executablePath": "$(TargetDir)\\CodePlayground.exe",
-            "commandLineArgs": "$(TargetPath) label 2015 september 12",
+            "commandName": "Project",
+            "commandLineArgs": "label 2015 september 12",
             "workingDirectory": "$(TargetDir)",
             "nativeDebugging": true
         },
         "Train model": {
-            "commandName": "Executable",
-            "executablePath": "$(TargetDir)\\CodePlayground.exe",
-            "commandLineArgs": "$(TargetPath) train 0.05",
+            "commandName": "Project",
+            "commandLineArgs": "train 0.05",
             "workingDirectory": "$(TargetDir)",
             "nativeDebugging": true
         },
         "GUI": {
-            "commandName": "Executable",
-            "executablePath": "$(TargetDir)\\CodePlayground.exe",
-            "commandLineArgs": "$(TargetPath) gui",
+            "commandName": "Project",
+            "commandLineArgs": "gui",
             "workingDirectory": "$(TargetDir)",
             "nativeDebugging": true
         }

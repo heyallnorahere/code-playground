@@ -18,12 +18,34 @@ namespace CodePlayground
         private static Application? sInstance;
         public static Application Instance => sInstance ?? throw new InvalidOperationException();
 
-        internal static int RunApplication<T>(string[] args) where T : Application, new()
+        internal static int Main(string[] args)
+        {
+            if (args.Length <= 0)
+            {
+                throw new ArgumentException("No assembly was provided!");
+            }
+
+            string path = args[0];
+            var assembly = Assembly.LoadFrom(path);
+
+            var loadedAppAttribute = assembly.GetCustomAttribute<LoadedApplicationAttribute>();
+            if (loadedAppAttribute is null)
+            {
+                throw new InvalidOperationException("Attempted to load a non-application DLL!");
+            }
+
+            var applicationType = loadedAppAttribute.ApplicationType;
+            int exitCode = RunApplication(applicationType, args[1..]);
+
+            return exitCode;
+        }
+
+        public static int RunApplication<T>(string[] args) where T : Application, new()
         {
             return RunApplication(typeof(T), args);
         }
 
-        internal static int RunApplication(Type applicationType, string[] args)
+        public static int RunApplication(Type applicationType, string[] args)
         {
             if (sInstance is not null)
             {
@@ -72,7 +94,7 @@ namespace CodePlayground
         private static void CopyBinaries(string assemblyDirectory, string[] copiedBinaries)
         {
             string runtimeDirectory = Path.Join(assemblyDirectory, "runtimes");
-            if (!Directory.Exists(runtimeDirectory))
+            if (!Directory.Exists(runtimeDirectory) || !RuntimeIdentifierTree.Load())
             {
                 return;
             }

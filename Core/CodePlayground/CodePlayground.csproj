@@ -2,7 +2,6 @@
 
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net7.0</TargetFramework>
 
     <HomeDirectory Condition="'$(OS)' == 'Windows_NT'">$(USERPROFILE)\</HomeDirectory>
@@ -15,6 +14,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NETCore.Platforms" Version="$(MicrosoftNETCorePlatformsVersion)" />
     <PackageReference Include="Newtonsoft.Json" Version="$(NewtonsoftJsonVersion)" />
+
+    <InternalsVisibleTo Include="CodePlayground.Runtime" />
   </ItemGroup>
 
   <ItemGroup>

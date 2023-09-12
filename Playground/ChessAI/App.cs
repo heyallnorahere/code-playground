@@ -28,6 +28,8 @@ namespace ChessAI
     [ApplicationTitle("Chess AI")]
     internal sealed class App : GraphicsApplication
     {
+        public static int Main(string[] args) => RunApplication<App>(args);
+
         private static void PrintUsage()
         {
             const string usage = """

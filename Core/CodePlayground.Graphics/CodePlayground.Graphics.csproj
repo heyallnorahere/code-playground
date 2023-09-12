@@ -22,6 +22,7 @@
     <PackageReference Include="SixLabors.ImageSharp" Version="$(SixLaborsImageSharpVersion)" />
     <PackageReference Include="Spirzza.Interop.SpirvCross" Version="$(SpirzzaInteropSpirvCrossVersion)" />
     <PackageReference Include="Ultz.Native.GLFW" Version="$(GLFWVersion)" />
+    <PackageReference Include="Ultz.Native.SDL" Version="$(SDLVersion)" />
   </ItemGroup>
 
 </Project>

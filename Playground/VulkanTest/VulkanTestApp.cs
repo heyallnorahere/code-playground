@@ -266,6 +266,8 @@ namespace VulkanTest
     [ApplicationGraphicsAPI(AppGraphicsAPI.Vulkan)]
     public class VulkanTestApp : GraphicsApplication
     {
+        public static int Main(string[] args) => RunApplication<VulkanTestApp>(args);
+
         public VulkanTestApp()
         {
             Load += OnLoad;

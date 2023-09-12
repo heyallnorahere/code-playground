@@ -9,6 +9,8 @@ namespace Ragdoll
     [ApplicationTitle("Ragdoll")]
     internal sealed class App : GraphicsApplication
     {
+        public static int Main(string[] args) => RunApplication<App>(args);
+
         public static new App Instance
         {
             get

@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 
@@ -22,8 +21,14 @@ namespace CodePlayground
             public Dictionary<string, RuntimeIdentifierDescription>? Runtimes { get; set; }
         }
 
-        private static Dictionary<string, IReadOnlySet<string>> sDerivedRuntimes;
+        private static readonly Dictionary<string, IReadOnlySet<string>> sDerivedRuntimes;
         static RuntimeIdentifierTree()
+        {
+            sDerivedRuntimes = new Dictionary<string, IReadOnlySet<string>>();
+
+        }
+
+        public static bool Load()
         {
             var frame = new StackFrame(0);
             var assemblyDir = frame.GetMethod()?.DeclaringType?.Assembly?.GetAssemblyDirectory();
@@ -34,18 +39,23 @@ namespace CodePlayground
             }
 
             var runtimesFile = Path.Combine(assemblyDir, "runtime.json");
+            if (!File.Exists(runtimesFile))
+            {
+                return false;
+            }
+
             string json = File.ReadAllText(runtimesFile);
             var deserialized = JsonConvert.DeserializeObject<RuntimeIdentifierInfo>(json);
 
             if (deserialized.Runtimes is null)
             {
-                throw new IOException("Failed to deserialize JSON!");
+                return false;
             }
 
             ComputeDerivedRuntimes(deserialized.Runtimes);
+            return true;
         }
 
-        [MemberNotNull(nameof(sDerivedRuntimes))]
         private static void ComputeDerivedRuntimes(IReadOnlyDictionary<string, RuntimeIdentifierDescription> identifiers)
         {
             var immediatelyDerived = new Dictionary<string, List<string>>();
@@ -68,9 +78,7 @@ namespace CodePlayground
                 }
             }
 
-            sDerivedRuntimes = new Dictionary<string, IReadOnlySet<string>>();
             var identifierStack = new Stack<string>();
-
             foreach (var identifier in identifiers.Keys)
             {
                 PopulateDerivedIdentifier(identifier, immediatelyDerived, identifierStack);

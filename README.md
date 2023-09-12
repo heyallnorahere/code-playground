@@ -66,7 +66,10 @@ dotnet build -c $CONFIG
 cd $ROOT_DIR/Playground/$APPLICATION/bin/$CONFIG/net7.0
 
 # the framework loads the application dynamically
-dotnet CodePlayground.dll $APPLICATION.dll ...
+dotnet CodePlayground.Runtime.dll $APPLICATION.dll ...
+
+# alternatively, if the application implements its own entrypoint
+dotnet $APPLICATION.dll ...
 ```
 
 ## "Playground" applications

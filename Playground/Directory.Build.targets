@@ -8,4 +8,8 @@
         <ProjectReference Include="$(MSBuildThisFileDirectory)..\Core\CodePlayground\CodePlayground.csproj" />
     </ItemGroup>
 
+    <ItemGroup Condition="'$(TargetFramework)' != 'net7.0-ios'">
+        <ProjectReference Include="$(MSBuildThisFileDirectory)..\Core\CodePlayground.Runtime\CodePlayground.Runtime.csproj" />
+    </ItemGroup>
+
 </Project>

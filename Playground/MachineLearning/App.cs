@@ -34,6 +34,8 @@ namespace MachineLearning
     [ApplicationTitle("Machine learning test")]
     internal sealed class App : GraphicsApplication
     {
+        public static int Main(string[] args) => RunApplication<App>(args);
+
         public static new App Instance => (App)Application.Instance;
         public static Random RNG => sRandom;
 
