@@ -91,6 +91,7 @@ namespace CodePlayground
             return exitCode;
         }
 
+        // i dont like this, but im not going to copy dlls to satisfy microsofts arbitrary dll loading scheme
         private static void CopyBinaries(string assemblyDirectory, string[] copiedBinaries)
         {
             string runtimeDirectory = Path.Join(assemblyDirectory, "runtimes");
@@ -136,7 +137,7 @@ namespace CodePlayground
             var assembly = GetType().Assembly;
             var versionAttribute = assembly.GetCustomAttribute<AssemblyFileVersionAttribute>();
 
-            Title = $"Untitled Application ({GetType().Name})";
+            Title = GetType().Assembly.GetName().FullName;
             Version = Version.Parse(versionAttribute?.Version ?? "1.0.0.0");
 
             mDisposed = false;
