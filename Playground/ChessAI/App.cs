@@ -5,14 +5,11 @@ using CodePlayground.Graphics;
 using ImGuiNET;
 using MachineLearning;
 using Optick.NET;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Text;
 
 namespace ChessAI

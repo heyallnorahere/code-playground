@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace CodePlayground
@@ -24,10 +25,14 @@ namespace CodePlayground
         public object? Operand { get; set; }
         public int Offset { get; set; }
         public byte[] InstructionData { get; set; }
+
+        public override string ToString() => (OpCode.Name ?? string.Empty) + (Operand is null ? string.Empty : $" {Operand}");
     }
 
     public sealed class ILParser
     {
+        // magic number. https://learn.microsoft.com/en-us/dotnet/api/system.reflection.emit.opcodes?view=net-7.0
+        // sorry
         internal const byte MultibyteOpCodePrefix = 0xfe;
 
         private static readonly Dictionary<byte, OpCode> sSingleByteInstructions, sMultiByteInstructions;
@@ -47,7 +52,7 @@ namespace CodePlayground
                 var code = (OpCode)field.GetValue(null)!;
                 var codeValue = (ushort)code.Value;
 
-                if (codeValue < 0x100)
+                if (codeValue <= byte.MaxValue)
                 {
                     sSingleByteInstructions.Add((byte)code.Value, code);
                 }
@@ -130,7 +135,7 @@ namespace CodePlayground
             }
         }
 
-#region Resolve functions
+        #region Resolve functions
         private unsafe T ResolveUnmanaged<T>(byte[] il) where T : unmanaged
         {
             using var resolveEvent = OptickMacros.Event();
@@ -268,7 +273,7 @@ namespace CodePlayground
         {
             return ResolveUnmanaged<byte>(il);
         }
-#endregion
+        #endregion
 
         public List<ILInstruction> Instructions { get; }
 

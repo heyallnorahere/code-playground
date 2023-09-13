@@ -384,6 +384,37 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             using var pushEvent = OptickMacros.Event();
 
             var rhs = evaluationStack.Pop();
+            if (type == ShaderOperatorType.Not)
+            {
+                evaluationStack.Push(rhs);
+                evaluationStack.Push("0");
+
+                // hack
+                PushOperatorExpression(ShaderOperatorType.Equal, evaluationStack);
+                return;
+            }
+
+            if (type == ShaderOperatorType.Equal || type == ShaderOperatorType.NotEqual)
+            {
+                var lhs = evaluationStack.Pop();
+                var operatorExpression = type switch
+                {
+                    ShaderOperatorType.Equal => "==",
+                    ShaderOperatorType.NotEqual => "!=",
+                    _ => throw new ArgumentException("what")
+                };
+
+                // hack
+                if ((lhs.Contains('<') || lhs.Contains('>') || lhs.Contains('=')) && int.TryParse(rhs, out int result))
+                {
+                    // HACK
+                    rhs = (result != 0).ToString().ToLower();
+                }
+
+                evaluationStack.Push($"({lhs} {operatorExpression} {rhs})");
+                return;
+            }
+
             evaluationStack.Push(type switch
             {
                 ShaderOperatorType.Add => $"({evaluationStack.Pop()} + {rhs})",
@@ -396,6 +427,12 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 ShaderOperatorType.ShiftLeft => $"({evaluationStack.Pop()} << {rhs})",
                 ShaderOperatorType.ShiftRight => $"({evaluationStack.Pop()} >> {rhs})",
                 ShaderOperatorType.Index => $"{evaluationStack.Pop()}[{rhs}]",
+
+                ShaderOperatorType.GreaterEqual => $"({evaluationStack.Pop()} >= {rhs})",
+                ShaderOperatorType.Greater => $"({evaluationStack.Pop()} > {rhs})",
+                ShaderOperatorType.LessEqual => $"({evaluationStack.Pop()} <= {rhs})",
+                ShaderOperatorType.Less => $"({evaluationStack.Pop()} < {rhs})",
+
                 _ => throw new ArgumentException("Invalid shader operator!")
             });
         }
@@ -936,31 +973,15 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         }
                         else if (name.StartsWith("ceq"))
                         {
-                            var rhs = evaluationStack.Pop();
-                            var lhs = evaluationStack.Pop();
-
-                            // hack
-                            if ((lhs.Contains('<') || lhs.Contains('>')) && int.TryParse(rhs, out int result))
-                            {
-                                // HACK
-                                rhs = (result != 0).ToString().ToLower();
-                            }
-
-                            evaluationStack.Push($"({lhs} == {rhs})");
+                            PushOperatorExpression(ShaderOperatorType.Equal, evaluationStack);
                         }
                         else if (name.StartsWith("cgt"))
                         {
-                            var rhs = evaluationStack.Pop();
-                            var lhs = evaluationStack.Pop();
-
-                            evaluationStack.Push($"({lhs} > {rhs})");
+                            PushOperatorExpression(ShaderOperatorType.Greater, evaluationStack);
                         }
                         else if (name.StartsWith("clt"))
                         {
-                            var rhs = evaluationStack.Pop();
-                            var lhs = evaluationStack.Pop();
-
-                            evaluationStack.Push($"({lhs} < {rhs})");
+                            PushOperatorExpression(ShaderOperatorType.Less, evaluationStack);
                         }
                         else if (name.StartsWith("conv"))
                         {
@@ -980,11 +1001,14 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             string value = evaluationStack.Pop();
                             evaluationStack.Push($"{sConversionTypes[conversionType]}({value})");
                         }
-                        else
+                        else if (name != "nop")
                         {
                             // explicit cases
                             switch (name)
                             {
+                                case "not":
+                                    PushOperatorExpression(ShaderOperatorType.Not, evaluationStack);
+                                    break;
                                 case "pop":
                                     {
                                         var expression = evaluationStack.Pop();
@@ -1040,6 +1064,54 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                     evaluationStack.Push(evaluationStack.Peek());
                                     break;
                                 default:
+                                    if (name.StartsWith('b'))
+                                    {
+                                        bool validInstruction = true;
+                                        var operatorType = ShaderOperatorType.Equal;
+
+                                        switch (name[1..3])
+                                        {
+                                            case "eq":
+                                                operatorType = ShaderOperatorType.Equal;
+                                                break;
+                                            case "ge":
+                                                operatorType = ShaderOperatorType.GreaterEqual;
+                                                break;
+                                            case "gt":
+                                                operatorType = ShaderOperatorType.Greater;
+                                                break;
+                                            case "le":
+                                                operatorType = ShaderOperatorType.LessEqual;
+                                                break;
+                                            case "lt":
+                                                operatorType = ShaderOperatorType.Less;
+                                                break;
+                                            case "ne":
+                                                operatorType = ShaderOperatorType.NotEqual;
+                                                break;
+                                            default:
+                                                validInstruction = false;
+                                                break;
+                                        }
+
+                                        if (validInstruction)
+                                        {
+                                            PushOperatorExpression(operatorType, evaluationStack);
+                                            jumps.Add(new JumpInstruction
+                                            {
+                                                Offset = instruction.Offset,
+                                                Destination = Convert.ToInt32(instruction.Operand!),
+                                                Condition = new JumpCondition
+                                                {
+                                                    Type = ConditionalType.True,
+                                                    Expression = evaluationStack.Pop()
+                                                }
+                                            });
+
+                                            break;
+                                        }
+                                    }
+
                                     throw new InvalidOperationException($"Instruction {name} has not been implemented yet!");
                             }
                         }
@@ -1068,7 +1140,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
                         if (condition.Type != ConditionalType.Unconditional)
                         {
-                            var expression = condition.Type != ConditionalType.True ? $"!({condition.Expression})" : condition.Expression;
+                            var expression = condition.Type != ConditionalType.True ? $"int({condition.Expression}) == 0" : condition.Expression;
 
                             startCode = "do {\n";
                             endCode = $"}} while ({expression});\n";
@@ -1109,7 +1181,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 string code = "break;\n";
                                 if (condition.Type != ConditionalType.Unconditional)
                                 {
-                                    var expression = condition.Type != ConditionalType.False ? condition.Expression : $"!({condition.Expression})";
+                                    var expression = condition.Type != ConditionalType.False ? condition.Expression : $"int({condition.Expression}) == 0";
                                     code = $"if ({expression}) {{\n{code}}}\n";
                                 }
 
@@ -1157,7 +1229,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             throw new InvalidOperationException("Invalid scope generated for if statement!");
                         }
 
-                        var ifExpression = condition.Type != ConditionalType.True ? condition.Expression : $"!({condition.Expression})";
+                        var ifExpression = condition.Type != ConditionalType.True ? condition.Expression : $"int({condition.Expression}) == 0";
                         var startCode = $"if ({ifExpression}) {{\n";
 
                         InsertCode(nextInstruction, startCode, builder, mapCollection);

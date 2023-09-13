@@ -61,16 +61,26 @@ namespace CodePlayground.Graphics.Shaders
 
     public enum ShaderOperatorType
     {
+        // integer/boolean operations
         Add,
         Subtract,
         Multiply,
         Divide,
         Invert,
+        Not,
         And,
         Or,
         ShiftLeft,
         ShiftRight,
         Index,
+
+        // comparisons
+        Equal,
+        GreaterEqual,
+        Greater,
+        LessEqual,
+        Less,
+        NotEqual
     }
 
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]

@@ -54,7 +54,7 @@ cd $ROOT_DIR
 dotnet build -c $CONFIG
 ```
 
-**DISCLAIMER**: As of this commit, Release builds crash during shader translation. This is due to instruction optimizations during compilation that are not handled in translation. This will be addressed eventually.
+**DISCLAIMER**: As of this commit, jumps in shader loops are not translated correctly. Does not break any shaders in this repository, and will be addressed eventually.
 
 ## Running
 
@@ -76,5 +76,5 @@ dotnet $APPLICATION.dll ...
 
 - VulkanTest: Vulkan graphics test application
 - Ragdoll: WIP ragdoll simulation of skinned meshes. Not finished
-- MachineLearning: Neural network running in a compute shader
-- ChessAI: WIP chess neural network
+- MachineLearning: Neural network running in a compute pipeline. Recognizes handwritten digits
+- ChessAI: WIP chess neural network - does not work lol
