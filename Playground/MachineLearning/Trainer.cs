@@ -185,7 +185,7 @@ namespace MachineLearning
                 queue.Submit(commandList, fence: mFence);
             }
 
-            if (!mRunning)
+            if (!mRunning && mState.Initialized)
             {
                 using var disposeBuffersEvent = OptickMacros.Event("Dispose buffers");
 

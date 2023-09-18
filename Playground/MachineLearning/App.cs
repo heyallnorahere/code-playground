@@ -83,35 +83,45 @@ namespace MachineLearning
             Render += OnRender;
         }
 
-        public override bool ShouldRunHeadless => mSelectedTestImages is not null;
-
+        public override bool ShouldRunHeadless => mHeadless;
         protected override void ParseArguments()
         {
             var args = CommandLineArguments;
             if (args.Length == 0)
             {
+                mHeadless = false;
                 return;
             }
 
-            string selectedDataString = string.Empty;
-            for (int i = 0; i < args.Length; i++)
+            if (args[0] != "train-headless")
             {
-                if (i > 0)
+                string selectedDataString = string.Empty;
+                for (int i = 0; i < args.Length; i++)
                 {
-                    selectedDataString += ' ';
+                    if (i > 0)
+                    {
+                        selectedDataString += ' ';
+                    }
+
+                    selectedDataString += args[i];
                 }
 
-                selectedDataString += args[i];
-            }
+                int separatorPosition = selectedDataString.IndexOf(':');
+                if (separatorPosition < 0)
+                {
+                    throw new ArgumentException("Malformed selector string!");
+                }
 
-            int separatorPosition = selectedDataString.IndexOf(':');
-            if (separatorPosition < 0)
+                mSelectedTestImages = selectedDataString[(separatorPosition + 1)..].Split(new char[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToArray();
+                mSelectedDataset = Enum.Parse<DatasetType>(selectedDataString[..separatorPosition], true);
+            }
+            else
             {
-                throw new ArgumentException("Malformed selector string!");
+                mMinimumAverageCost = float.Parse(args[1]);
+                mUseMinimumAverageCost = true;
             }
 
-            mSelectedTestImages = selectedDataString[(separatorPosition + 1)..].Split(new char[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToArray();
-            mSelectedDataset = Enum.Parse<DatasetType>(selectedDataString[..separatorPosition], true);
+            mHeadless = true;
         }
 
         [MemberNotNull(nameof(mDataset))]
@@ -157,7 +167,7 @@ namespace MachineLearning
 
         private void OnBatchResults(TrainerBatchResults results)
         {
-            mAverageAbsoluteCost = results.AverageAbsoluteCost;
+            Console.WriteLine(mAverageAbsoluteCost = results.AverageAbsoluteCost);
             if (mUseMinimumAverageCost && mAverageAbsoluteCost < mMinimumAverageCost)
             {
                 mTrainer?.Stop();
@@ -358,9 +368,35 @@ namespace MachineLearning
 
         private void OnRender(FrameRenderInfo renderInfo)
         {
-            if (mSelectedTestImages is not null)
+            if (mHeadless)
             {
-                RunNeuralNetwork(mSelectedTestImages);
+                if (mSelectedTestImages is not null)
+                {
+                    RunNeuralNetwork(mSelectedTestImages);
+                }
+                else if (mTrainer is not null)
+                {
+                    LoadDataset(DatasetType.Testing);
+
+                    mTrainer.Start(mDataset, mNetwork!);
+                    Console.CancelKeyPress += (sender, args) => 
+                    {
+                        mTrainer.Stop();
+                        args.Cancel = true;
+                    };
+
+                    int n = 0;
+                    do
+                    {
+                        if (mTrainer.IsRunning)
+                        {
+                            n++;
+                        }
+
+                        mTrainer.Update(true);
+                    } while (--n >= 0);
+                }
+
                 return;
             }
 
@@ -663,6 +699,7 @@ namespace MachineLearning
         private ShaderLibrary? mLibrary;
         private int mCurrentFrame;
 
+        private bool mHeadless;
         private int[]? mSelectedTestImages;
         private DatasetType mSelectedDataset;
 

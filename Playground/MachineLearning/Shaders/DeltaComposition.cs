@@ -21,16 +21,20 @@ namespace MachineLearning.Shaders
             int outputCount = ShaderResources.SizeBuffer.LayerSizes[lastLayer];
 
             s_DataOffset = 0;
-            s_DeltaOffset = outputCount * ShaderResources.DeltaBuffer.PassCount;
+            s_DeltaOffset = outputCount * ShaderResources.DeltaBuffer.PassCount; // expected outputs for backprop
             s_DeltaStride = 0;
             s_Scale = ShaderResources.DeltaBuffer.LearningRate / ShaderResources.DeltaBuffer.PassCount;
 
+            int currentLayerSize = ShaderResources.SizeBuffer.LayerSizes[0];
             for (int i = 1; i < ShaderResources.SizeBuffer.LayerCount; i++)
             {
-                int currentLayerSize = ShaderResources.SizeBuffer.LayerSizes[i];
-                int previousLayerSize = ShaderResources.SizeBuffer.LayerSizes[i - 1];
+                int previousLayerSize = currentLayerSize;
+                currentLayerSize = ShaderResources.SizeBuffer.LayerSizes[i];
+
+                // every neuron in the current layer has a weight with every neuron in the previous layer, plus a bias, hence the +1
                 int matrixSize = currentLayerSize * (previousLayerSize + 1);
 
+                // s_DeltaStride is the count of deltas produced by 1 pass of backprop
                 s_DeltaStride += matrixSize;
                 if (i < currentLayer)
                 {
@@ -52,7 +56,7 @@ namespace MachineLearning.Shaders
             }
 
             BuiltinFunctions.Barrier();
-            
+
             int currentLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer];
             int previousLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer - 1];
 
@@ -61,20 +65,27 @@ namespace MachineLearning.Shaders
                 return;
             }
 
-            int matrixOffset = currentNeuron * (previousLayerSize + 1); // neuron weights plus bias
-            int biasOffset = s_DataOffset + matrixOffset;
+            // neuronOffset is the offset of the current neuron's weights and biases within a "data" matrix
+            // biasOffset is the offset of the current neuron's bias within a data matrix
+            int neuronOffset = currentNeuron * (previousLayerSize + 1); // neuron weights plus bias
+            int biasOffset = s_DataOffset + neuronOffset;
 
             for (int i = 0; i < ShaderResources.DeltaBuffer.PassCount; i++)
             {
-                int deltaBiasOffset = s_DeltaOffset + s_DeltaStride * i + biasOffset;
+                // deltaMatrixOffset is the offset of the deltas of the current "pass" (network invocation)
+                // deltaBiasOffset is the offset of the current neuron's bias delta in the current pass
+                int deltaMatrixOffset = s_DeltaOffset + s_DeltaStride * i;
+                int deltaBiasOffset = deltaMatrixOffset + biasOffset;
 
                 float deltaBias = ShaderResources.DeltaBuffer.Data[deltaBiasOffset];
                 ShaderResources.DataBuffer.Data[biasOffset] -= deltaBias * s_Scale;
 
                 for (int j = 0; j < previousLayerSize; j++)
                 {
+                    // weightOffset is the offset of the current neuron's weight in relation to a neuron from the previous layer within a data matrix
+                    // deltaWeightOffset is the offset of said weight within a current pass
                     int weightOffset = biasOffset + j + 1;
-                    int deltaWeightOffset = s_DeltaOffset + s_DeltaStride * i + weightOffset;
+                    int deltaWeightOffset = deltaMatrixOffset + weightOffset;
 
                     float deltaWeight = ShaderResources.DeltaBuffer.Data[deltaWeightOffset];
                     ShaderResources.DataBuffer.Data[weightOffset] -= deltaWeight * s_Scale;
