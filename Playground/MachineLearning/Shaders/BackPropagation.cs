@@ -77,43 +77,19 @@ namespace MachineLearning.Shaders
         private static void Initialize(uint workGroupId)
         {
             int networkPass = (int)workGroupId;
-
-            int lastLayer = ShaderResources.SizeBuffer.LayerCount - 1;
-            int outputCount = ShaderResources.SizeBuffer.LayerSizes[lastLayer];
+            int currentLayer = ShaderResources.PushConstants.CurrentLayer;
 
             // expected outputs are placed before deltas
             // expected outputs are input to backprop
             // deltas are output
-            s_DeltaOffset = outputCount * ShaderResources.DeltaBuffer.PassCount; // this is CONSTANT for this group of backprop dispatches
-            s_DeltaExpectedOffset = networkPass * outputCount;
+            s_DeltaOffset = ShaderResources.GetExpectedOutputOffset(ShaderResources.DeltaBuffer.PassCount); // this is CONSTANT for this group of backprop dispatches
+            s_DeltaExpectedOffset = ShaderResources.GetExpectedOutputOffset(networkPass);
 
-            s_DataOffset = 0;
-            s_ActivationOffset = 0;
-            s_PreSigmoidOffset = 0;
+            s_DataOffset = ShaderResources.GetLayerDataOffset(currentLayer);
+            s_ActivationOffset = ShaderResources.GetLayerActivationOffset(networkPass, currentLayer, 0);
+            s_PreSigmoidOffset = ShaderResources.GetLayerActivationOffset(networkPass, currentLayer, 1);
 
-            for (int i = 0; i < ShaderResources.SizeBuffer.LayerCount; i++)
-            {
-                int offsetFactor = networkPass;
-                if (i < ShaderResources.PushConstants.CurrentLayer)
-                {
-                    offsetFactor++;
-                }
-
-                int iteratedLayerSize = ShaderResources.SizeBuffer.LayerSizes[i];
-                int activationIncrement = iteratedLayerSize * offsetFactor;
-
-                s_ActivationOffset += activationIncrement;
-                if (i > 0)
-                {
-                    s_PreSigmoidOffset += activationIncrement;
-
-                    int previousLayerSize = ShaderResources.SizeBuffer.LayerSizes[i - 1];
-                    int blockSize = ForwardPropagation.GetDataBlockSize(iteratedLayerSize, previousLayerSize);
-
-                    s_DeltaOffset += blockSize * offsetFactor;
-                    s_DataOffset += blockSize * (offsetFactor - networkPass);
-                }
-            }
+            s_DeltaOffset += s_DataOffset + ShaderResources.GetDeltaPassOffset(networkPass);
         }
 
         [ShaderEntrypoint(ShaderStage.Compute)]
@@ -134,8 +110,6 @@ namespace MachineLearning.Shaders
             if (currentNeuron < currentLayerSize)
             {
                 int previousLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer - 1];
-                int bufferRowOffset = currentNeuron * ForwardPropagation.GetDataBlockRowLength(previousLayerSize);
-                int dataBlockSize = ForwardPropagation.GetDataBlockSize(currentLayerSize, previousLayerSize);
 
                 // algorithm based off of
                 // https://github.com/yodasoda1219/cpu-neural-network/blob/8ae7a36316b7bffb271b551f1f0da767c6b0a74e/NeuralNetwork/Network.cs#L156
@@ -143,7 +117,7 @@ namespace MachineLearning.Shaders
                 float preSigmoidBias;
                 if (currentLayer == ShaderResources.SizeBuffer.LayerCount - 1)
                 {
-                    // s_ActivationOffset is of the CURRENT layer, in contrast to ForwardPropagation
+                    // s_ActivationOffset is of the CURRENT layer
                     float activation = ShaderResources.ActivationBuffer.Data[s_ActivationOffset + currentNeuron];
                     float expected = ShaderResources.DeltaBuffer.Data[s_DeltaExpectedOffset + currentNeuron];
                     preSigmoidBias = CostDerivative(activation, expected);
@@ -153,26 +127,28 @@ namespace MachineLearning.Shaders
                     preSigmoidBias = 0f;
 
                     int nextLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer + 1];
+                    int dataBlockSize = ShaderResources.GetDataBlockSize(currentLayerSize, previousLayerSize);
                     int nextLayerDataOffset = s_DataOffset + dataBlockSize;
                     int nextLayerDeltaOffset = s_DeltaOffset + dataBlockSize;
-                    int nextLayerDataBlockRowLength = ForwardPropagation.GetDataBlockRowLength(currentLayerSize);
 
                     // taking the dot product of the transposed weights matrix of the next layer, and the deltas that we previously computed
                     // thus taking the dot product of the currentNeuron-th column, and the deltas
                     for (int i = 0; i < nextLayerSize; i++)
                     {
-                        int weightMatrixRowOffset = nextLayerDataBlockRowLength * i;
-                        int weightMatrixOffset = weightMatrixRowOffset + currentNeuron + 1;
+                        int previousBiasOffset = ShaderResources.GetDataBlockBiasOffset(i, currentLayerSize);
+                        int previousWeightOffset = ShaderResources.GetDataBlockWeightOffset(currentNeuron, previousBiasOffset);
 
-                        float weight = ShaderResources.DataBuffer.Data[nextLayerDataOffset + weightMatrixOffset];
-                        float previousBiasDelta = ShaderResources.DeltaBuffer.Data[nextLayerDeltaOffset + weightMatrixRowOffset];
+                        float weight = ShaderResources.DataBuffer.Data[nextLayerDataOffset + previousWeightOffset];
+                        float previousBiasDelta = ShaderResources.DeltaBuffer.Data[nextLayerDeltaOffset + previousBiasOffset];
                         preSigmoidBias += weight * previousBiasDelta;
                     }
                 }
 
                 float z = ShaderResources.PreSigmoidBuffer.Data[s_PreSigmoidOffset + currentNeuron];
-                ActivationFunction activationFunction = ShaderResources.DataBuffer.LayerActivationFunctions[currentLayer - 1];
+                ActivationFunction activationFunction = ShaderResources.DataBuffer.LayerActivationFunctions[currentLayer - 1]; // no activation function for input layer
 
+                // GLSLTranspiler does not handle jumps well
+                // todo(me): fix
                 float activationPrime;
                 if (activationFunction == ActivationFunction.Sigmoid)
                 {
@@ -196,16 +172,20 @@ namespace MachineLearning.Shaders
                     activationPrime = 0f;
                 }
 
+                int biasOffset = ShaderResources.GetDataBlockBiasOffset(currentNeuron, previousLayerSize);
                 float biasDelta = preSigmoidBias * activationPrime;
-                ShaderResources.DeltaBuffer.Data[s_DeltaOffset + bufferRowOffset] = biasDelta;
+                ShaderResources.DeltaBuffer.Data[s_DeltaOffset + biasOffset] = biasDelta;
 
+                // see earlier, s_ActivationOffset is of the current layer
                 int previousLayerActivationOffset = s_ActivationOffset - previousLayerSize;
                 for (int i = 0; i < previousLayerSize; i++)
                 {
+                    int weightOffset = ShaderResources.GetDataBlockWeightOffset(i, biasOffset);
+
                     // setting weight (currentNeuron, i) to biasDeltas[currentNeuron] * previousActivation[i]
                     // dot product of delta vector and transposed activation vector
                     float previousActivation = ShaderResources.ActivationBuffer.Data[previousLayerActivationOffset + i];
-                    ShaderResources.DeltaBuffer.Data[s_DeltaOffset + bufferRowOffset + i + 1] = previousActivation * biasDelta;
+                    ShaderResources.DeltaBuffer.Data[s_DeltaOffset + weightOffset] = previousActivation * biasDelta; // magic number - bias before weights
                 }
             }
         }

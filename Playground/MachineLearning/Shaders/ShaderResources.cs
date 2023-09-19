@@ -77,5 +77,60 @@ namespace MachineLearning.Shaders
         [Layout(PushConstant = true)]
         [ShaderFieldName(PushConstantBufferName, UseClassName = false)]
         public static NetworkPushConstantData PushConstants;
+
+        public static int GetOutputCount()
+        {
+            int lastLayer = SizeBuffer.LayerCount - 1;
+            return SizeBuffer.LayerSizes[lastLayer];
+        }
+
+        public static int GetExpectedOutputOffset(int networkPass)
+        {
+            int outputCount = GetOutputCount();
+            return networkPass * outputCount;
+        }
+
+        public static int GetLayerActivationOffset(int networkPass, int layer, int startingLayer)
+        {
+            int offset = 0;
+            for (int i = startingLayer; i < SizeBuffer.LayerCount; i++)
+            {
+                int layerSize = SizeBuffer.LayerSizes[i];
+                int offsetFactor = networkPass;
+
+                if (i < layer)
+                {
+                    offsetFactor++;
+                }
+
+                offset += layerSize * offsetFactor;
+            }
+
+            return offset;
+        }
+
+        // all of the weights relating to this neuron and the bias of the neuron
+        public static int GetDataBlockRowLength(int previousLayerSize) => previousLayerSize + 1;
+        public static int GetDataBlockSize(int currentLayerSize, int previousLayerSize) => GetDataBlockRowLength(previousLayerSize) * currentLayerSize;
+
+        public static int GetLayerDataOffset(int layer)
+        {
+            int offset = 0;
+            for (int i = 1; i < layer; i++)
+            {
+                int currentLayerSize = SizeBuffer.LayerSizes[i];
+                int previousLayerSize = SizeBuffer.LayerSizes[i - 1];
+
+                offset += GetDataBlockSize(currentLayerSize, previousLayerSize);
+            }
+
+            return offset;
+        }
+
+        public static int GetDeltaPassOffset(int networkPass) => GetLayerDataOffset(SizeBuffer.LayerCount) * networkPass;
+
+        public static int GetDataBlockBiasOffset(int currentNeuron, int previousLayerSize) => currentNeuron * GetDataBlockRowLength(previousLayerSize);
+        public static int GetDataBlockWeightOffset(int previousNeuron, int currentNeuronBiasOffset) => currentNeuronBiasOffset + previousNeuron + 1; // magic number for bias
+        public static int GetDataBlockWeightOffset(int currentNeuron, int previousNeuron, int previousLayerSize) => GetDataBlockWeightOffset(previousNeuron, GetDataBlockBiasOffset(currentNeuron, previousLayerSize));
     }
 }

@@ -1478,12 +1478,9 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 dependencyInfoIndices[dependencyInfo[i].Method] = i;
             }
 
-            IEnumerable<MethodInfo> evaluationList = new MethodInfo[]
-            {
-                dependencyInfo[0].Method
-            };
-
+            var evaluationList = dependencyInfo.Select(info => info.Method);
             var functionOrder = new List<MethodInfo>();
+            
             while (evaluationList.Any())
             {
                 var newEvaluationList = new HashSet<MethodInfo>();

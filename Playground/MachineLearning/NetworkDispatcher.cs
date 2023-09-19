@@ -333,7 +333,6 @@ namespace MachineLearning
             {
                 using var copyEvent = OptickMacros.Event("Copy from activation buffer");
 
-                var floatSpan = MemoryMarshal.Cast<byte, float>(data);
                 for (int i = 0; i < buffers.PassCount; i++)
                 {
                     var passConfidences = new float[confidenceCount];
