@@ -81,7 +81,10 @@ namespace MachineLearning.Shaders
             int lastLayer = ShaderResources.SizeBuffer.LayerCount - 1;
             int outputCount = ShaderResources.SizeBuffer.LayerSizes[lastLayer];
 
-            s_DeltaOffset = outputCount * ShaderResources.DeltaBuffer.PassCount;
+            // expected outputs are placed before deltas
+            // expected outputs are input to backprop
+            // deltas are output
+            s_DeltaOffset = outputCount * ShaderResources.DeltaBuffer.PassCount; // this is CONSTANT for this group of backprop dispatches
             s_DeltaExpectedOffset = networkPass * outputCount;
 
             s_DataOffset = 0;
@@ -96,8 +99,8 @@ namespace MachineLearning.Shaders
                     offsetFactor++;
                 }
 
-                int currentLayerSize = ShaderResources.SizeBuffer.LayerSizes[i];
-                int activationIncrement = currentLayerSize * offsetFactor;
+                int iteratedLayerSize = ShaderResources.SizeBuffer.LayerSizes[i];
+                int activationIncrement = iteratedLayerSize * offsetFactor;
 
                 s_ActivationOffset += activationIncrement;
                 if (i > 0)
@@ -105,7 +108,7 @@ namespace MachineLearning.Shaders
                     s_PreSigmoidOffset += activationIncrement;
 
                     int previousLayerSize = ShaderResources.SizeBuffer.LayerSizes[i - 1];
-                    int blockSize = ForwardPropagation.GetDataBlockSize(currentLayerSize, previousLayerSize);
+                    int blockSize = ForwardPropagation.GetDataBlockSize(iteratedLayerSize, previousLayerSize);
 
                     s_DeltaOffset += blockSize * offsetFactor;
                     s_DataOffset += blockSize * (offsetFactor - networkPass);
@@ -126,7 +129,7 @@ namespace MachineLearning.Shaders
 
             int currentLayer = ShaderResources.PushConstants.CurrentLayer;
             int currentLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer];
-            
+
             int currentNeuron = (int)input.InvocationID.X + Network.WorkGroupThreadCount * (int)input.WorkGroupID.Y;
             if (currentNeuron < currentLayerSize)
             {
