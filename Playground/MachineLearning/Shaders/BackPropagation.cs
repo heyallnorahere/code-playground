@@ -6,14 +6,33 @@ namespace MachineLearning.Shaders
     [CompiledShader]
     public sealed class BackPropagation
     {
+        /// <summary>
+        /// Offset of the current layer in the data buffer
+        /// </summary>
         [Layout(Shared = true)]
         private static int s_DataOffset;
+
+        /// <summary>
+        /// Offset of the activations of the current layer into the activation buffer
+        /// </summary>
         [Layout(Shared = true)]
         private static int s_ActivationOffset;
+
+        /// <summary>
+        /// Offset of the pre-activation values of the current layer in the corresponding buffer
+        /// </summary>
         [Layout(Shared = true)]
         private static int s_PreSigmoidOffset;
+
+        /// <summary>
+        /// Offset of the deltas of the current layer within the current pass
+        /// </summary>
         [Layout(Shared = true)]
         private static int s_DeltaOffset;
+
+        /// <summary>
+        /// Offset of the expected outputs for the current pass
+        /// </summary>
         [Layout(Shared = true)]
         private static int s_DeltaExpectedOffset;
 
@@ -89,10 +108,7 @@ namespace MachineLearning.Shaders
                     int blockSize = ForwardPropagation.GetDataBlockSize(currentLayerSize, previousLayerSize);
 
                     s_DeltaOffset += blockSize * offsetFactor;
-                    if (i < ShaderResources.PushConstants.CurrentLayer)
-                    {
-                        s_DataOffset += blockSize;
-                    }
+                    s_DataOffset += blockSize * (offsetFactor - networkPass);
                 }
             }
         }
