@@ -116,12 +116,15 @@ namespace MachineLearning.Shaders
         public static int GetLayerDataOffset(int layer)
         {
             int offset = 0;
-            for (int i = 1; i < layer; i++)
+            for (int i = 1; i < SizeBuffer.LayerCount; i++) // layer 0 is input
             {
                 int currentLayerSize = SizeBuffer.LayerSizes[i];
                 int previousLayerSize = SizeBuffer.LayerSizes[i - 1];
 
-                offset += GetDataBlockSize(currentLayerSize, previousLayerSize);
+                if (i < layer)
+                {
+                    offset += GetDataBlockSize(currentLayerSize, previousLayerSize);
+                }
             }
 
             return offset;
