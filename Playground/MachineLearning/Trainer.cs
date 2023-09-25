@@ -1,6 +1,7 @@
 using CodePlayground.Graphics;
 using Optick.NET;
 using System;
+using System.Runtime.InteropServices;
 
 namespace MachineLearning
 {
@@ -24,10 +25,17 @@ namespace MachineLearning
         public Network Network;
 
         public DispatcherBufferData BufferData;
-        public bool Initialized;
+        public bool Initialized, Transition;
 
         public TrainerBatchData? Batch;
         public int[] ShuffledIndices;
+    }
+
+    public struct InterpretedPassDetails
+    {
+        public float[] Inputs;
+        public float[] Outputs;
+        public float[] ExpectedOutputs;
     }
 
     public sealed class Trainer : IDisposable
@@ -79,6 +87,74 @@ namespace MachineLearning
             }
         }
 
+        public InterpretedPassDetails[] RetrieveInterpretedData()
+        {
+            var queue = mContext.Device.GetQueue(CommandQueueFlags.Compute);
+            var commandList = queue.Release();
+            var buffers = mState.BufferData;
+
+            int inputCount = buffers.LayerSizes[0];
+            int outputCount = buffers.LayerSizes[^1];
+
+            int inputBufferSize = buffers.PassCount * inputCount;
+            int outputBufferSize = buffers.PassCount * outputCount * 2;
+
+            var inputStaging = mContext.CreateDeviceBuffer(DeviceBufferUsage.Staging, inputBufferSize * Marshal.SizeOf<ushort>());
+            var outputStaging = mContext.CreateDeviceBuffer(DeviceBufferUsage.Staging, outputBufferSize * Marshal.SizeOf<ushort>());
+
+            commandList.PushStagingObject(inputStaging);
+            commandList.PushStagingObject(outputStaging);
+
+            commandList.Begin();
+            using (commandList.Context(GPUQueueType.Compute))
+            {
+                buffers.InputActivationImage.TransitionLayout(commandList, buffers.InputActivationImage.Layout, DeviceImageLayoutName.CopySource);
+                buffers.InputActivationImage.CopyToBuffer(commandList, inputStaging, DeviceImageLayoutName.CopySource);
+                buffers.InputActivationImage.TransitionLayout(commandList, DeviceImageLayoutName.CopySource, buffers.InputActivationImage.Layout);
+
+                buffers.OutputImage.TransitionLayout(commandList, buffers.OutputImage.Layout, DeviceImageLayoutName.CopySource);
+                buffers.OutputImage.CopyToBuffer(commandList, outputStaging, DeviceImageLayoutName.CopySource);
+                buffers.OutputImage.TransitionLayout(commandList, DeviceImageLayoutName.CopySource, buffers.OutputImage.Layout);
+            }
+
+            commandList.End();
+            queue.Submit(commandList, wait: true);
+
+            var inputData = new ushort[inputBufferSize];
+            var outputData = new ushort[outputBufferSize];
+
+            inputStaging.CopyToCPU(inputData);
+            outputStaging.CopyToCPU(outputData);
+
+            var results = new InterpretedPassDetails[buffers.PassCount];
+            for (int i = 0; i < buffers.PassCount; i++)
+            {
+                var details = new InterpretedPassDetails
+                {
+                    Inputs = new float[inputCount],
+                    Outputs = new float[outputCount],
+                    ExpectedOutputs = new float[outputCount]
+                };
+
+                for (int j = 0; j < inputCount; j++)
+                {
+                    int inputIndex = i * inputCount + j;
+                    details.Inputs[j] = (float)inputData[inputIndex] / ushort.MaxValue;
+                }
+
+                for (int j = 0; j < outputCount; j++)
+                {
+                    int outputOffset = (i * outputCount + j) * 2;
+                    details.ExpectedOutputs[j] = (float)outputData[outputOffset] / ushort.MaxValue;
+                    details.Outputs[j] = (float)outputData[outputOffset + 1] / ushort.MaxValue;
+                }
+
+                results[i] = details;
+            }
+
+            return results;
+        }
+
         public event Action<TrainerBatchResults>? OnBatchResults;
         public void Update(bool wait = false)
         {
@@ -94,39 +170,37 @@ namespace MachineLearning
             if (mState.Batch is not null && (wait || mFence.IsSignaled()))
             {
                 using var updateBatchEvent = OptickMacros.Event("Check batch");
+                queue.ReleaseFence(mFence, wait);
 
                 var batch = mState.Batch.Value;
-                if (queue.ReleaseFence(mFence, wait))
+                var confidences = NetworkDispatcher.GetConfidenceValues(mState.BufferData);
+
+                int outputCount = mState.Network.LayerSizes[^1];
+                float averageAbsoluteCost = 0f;
+                for (int i = 0; i < confidences.Length; i++)
                 {
-                    var confidences = NetworkDispatcher.GetConfidenceValues(mState.BufferData);
-
-                    int outputCount = mState.Network.LayerSizes[^1];
-                    float averageAbsoluteCost = 0f;
-                    for (int i = 0; i < confidences.Length; i++)
+                    for (int j = 0; j < outputCount; j++)
                     {
-                        for (int j = 0; j < outputCount; j++)
-                        {
-                            float x = confidences[i][j];
-                            float y = batch.Expected[i][j];
+                        float x = confidences[i][j];
+                        float y = batch.Expected[i][j];
 
-                            float cost = Cost(x, y);
-                            averageAbsoluteCost += MathF.Abs(cost) / (outputCount * confidences.Length);
-                        }
+                        float cost = Cost(x, y);
+                        averageAbsoluteCost += MathF.Abs(cost) / (outputCount * confidences.Length);
                     }
-
-                    OnBatchResults?.Invoke(new TrainerBatchResults
-                    {
-                        ConfidenceValues = confidences,
-                        AverageAbsoluteCost = averageAbsoluteCost,
-                        ImageIndices = batch.ImageIndices
-                    });
-
-                    advanceBatch = true;
                 }
-                else if (wait)
+
+                OnBatchResults?.Invoke(new TrainerBatchResults
                 {
-                    throw new InvalidOperationException("Fence was not submitted to the queue!");
-                }
+                    ConfidenceValues = confidences,
+                    AverageAbsoluteCost = averageAbsoluteCost,
+                    ImageIndices = batch.ImageIndices
+                });
+
+                advanceBatch = true;
+            }
+            else if (wait)
+            {
+                throw new InvalidOperationException("Fence was not submitted to the queue!");
             }
 
             if (mRunning && advanceBatch)
@@ -174,6 +248,12 @@ namespace MachineLearning
 
                 using (commandList.Context(GPUQueueType.Compute))
                 {
+                    if (mState.Transition)
+                    {
+                        NetworkDispatcher.TransitionImages(commandList, mState.BufferData);
+                        mState.Transition = false;
+                    }
+
                     NetworkDispatcher.ForwardPropagation(commandList, mState.BufferData, inputs);
                     commandList.ExecutionBarrier();
                     NetworkDispatcher.BackPropagation(commandList, mState.BufferData, expectedOutputs);
@@ -192,15 +272,9 @@ namespace MachineLearning
                 // we dont want to trip any validation layers
                 queue.ReleaseFence(mFence, true);
 
-                // update network
+                // update network & dispose buffers
                 mState.Network.UpdateNetwork(mState.BufferData.DataBuffer, mState.BufferData.DataStride, mState.BufferData.DataOffset);
-
-                // dispose buffers
-                mState.BufferData.SizeBuffer.Dispose();
-                mState.BufferData.DataBuffer.Dispose();
-                mState.BufferData.ActivationBuffer.Dispose();
-                mState.BufferData.PreSigmoidBuffer.Dispose();
-                mState.BufferData.DeltaBuffer.Dispose();
+                mState.BufferData.Dispose();
 
                 // reset flags
                 mState.Batch = null;
@@ -279,6 +353,7 @@ namespace MachineLearning
 
                 BufferData = NetworkDispatcher.CreateBuffers(network, mBatchSize, mLearningRate),
                 Initialized = true,
+                Transition = true,
 
                 Batch = null,
                 ShuffledIndices = indices

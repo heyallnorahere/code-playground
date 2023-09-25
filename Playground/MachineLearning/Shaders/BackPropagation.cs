@@ -13,7 +13,7 @@ namespace MachineLearning.Shaders
         private static int s_DataOffset;
 
         /// <summary>
-        /// Offset of the activations of the current layer into the activation buffer
+        /// Offset of the activations of the current layer in the activation buffer
         /// </summary>
         [Layout(Shared = true)]
         private static int s_ActivationOffset;
@@ -121,6 +121,10 @@ namespace MachineLearning.Shaders
                     float activation = ShaderResources.ActivationBuffer.Data[s_ActivationOffset + currentNeuron];
                     float expected = ShaderResources.DeltaBuffer.Data[s_DeltaExpectedOffset + currentNeuron];
                     preSigmoidBias = CostDerivative(activation, expected);
+
+                    int networkPass = (int)input.WorkGroupID.X;
+                    var position = new Vector2<int>(currentNeuron, ShaderResources.DeltaBuffer.PassCount - (networkPass + 1));
+                    ShaderResources.OutputImage!.Store(position, new Vector4<float>(expected, activation, 0f, 1f));
                 }
                 else
                 {

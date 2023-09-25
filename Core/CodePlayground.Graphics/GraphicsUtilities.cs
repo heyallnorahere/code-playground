@@ -197,22 +197,49 @@ namespace CodePlayground.Graphics
 
         public static void TransitionLayout(this IDeviceImage image, ICommandList commandList, DeviceImageLayoutName source, DeviceImageLayoutName destination)
         {
+            if (source == destination)
+            {
+                return;
+            }
+
             var sourceLayout = image.GetLayout(source);
             var destinationLayout = image.GetLayout(destination);
 
             image.TransitionLayout(commandList, sourceLayout, destinationLayout);
         }
 
-        public static void TransitionLayout(this IDeviceImage image, ICommandList commandList, DeviceImageLayoutName source, object destination)
+        public static void TransitionLayout(this IDeviceImage image, ICommandList commandList, DeviceImageLayoutName source, IDeviceImageLayout destination)
         {
+            if (source == destination.Name)
+            {
+                return;
+            }
+
             var sourceLayout = image.GetLayout(source);
             image.TransitionLayout(commandList, sourceLayout, destination);
         }
 
-        public static void TransitionLayout(this IDeviceImage image, ICommandList commandList, object source, DeviceImageLayoutName destination)
+        public static void TransitionLayout(this IDeviceImage image, ICommandList commandList, IDeviceImageLayout source, DeviceImageLayoutName destination)
         {
+            if (source.Name == destination)
+            {
+                return;
+            }
+
             var destinationLayout = image.GetLayout(destination);
             image.TransitionLayout(commandList, source, destinationLayout);
+        }
+
+        public static void CopyToBuffer(this IDeviceImage image, ICommandList commandList, IDeviceBuffer destination, DeviceImageLayoutName currentLayout)
+        {
+            var layout = image.GetLayout(currentLayout);
+            image.CopyToBuffer(commandList, destination, layout);
+        }
+
+        public static void CopyFromBuffer(this IDeviceImage image, ICommandList commandList, IDeviceBuffer source, DeviceImageLayoutName currentLayout)
+        {
+            var layout = image.GetLayout(currentLayout);
+            image.CopyFromBuffer(commandList, source, layout);
         }
     }
 }

@@ -9,6 +9,9 @@ namespace MachineLearning.Shaders
 
         [ShaderVariable(ShaderVariableID.WorkGroupID)]
         public Vector3<uint> WorkGroupID;
+
+        [ShaderVariable(ShaderVariableID.WorkGroupCount)]
+        public Vector3<uint> WorkGroupCount;
     }
 
     public struct SizeBufferData
@@ -47,11 +50,15 @@ namespace MachineLearning.Shaders
 
     public static class ShaderResources
     {
+        public const ShaderImageFormat ImageFormat = ShaderImageFormat.R16;
+
         public const string SizeBufferName = "u_NetworkSize";
         public const string DataBufferName = "u_DataBuffer";
         public const string ActivationBufferName = "u_ActivationBuffer";
         public const string PreSigmoidBufferName = "u_PreSigmoidBuffer";
         public const string DeltaBufferName = "u_DeltaBuffer";
+        public const string OutputImageName = "u_OutputImage";
+        public const string InputActivationImageName = "u_InputActivationImage";
         public const string PushConstantBufferName = "u_PushConstants";
 
         [Layout(Set = 0, Binding = 0, ResourceType = ShaderResourceType.Uniform)]
@@ -73,6 +80,14 @@ namespace MachineLearning.Shaders
         [Layout(Set = 0, Binding = 4, ResourceType = ShaderResourceType.Storage)]
         [ShaderFieldName(DeltaBufferName, UseClassName = false)]
         public static NetworkDeltaBuffer DeltaBuffer;
+
+        [Layout(Set = 1, Binding = 0, Format = ShaderImageFormat.RG16)]
+        [ShaderFieldName(OutputImageName, UseClassName = false)]
+        public static Image2D<float>? OutputImage;
+
+        [Layout(Set = 1, Binding = 1, Format = ShaderImageFormat.R16)]
+        [ShaderFieldName(InputActivationImageName, UseClassName = false)]
+        public static Image2D<float>? InputActivationImage;
 
         [Layout(PushConstant = true)]
         [ShaderFieldName(PushConstantBufferName, UseClassName = false)]

@@ -1,22 +1,42 @@
 ﻿using CodePlayground.Graphics;
 using MachineLearning.Shaders;
 using Optick.NET;
+using SixLabors.ImageSharp;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace MachineLearning
 {
-    public struct DispatcherBufferData
+    public struct DispatcherBufferData : IDisposable
     {
+        public void Dispose()
+        {
+            ActivationBuffer.Dispose();
+            PreSigmoidBuffer.Dispose();
+            SizeBuffer.Dispose();
+            DataBuffer.Dispose();
+            DeltaBuffer.Dispose();
+
+            InputActivationImage.Dispose();
+            OutputImage.Dispose();
+        }
+
         public IDeviceBuffer ActivationBuffer, PreSigmoidBuffer, SizeBuffer, DataBuffer, DeltaBuffer;
         public int ActivationOffset, DeltaOffset, DataOffset, ActivationFunctionOffset;
         public int ActivationStride, DeltaStride, DataStride, ActivationFunctionStride;
+
+        public IDeviceImage InputActivationImage, OutputImage;
+
         public int PassCount;
         public int[] LayerSizes;
     }
 
+    /// <summary>
+    /// Requires a queue with compute capabilities
+    /// </summary>
     public static class NetworkDispatcher
     {
         private static ShaderLibrary? mLibrary;
@@ -131,9 +151,36 @@ namespace MachineLearning
                 DataStride = dataStride,
                 ActivationFunctionStride = activationFunctionStride,
 
+                InputActivationImage = mContext.CreateDeviceImage(new DeviceImageInfo
+                {
+                    Size = new Size(inputCount, passCount),
+                    Usage = DeviceImageUsageFlags.CopySource | DeviceImageUsageFlags.Storage,
+                    Format = DeviceImageFormat.R16_UNORM,
+                    MipLevels = 1
+                }),
+
+                OutputImage = mContext.CreateDeviceImage(new DeviceImageInfo
+                {
+                    Size = new Size(outputCount, passCount),
+                    Usage = DeviceImageUsageFlags.CopySource | DeviceImageUsageFlags.Storage,
+                    Format = DeviceImageFormat.RG16_UNORM,
+                    MipLevels = 1
+                }),
+
                 PassCount = passCount,
                 LayerSizes = layerSizes.ToArray()
             };
+        }
+
+        public static void TransitionImages(ICommandList commandList, DispatcherBufferData bufferData)
+        {
+            var storageLayout = bufferData.InputActivationImage.GetLayout(DeviceImageLayoutName.ComputeStorage);
+
+            bufferData.InputActivationImage.TransitionLayout(commandList, bufferData.InputActivationImage.Layout, storageLayout);
+            bufferData.InputActivationImage.Layout = storageLayout;
+
+            bufferData.OutputImage.TransitionLayout(commandList, bufferData.OutputImage.Layout, storageLayout);
+            bufferData.OutputImage.Layout = storageLayout;
         }
 
         public static void ForwardPropagation(ICommandList commandList, DispatcherBufferData buffers, float[][] inputs)
@@ -188,6 +235,7 @@ namespace MachineLearning
             pipeline.Bind(buffers.DataBuffer, ShaderResources.DataBufferName);
             pipeline.Bind(buffers.ActivationBuffer, ShaderResources.ActivationBufferName);
             pipeline.Bind(buffers.PreSigmoidBuffer, ShaderResources.PreSigmoidBufferName);
+            pipeline.Bind(buffers.InputActivationImage, ShaderResources.InputActivationImageName);
 
             commandList.PushStagingObject(pipeline);
             pipeline.Bind(commandList, 0);
@@ -261,6 +309,7 @@ namespace MachineLearning
             pipeline.Bind(buffers.ActivationBuffer, ShaderResources.ActivationBufferName);
             pipeline.Bind(buffers.PreSigmoidBuffer, ShaderResources.PreSigmoidBufferName);
             pipeline.Bind(buffers.DeltaBuffer, ShaderResources.DeltaBufferName);
+            pipeline.Bind(buffers.OutputImage, ShaderResources.OutputImageName);
 
             commandList.PushStagingObject(pipeline);
             pipeline.Bind(commandList, 0);
@@ -314,7 +363,7 @@ namespace MachineLearning
                 maxLayerSize = int.Max(maxLayerSize, buffers.LayerSizes[i]);
             }
 
-            mRenderer.DispatchCompute(commandList, buffers.LayerSizes.Length, GetWorkGroupCount(maxLayerSize), 1);
+            mRenderer.DispatchCompute(commandList, buffers.LayerSizes.Length - 1, GetWorkGroupCount(maxLayerSize), 1);
         }
 
         public static float[][] GetConfidenceValues(DispatcherBufferData buffers)
@@ -351,6 +400,32 @@ namespace MachineLearning
             });
 
             return results;
+        }
+
+        public static IReadOnlyList<float> DumpBuffer(ReadOnlySpan<byte> buffer, int stride, int startOffset, int endOffset = -1)
+        {
+            int currentOffset = startOffset;
+            int end = endOffset < 0 || endOffset > buffer.Length ? buffer.Length : endOffset;
+
+            var data = new List<float>();
+            while (currentOffset < end - stride)
+            {
+                var slice = buffer[currentOffset..];
+                float value = BitConverter.ToSingle(slice);
+
+                data.Add(value);
+                currentOffset += stride;
+            }
+
+            return data;
+        }
+
+        public static IReadOnlyList<float> DumpBuffer(IDeviceBuffer buffer, int stride, int startOffset, int endOffset = -1)
+        {
+            IReadOnlyList<float>? result = null;
+            buffer.Map(data => result = DumpBuffer(data, stride, startOffset, endOffset));
+
+            return result ?? throw new InvalidOperationException("Failed to map buffer!");
         }
     }
 }

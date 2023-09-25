@@ -31,6 +31,12 @@ namespace MachineLearning
         public SamplerFilter Filter => SamplerFilter.Nearest;
     }
 
+    internal struct TrainingDiagnosticData
+    {
+        public ITexture Texture;
+        public float[] Outputs, ExpectedOutputs;
+    }
+
     [ApplicationTitle("Machine learning test")]
     internal sealed class App : GraphicsApplication
     {
@@ -227,12 +233,37 @@ namespace MachineLearning
                     10
                 });
 
+                /*
                 mNetwork.SetActivationFunctions(new ActivationFunction[]
                 {
                     ActivationFunction.LeakyReLU,
                     ActivationFunction.LeakyReLU,
                     ActivationFunction.NormalizedHyperbolicTangent
-                });
+                });*/
+            }
+
+            if (!mHeadless)
+            {
+                const int diagnosticImageCount = 5;
+                mDiagnosticData = new TrainingDiagnosticData[diagnosticImageCount];
+
+                int outputCount = mNetwork.LayerSizes[^1];
+                for (int i = 0; i < mDiagnosticData.Length; i++)
+                {
+                    mDiagnosticData[i] = new TrainingDiagnosticData
+                    {
+                        Texture = context.CreateDeviceImage(new DeviceImageInfo
+                        {
+                            Size = new Size(mDataset.Width, mDataset.Height),
+                            Usage = DeviceImageUsageFlags.CopyDestination | DeviceImageUsageFlags.Render,
+                            Format = DeviceImageFormat.RGBA8_UNORM,
+                            MipLevels = 1
+                        }).CreateTexture(true, new DatasetImageSampler()),
+
+                        Outputs = new float[outputCount],
+                        ExpectedOutputs = new float[outputCount]
+                    };
+                }
             }
 
             var queue = context.Device.GetQueue(CommandQueueFlags.Transfer);
@@ -246,6 +277,16 @@ namespace MachineLearning
 
                 image.TransitionLayout(commandList, image.Layout, layout);
                 image.Layout = layout;
+
+                if (mDiagnosticData is not null)
+                {
+                    for (int i = 0; i < mDiagnosticData.Length; i++)
+                    {
+                        image = mDiagnosticData[i].Texture.Image;
+                        image.TransitionLayout(commandList, image.Layout, layout);
+                        image.Layout = layout;
+                    }
+                }
             }
 
             SignalSemaphore(commandList);
@@ -304,10 +345,18 @@ namespace MachineLearning
                 semaphore.Dispose();
             }
 
+            if (mDiagnosticData is not null)
+            {
+                foreach (var data in mDiagnosticData)
+                {
+                    data.Texture.Dispose();
+                }
+            }
+
             mImGui?.Dispose();
             mDisplayedTexture?.Dispose();
             mComputeFence?.Dispose();
-            mBufferData?.ActivationBuffer?.Dispose();
+            mBufferData?.Dispose();
             mTrainer?.Dispose();
 
             mLibrary?.Dispose();
@@ -335,33 +384,26 @@ namespace MachineLearning
             var commandList = queue.Release();
             commandList.Begin();
 
-            var data = NetworkDispatcher.CreateBuffers(mNetwork!, inputs.Length);
+            using var data = NetworkDispatcher.CreateBuffers(mNetwork!, inputs.Length);
             using (commandList.Context(GPUQueueType.Compute))
             {
+                NetworkDispatcher.TransitionImages(commandList, data);
                 NetworkDispatcher.ForwardPropagation(commandList, data, inputs);
-
-                commandList.PushStagingObject(data.PreSigmoidBuffer);
-                commandList.PushStagingObject(data.SizeBuffer);
-                commandList.PushStagingObject(data.DataBuffer);
-                commandList.PushStagingObject(data.DeltaBuffer);
             }
 
             commandList.End();
             queue.Submit(commandList);
             queue.ClearCache();
 
-            using (data.ActivationBuffer)
+            var confidence = NetworkDispatcher.GetConfidenceValues(data);
+            for (int i = 0; i < confidence.Length; i++)
             {
-                var confidence = NetworkDispatcher.GetConfidenceValues(data);
-                for (int i = 0; i < confidence.Length; i++)
-                {
-                    var passConfidence = confidence[i];
-                    Console.WriteLine($"Pass #{i + 1}");
+                var passConfidence = confidence[i];
+                Console.WriteLine($"Pass #{i + 1}");
 
-                    for (int j = 0; j < passConfidence.Length; j++)
-                    {
-                        Console.WriteLine($"{j}: {passConfidence[j] * 100f}%");
-                    }
+                for (int j = 0; j < passConfidence.Length; j++)
+                {
+                    Console.WriteLine($"{j}: {passConfidence[j] * 100f}%");
                 }
             }
         }
@@ -379,7 +421,7 @@ namespace MachineLearning
                     LoadDataset(DatasetType.Testing);
 
                     mTrainer.Start(mDataset, mNetwork!);
-                    Console.CancelKeyPress += (sender, args) => 
+                    Console.CancelKeyPress += (sender, args) =>
                     {
                         mTrainer.Stop();
                         args.Cancel = true;
@@ -560,14 +602,10 @@ namespace MachineLearning
                 using (commandList.Context(GPUQueueType.Compute))
                 {
                     var data = NetworkDispatcher.CreateBuffers(mNetwork!, inputs.Length);
+                    NetworkDispatcher.TransitionImages(commandList, data);
                     NetworkDispatcher.ForwardPropagation(commandList, data, inputs);
 
-                    commandList.PushStagingObject(data.PreSigmoidBuffer);
-                    commandList.PushStagingObject(data.SizeBuffer);
-                    commandList.PushStagingObject(data.DataBuffer);
-                    commandList.PushStagingObject(data.DeltaBuffer);
-
-                    mBufferData?.ActivationBuffer?.Dispose();
+                    mBufferData?.Dispose();
                     mBufferData = data;
                 }
 
@@ -666,6 +704,68 @@ namespace MachineLearning
             {
                 if (training)
                 {
+                    if (mDiagnosticData is not null)
+                    {
+                        var interpretedData = mTrainer.RetrieveInterpretedData();
+
+                        var context = GraphicsContext!;
+                        var queue = context.Device.GetQueue(CommandQueueFlags.Transfer);
+
+                        var commandList = queue.Release();
+                        SignalSemaphore(commandList);
+
+                        commandList.Begin();
+                        using (commandList.Context(GPUQueueType.Transfer))
+                        {
+                            int width = mDataset!.Width;
+                            int height = mDataset!.Height;
+
+                            for (int i = 0; i < mDiagnosticData.Length; i++)
+                            {
+                                var diagnosticData = mDiagnosticData[i];
+                                var data = i < interpretedData.Length ? interpretedData[^(i + 1)] : new InterpretedPassDetails
+                                {
+                                    Inputs = new float[width * height],
+                                    Outputs = new float[diagnosticData.Outputs.Length],
+                                    ExpectedOutputs = new float[diagnosticData.ExpectedOutputs.Length]
+                                };
+
+                                data.Outputs.CopyTo(diagnosticData.Outputs, 0);
+                                data.ExpectedOutputs.CopyTo(diagnosticData.ExpectedOutputs, 0);
+
+                                const int channels = 4;
+                                var inputData = data.Inputs;
+                                var imageData = new byte[inputData.Length * channels];
+
+                                for (int y = 0; y < height; y++)
+                                {
+                                    for (int x = 0; x < width; x++)
+                                    {
+                                        int pixel = y * width + x;
+                                        int pixelOffset = pixel * channels;
+
+                                        for (int j = 0; j < channels; j++)
+                                        {
+                                            imageData[pixelOffset + j] = j < 3 ? (byte)(inputData[pixel] * byte.MaxValue) : byte.MaxValue;
+                                        }
+                                    }
+                                }
+
+                                var stagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, imageData.Length);
+                                var image = mDiagnosticData[i].Texture.Image;
+
+                                commandList.PushStagingObject(stagingBuffer);
+                                stagingBuffer.CopyFromCPU(imageData);
+                                image.TransitionLayout(commandList, image.Layout, DeviceImageLayoutName.CopyDestination);
+                                image.CopyFromBuffer(commandList, stagingBuffer, DeviceImageLayoutName.CopyDestination);
+                                image.TransitionLayout(commandList, DeviceImageLayoutName.CopyDestination, image.Layout);
+                            }
+                        }
+
+                        commandList.End();
+                        queue.Submit(commandList);
+                    }
+
                     mTrainer.Stop();
                 }
                 else
@@ -680,6 +780,28 @@ namespace MachineLearning
             if (ImGui.IsItemHovered())
             {
                 ImGui.SetTooltip("Average absolute cost");
+            }
+
+            if (mDiagnosticData is not null)
+            {
+                ImGui.Columns(mDiagnosticData.Length, "diagnostic-data", false);
+                for (int i = 0; i < mDiagnosticData.Length; i++)
+                {
+                    var data = mDiagnosticData[i];
+                    nint id = mImGui!.GetTextureID(data.Texture);
+
+                    float width = ImGui.GetColumnWidth();
+                    ImGui.Image(id, new Vector2(width));
+
+                    for (int j = 0; j < data.Outputs.Length; j++)
+                    {
+                        ImGui.TextUnformatted($"{data.Outputs[j]:0.##} : {data.ExpectedOutputs[j]:0.##}");
+                    }
+
+                    ImGui.NextColumn();
+                }
+
+                ImGui.Columns(1);
             }
 
             ImGui.End();
@@ -712,6 +834,7 @@ namespace MachineLearning
         private DispatcherBufferData? mBufferData;
         private int mPassIndex;
         private IFence? mComputeFence;
+        private TrainingDiagnosticData[]? mDiagnosticData;
 
         private Trainer? mTrainer;
         private float mAverageAbsoluteCost, mMinimumAverageCost;

@@ -1,3 +1,4 @@
+using System.Numerics;
 using CodePlayground.Graphics;
 using CodePlayground.Graphics.Shaders;
 
@@ -35,15 +36,30 @@ namespace MachineLearning.Shaders
         [NumThreads(Network.WorkGroupThreadCount, 1, 1)]
         public static void Entrypoint(ComputeInput input)
         {
+            int currentLayer = ShaderResources.PushConstants.CurrentLayer;
+            int currentLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer];
+
             if (input.InvocationID.X == 0)
             {
                 Initialize(input.WorkGroupID.X);
+
+                if (currentLayer == 1)
+                {
+                    int networkPass = (int)input.WorkGroupID.X;
+                    int previousLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer - 1];
+
+                    for (int i = 0; i < previousLayerSize; i++)
+                    {
+                        float previousActivation = ShaderResources.ActivationBuffer.Data[s_PreviousActivationOffset + i];
+                        int passCount = (int)input.WorkGroupCount.X;
+                        
+                        var position = new Vector2<int>(i, passCount - (networkPass + 1));
+                        ShaderResources.InputActivationImage!.Store(position, new Vector4<float>(previousActivation, 0f, 0f, 1f));
+                    }
+                }
             }
 
             BuiltinFunctions.Barrier();
-
-            int currentLayer = ShaderResources.PushConstants.CurrentLayer;
-            int currentLayerSize = ShaderResources.SizeBuffer.LayerSizes[currentLayer];
 
             int currentNeuron = (int)input.InvocationID.X + Network.WorkGroupThreadCount * (int)input.WorkGroupID.Y;
             if (currentNeuron < currentLayerSize)

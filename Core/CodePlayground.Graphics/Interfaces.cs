@@ -69,7 +69,10 @@ namespace CodePlayground.Graphics
         RGBA8_UNORM,
         RGB8_SRGB,
         RGB8_UNORM,
-        DepthStencil
+        DepthStencil,
+
+        R16_UNORM,
+        RG16_UNORM
     }
 
     public enum DeviceImageLayoutName
@@ -189,9 +192,9 @@ namespace CodePlayground.Graphics
     {
         public IDeviceImage Image { get; set; }
         public AttachmentType Type { get; set; }
-        public object? InitialLayout { get; set; }
-        public object? FinalLayout { get; set; }
-        public object? Layout { get; set; }
+        public IDeviceImageLayout? InitialLayout { get; set; }
+        public IDeviceImageLayout? FinalLayout { get; set; }
+        public IDeviceImageLayout? Layout { get; set; }
     }
 
     public struct FramebufferInfo
@@ -406,23 +409,28 @@ namespace CodePlayground.Graphics
         public void BindIndices(ICommandList commandList, DeviceBufferIndexType indexType);
     }
 
+    public interface IDeviceImageLayout
+    {
+        public DeviceImageLayoutName Name { get; }
+    }
+
     public interface IDeviceImage : IDisposable
     {
         public DeviceImageUsageFlags Usage { get; }
         public Size Size { get; }
         public int MipLevels { get; }
         public DeviceImageFormat ImageFormat { get; }
-        public object Layout { get; set; }
+        public IDeviceImageLayout Layout { get; set; }
 
-        public object GetLayout(DeviceImageLayoutName name);
+        public IDeviceImageLayout GetLayout(DeviceImageLayoutName name);
 
         public void Load<T>(Image<T> image) where T : unmanaged, IPixel<T>;
         public void Load<T>(T[] data) where T : unmanaged;
 
         // command list commands
-        public void CopyFromBuffer(ICommandList commandList, IDeviceBuffer source, object currentLayout);
-        public void CopyToBuffer(ICommandList commandList, IDeviceBuffer destination, object currentLayout);
-        public void TransitionLayout(ICommandList commandList, object srcLayout, object dstLayout);
+        public void CopyFromBuffer(ICommandList commandList, IDeviceBuffer source, IDeviceImageLayout currentLayout);
+        public void CopyToBuffer(ICommandList commandList, IDeviceBuffer destination, IDeviceImageLayout currentLayout);
+        public void TransitionLayout(ICommandList commandList, IDeviceImageLayout srcLayout, IDeviceImageLayout dstLayout);
 
         public ITexture CreateTexture(bool ownsImage, ISamplerSettings? samplerSettings = null);
     }

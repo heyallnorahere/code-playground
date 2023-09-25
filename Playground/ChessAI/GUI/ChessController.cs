@@ -194,6 +194,8 @@ namespace ChessAI.GUI
 
                     pieceImage.Layout = layout;
                 }
+
+                NetworkDispatcher.TransitionImages(commandList, mBufferData);
             }
 
             commandList.AddSemaphore(mSemaphore, SemaphoreUsage.Signal);
@@ -240,12 +242,7 @@ namespace ChessAI.GUI
                 var queue = mContext.Device.GetQueue(CommandQueueFlags.Compute);
                 queue.ReleaseFence(mComputeFence, true);
 
-                mBufferData.SizeBuffer.Dispose();
-                mBufferData.DataBuffer.Dispose();
-                mBufferData.ActivationBuffer.Dispose();
-                mBufferData.PreSigmoidBuffer.Dispose();
-                mBufferData.DeltaBuffer.Dispose();
-
+                mBufferData.Dispose();
                 mComputeFence.Dispose();
             }
         }

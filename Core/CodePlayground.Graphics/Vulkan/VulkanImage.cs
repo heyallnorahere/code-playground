@@ -184,11 +184,12 @@ namespace CodePlayground.Graphics.Vulkan
         private readonly Dictionary<ulong, BoundPipelineData> mBoundPipelines;
     }
 
-    public struct VulkanImageLayout
+    public struct VulkanImageLayout : IDeviceImageLayout
     {
         public ImageLayout Layout { get; set; }
         public PipelineStageFlags Stage { get; set; }
         public AccessFlags AccessMask { get; set; }
+        public DeviceImageLayoutName Name { get; set; }
     }
 
     public struct VulkanImageCreateInfo
@@ -270,6 +271,8 @@ namespace CodePlayground.Graphics.Vulkan
                     DeviceImageFormat.RGB8_SRGB => Format.R8G8B8Srgb,
                     DeviceImageFormat.RGB8_UNORM => Format.R8G8B8Unorm,
                     DeviceImageFormat.DepthStencil => FindSupportedDepthFormat(device.PhysicalDevice, info.Tiling),
+                    DeviceImageFormat.R16_UNORM => Format.R16Unorm,
+                    DeviceImageFormat.RG16_UNORM => Format.R16G16Unorm,
                     _ => throw new ArgumentException("Invalid image format!")
                 };
             }
@@ -441,11 +444,11 @@ namespace CodePlayground.Graphics.Vulkan
             mAllocation.BindImageMemory(mImage);
         }
 
-        object IDeviceImage.GetLayout(DeviceImageLayoutName name) => GetLayout(name);
+        IDeviceImageLayout IDeviceImage.GetLayout(DeviceImageLayoutName name) => GetLayout(name);
         public static VulkanImageLayout GetLayout(DeviceImageLayoutName name)
         {
             using var getLayoutEvent = OptickMacros.Event();
-            return name switch
+            var layout = name switch
             {
                 DeviceImageLayoutName.Undefined => new VulkanImageLayout
                 {
@@ -491,6 +494,9 @@ namespace CodePlayground.Graphics.Vulkan
                 },
                 _ => throw new ArgumentException("Invalid image layout name!")
             };
+
+            layout.Name = name;
+            return layout;
         }
 
         public void Load<T>(Image<T> image) where T : unmanaged, IPixel<T>
@@ -526,7 +532,7 @@ namespace CodePlayground.Graphics.Vulkan
             queue.Submit(commandBuffer, wait: true);
         }
 
-        void IDeviceImage.CopyFromBuffer(ICommandList commandList, IDeviceBuffer source, object currentLayout)
+        void IDeviceImage.CopyFromBuffer(ICommandList commandList, IDeviceBuffer source, IDeviceImageLayout currentLayout)
         {
             if (commandList is not VulkanCommandBuffer || source is not VulkanBuffer || currentLayout is not VulkanImageLayout)
             {
@@ -623,7 +629,7 @@ namespace CodePlayground.Graphics.Vulkan
             TransitionLayout(commandBuffer, transferDst, currentLayout, MipLevels - 1, 1);
         }
 
-        void IDeviceImage.CopyToBuffer(ICommandList commandList, IDeviceBuffer destination, object currentLayout)
+        void IDeviceImage.CopyToBuffer(ICommandList commandList, IDeviceBuffer destination, IDeviceImageLayout currentLayout)
         {
             if (commandList is not VulkanCommandBuffer || destination is not VulkanBuffer || currentLayout is not VulkanImageLayout)
             {
@@ -667,7 +673,7 @@ namespace CodePlayground.Graphics.Vulkan
             TransitionLayout(commandBuffer, transferDst, currentLayout, 0, 1);
         }
 
-        void IDeviceImage.TransitionLayout(ICommandList commandList, object srcLayout, object dstLayout)
+        void IDeviceImage.TransitionLayout(ICommandList commandList, IDeviceImageLayout srcLayout, IDeviceImageLayout dstLayout)
         {
             if (commandList is not VulkanCommandBuffer || srcLayout is not VulkanImageLayout || dstLayout is not VulkanImageLayout)
             {
@@ -681,6 +687,11 @@ namespace CodePlayground.Graphics.Vulkan
         {
             using var transitionEvent = OptickMacros.Event();
             using var barrierEvent = OptickMacros.GPUEvent("Image pipeline barrier");
+
+            if (sourceLayout.Layout == destinationLayout.Layout)
+            {
+                return;
+            }
 
             var barrier = VulkanUtilities.Init<ImageMemoryBarrier>() with
             {
@@ -757,7 +768,7 @@ namespace CodePlayground.Graphics.Vulkan
         public event Action<VulkanImageLayout>? OnLayoutChanged;
         internal VulkanDevice Device => mDevice;
 
-        object IDeviceImage.Layout
+        IDeviceImageLayout IDeviceImage.Layout
         {
             get => Layout;
             set => Layout = (VulkanImageLayout)value;
