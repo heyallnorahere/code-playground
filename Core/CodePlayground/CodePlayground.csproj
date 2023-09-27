@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <TargetFramework>net7.0</TargetFramework>
+    <TargetFrameworks>net7.0;net7.0-ios</TargetFrameworks>
 
     <HomeDirectory Condition="'$(OS)' == 'Windows_NT'">$(USERPROFILE)\</HomeDirectory>
     <HomeDirectory Condition="'$(OS)' != 'Windows_NT'">$(HOME)\</HomeDirectory>

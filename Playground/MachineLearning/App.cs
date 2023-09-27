@@ -10,6 +10,7 @@ using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace MachineLearning
 {
@@ -428,11 +429,14 @@ namespace MachineLearning
                     LoadDataset(DatasetType.Testing);
 
                     mTrainer.Start(mDataset, mNetwork!);
-                    Console.CancelKeyPress += (sender, args) =>
+                    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Create("ios")) && !RuntimeInformation.IsOSPlatform(OSPlatform.Create("maccatalyst")))
                     {
-                        mTrainer.Stop();
-                        args.Cancel = true;
-                    };
+                        Console.CancelKeyPress += (sender, args) =>
+                        {
+                            mTrainer.Stop();
+                            args.Cancel = true;
+                        };
+                    }
 
                     int n = 0;
                     do
