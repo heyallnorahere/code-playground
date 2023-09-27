@@ -275,7 +275,7 @@ namespace MachineLearning
                     var activationFunction = mLayerActivationFunctions[i];
 
                     int offset = i * activationStride + activationOffset;
-                    BitConverter.GetBytes(activationOffset).CopyTo(data[offset..]);
+                    BitConverter.GetBytes((int)activationFunction).CopyTo(data[offset..]);
                 }
             });
         }

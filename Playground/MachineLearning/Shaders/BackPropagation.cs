@@ -79,17 +79,16 @@ namespace MachineLearning.Shaders
             int networkPass = (int)workGroupId;
             int currentLayer = ShaderResources.PushConstants.CurrentLayer;
 
-            // expected outputs are placed before deltas
-            // expected outputs are input to backprop
-            // deltas are output
-            s_DeltaOffset = ShaderResources.GetExpectedOutputOffset(ShaderResources.DeltaBuffer.PassCount); // this is CONSTANT for this group of backprop dispatches
-            s_DeltaExpectedOffset = ShaderResources.GetExpectedOutputOffset(networkPass);
-
-            s_DataOffset = ShaderResources.GetLayerDataOffset(currentLayer);
+            int layerOffset = ShaderResources.GetLayerDataOffset(currentLayer);
+            s_DataOffset = layerOffset;
             s_ActivationOffset = ShaderResources.GetLayerActivationOffset(networkPass, currentLayer, 0);
             s_PreSigmoidOffset = ShaderResources.GetLayerActivationOffset(networkPass, currentLayer, 1);
 
-            s_DeltaOffset += s_DataOffset + ShaderResources.GetDeltaPassOffset(networkPass);
+            // expected outputs are placed before deltas
+            // expected outputs are input to backprop
+            // deltas are output
+            s_DeltaOffset = layerOffset + ShaderResources.GetDeltaPassOffset(networkPass) + ShaderResources.GetExpectedOutputOffset(ShaderResources.DeltaBuffer.PassCount);
+            s_DeltaExpectedOffset = ShaderResources.GetExpectedOutputOffset(networkPass);
         }
 
         [ShaderEntrypoint(ShaderStage.Compute)]
@@ -173,7 +172,7 @@ namespace MachineLearning.Shaders
                 else
                 {
                     // see forwardpropagation
-                    activationPrime = 0f;
+                    activationPrime = 1f;
                 }
 
                 int biasOffset = ShaderResources.GetDataBlockBiasOffset(currentNeuron, previousLayerSize);

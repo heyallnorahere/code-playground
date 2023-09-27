@@ -180,6 +180,27 @@ namespace MachineLearning
             }
         }
 
+        private static Network InitializeNetwork(IDataset dataset)
+        {
+            var network = new Network(new int[]
+            {
+                    dataset.InputCount, // input
+                    64, // arbitrary hidden layer sizes
+                    16,
+                    dataset.OutputCount
+            });
+
+            /*
+            network.SetActivationFunctions(new ActivationFunction[]
+            {
+                ActivationFunction.LeakyReLU,
+                ActivationFunction.LeakyReLU,
+                ActivationFunction.NormalizedHyperbolicTangent
+            });*/
+
+            return network;
+        }
+
         private const string networkFileName = "network.json";
         private void OnLoad()
         {
@@ -225,21 +246,7 @@ namespace MachineLearning
             }
             else
             {
-                mNetwork = new Network(new int[]
-                {
-                    mDataset.InputCount, // input
-                    64, // arbitrary hidden layer sizes
-                    16,
-                    10
-                });
-
-                /*
-                mNetwork.SetActivationFunctions(new ActivationFunction[]
-                {
-                    ActivationFunction.LeakyReLU,
-                    ActivationFunction.LeakyReLU,
-                    ActivationFunction.NormalizedHyperbolicTangent
-                });*/
+                mNetwork = InitializeNetwork(mDataset);
             }
 
             if (!mHeadless)
@@ -780,6 +787,22 @@ namespace MachineLearning
             if (ImGui.IsItemHovered())
             {
                 ImGui.SetTooltip("Average absolute cost");
+            }
+
+            if (training)
+            {
+                ImGui.BeginDisabled();
+            }
+
+            ImGui.SameLine();
+            if (ImGui.Button("Reset network"))
+            {
+                mNetwork = InitializeNetwork(mDataset!);
+            }
+
+            if (training)
+            {
+                ImGui.EndDisabled();
             }
 
             if (mDiagnosticData is not null)
