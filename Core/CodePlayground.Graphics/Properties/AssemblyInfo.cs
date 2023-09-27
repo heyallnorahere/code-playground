@@ -4,5 +4,5 @@ using ObjCRuntime;
 #endif
 
 #if IOS
-[assembly: LinkWith(LinkerFlags = "-lSDL-2.0")]
+[assembly: LinkWith("libSDL2.a", LinkTarget.x86_64 | LinkTarget.Arm64, SmartLink = true, ForceLoad = true)]
 #endif
