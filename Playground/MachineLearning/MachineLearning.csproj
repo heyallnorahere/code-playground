@@ -1,15 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net7.0;net7.0-ios</TargetFrameworks>
+    <TargetFramework>net7.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <OutputType>Exe</OutputType>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(TargetFramework)' == 'net7.0-ios'">
-    <ApplicationId>net.ys1219.MachineLearning</ApplicationId>
-    <SupportedOSPlatformVersion>13.0</SupportedOSPlatformVersion>
-    <UseMaui>true</UseMaui>
   </PropertyGroup>
 
   <ItemGroup>

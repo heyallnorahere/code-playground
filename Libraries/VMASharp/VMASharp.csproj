@@ -3,7 +3,11 @@
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableDefaultItems>false</EnableDefaultItems>
-    <TargetFrameworks>net7.0;net7.0-ios</TargetFrameworks>
+    <TargetFrameworks>net7.0</TargetFrameworks>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform(OSX))">
+    <TargetFrameworks>$(TargetFrameworks);net7.0-ios</TargetFrameworks>
   </PropertyGroup>
 
   <ItemGroup>
