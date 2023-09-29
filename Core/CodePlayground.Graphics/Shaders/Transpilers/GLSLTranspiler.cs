@@ -258,15 +258,24 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             return glslName;
         }
 
-        private static string CreateParameterExpressionString(Stack<string> evaluationStack, int parameterCount)
+        private string CreateParameterExpressionString(Stack<string> evaluationStack, Type shaderType, IReadOnlyList<ParameterInfo> parameters)
         {
             using var parameterExpressionStringEvent = OptickMacros.Event();
 
             string expressionString = string.Empty;
-            for (int i = parameterCount - 1; i >= 0; i--)
+            for (int i = parameters.Count - 1; i >= 0; i--)
             {
+                string parameterExpression = evaluationStack.Pop();
+                var parameterType = parameters[i].ParameterType;
+
+                if (parameterType.IsPrimitive)
+                {
+                    var parameterTypeName = GetTypeName(parameterType, shaderType, true);
+                    parameterExpression = $"{parameterTypeName}({parameterExpression})";
+                }
+
                 string parameterSeparator = i > 0 ? ", " : string.Empty;
-                var currentParameter = parameterSeparator + evaluationStack.Pop();
+                var currentParameter = parameterSeparator + parameterExpression;
                 expressionString = currentParameter + expressionString;
             }
 
@@ -621,7 +630,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             }
 
                             var invocationParameters = invokedMethod.GetParameters();
-                            var expressionString = CreateParameterExpressionString(evaluationStack, invocationParameters.Length);
+                            var expressionString = CreateParameterExpressionString(evaluationStack, type, invocationParameters);
 
                             if (!invokedMethod.IsStatic)
                             {
@@ -1032,7 +1041,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                         }
 
                                         var constructorParameters = constructor.GetParameters();
-                                        var expressionString = CreateParameterExpressionString(evaluationStack, constructorParameters.Length);
+                                        var expressionString = CreateParameterExpressionString(evaluationStack, type, constructorParameters);
 
                                         evaluationStack.Push($"{typeName}({expressionString})");
                                     }

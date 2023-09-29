@@ -3,6 +3,7 @@ using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -235,6 +236,7 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
+        [Conditional("DEBUG")]
         private unsafe void InitializeOptick(nint graphicsQueue, uint graphicsFamily)
         {
             var instanceFunctions = new HashSet<string>
