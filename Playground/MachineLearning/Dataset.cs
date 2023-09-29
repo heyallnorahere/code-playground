@@ -9,14 +9,21 @@ using System.Threading.Tasks;
 
 namespace MachineLearning
 {
+    public enum DatasetGroup
+    {
+        Training,
+        Testing,
+        Evaluation
+    }
+
     public interface IDataset
     {
-        public int Count { get; }
         public int InputCount { get; }
         public int OutputCount { get; }
 
-        public float[] GetInput(int index);
-        public float[] GetExpectedOutput(int index);
+        public int GetGroupEntryCount(DatasetGroup group);
+        public float[] GetInput(DatasetGroup group, int index);
+        public float[] GetExpectedOutput(DatasetGroup group, int index);
     }
 
     public struct DatasetFileSource
@@ -25,7 +32,7 @@ namespace MachineLearning
     }
 
     // dataset is pulled from https://yann.lecun.com/exdb/mnist/
-    public sealed class MNISTDatabase : IDataset
+    public sealed class MNISTGroup
     {
         private static int ReadInt32WithEndianness(BinaryReader reader)
         {
@@ -84,12 +91,12 @@ namespace MachineLearning
             return result;
         }
 
-        public static MNISTDatabase Load(Stream imageStream, Stream labelStream)
+        public static MNISTGroup Load(Stream imageStream, Stream labelStream)
         {
             var imageData = ReadImageData(imageStream);
             var labelData = ReadLabelData(labelStream);
 
-            return new MNISTDatabase(imageData, labelData);
+            return new MNISTGroup(imageData, labelData);
         }
 
         private static async Task<Stream> PullAsync(HttpClient client, string url)
@@ -103,7 +110,7 @@ namespace MachineLearning
 
         // hack hacky hack hack
         // i dont care anymore
-        public static MNISTDatabase Load(DatasetFileSource images, DatasetFileSource labels)
+        public static MNISTGroup Load(DatasetFileSource images, DatasetFileSource labels)
         {
             Stream? imageStream = null;
             Stream? labelStream = null;
@@ -180,7 +187,7 @@ namespace MachineLearning
             }
         }
 
-        public MNISTDatabase(float[,,] images, int[] labels)
+        public MNISTGroup(float[,,] images, int[] labels)
         {
             mCount = images.GetLength(0);
             mWidth = images.GetLength(1);
@@ -252,5 +259,59 @@ namespace MachineLearning
         private readonly int mWidth, mHeight, mCount;
         private readonly int[] mLabels;
         private readonly float[,,] mImages;
+    }
+
+    public sealed class MNISTDatabase : IDataset
+    {
+        public MNISTDatabase()
+        {
+            mGroups = new Dictionary<DatasetGroup, MNISTGroup>();
+            mWidth = mHeight = mOutputCount = -1;
+        }
+
+        public void SetGroup(DatasetGroup group, MNISTGroup data)
+        {
+            mGroups[group] = data;
+
+            if (mWidth < 0)
+            {
+                mWidth = data.Width;
+            }
+            else if (mWidth != data.Width)
+            {
+                throw new ArgumentException("Mismatching image width!");
+            }
+
+            if (mHeight < 0)
+            {
+                mHeight = data.Height;
+            }
+            else if (mHeight != data.Height)
+            {
+                throw new ArgumentException("Mismatching image height!");
+            }
+
+            if (mOutputCount < 0)
+            {
+                mOutputCount = data.OutputCount;
+            }
+            else if (mOutputCount != data.OutputCount)
+            {
+                throw new ArgumentException("Mismatching output count!");
+            }
+        }
+
+        public int Width => mWidth;
+        public int Height => mHeight;
+        public int InputCount => mWidth * mHeight;
+        public int OutputCount => mOutputCount;
+
+        public int GetGroupEntryCount(DatasetGroup group) => mGroups.GetValueOrDefault(group)?.Count ?? -1;
+        public float[] GetInput(DatasetGroup group, int index) => mGroups[group].GetInput(index);
+        public float[] GetExpectedOutput(DatasetGroup group, int index) => mGroups[group].GetExpectedOutput(index);
+        public byte[] GetImageData(DatasetGroup group, int index, int channels) => mGroups[group].GetImageData(index, channels);
+
+        private readonly Dictionary<DatasetGroup, MNISTGroup> mGroups;
+        private int mWidth, mHeight, mOutputCount;
     }
 }
