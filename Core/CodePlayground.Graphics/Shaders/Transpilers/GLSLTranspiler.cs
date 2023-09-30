@@ -578,6 +578,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 var mapCollection = new SourceMapCollection(instructions);
                 using (OptickMacros.Event("Parse shader IL"))
                 {
+                    // slurrrrp... tasty, tasty spaghetti...
                     for (int i = 0; i < instructions.Count; i++)
                     {
                         var instruction = instructions[i];
@@ -594,13 +595,13 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         }
 
                         // https://learn.microsoft.com/en-us/dotnet/api/system.reflection.emit.opcodes?view=net-7.0
-                        if (name.StartsWith("call"))
+                        if (name.StartsWith("call")) // method invocation
                         {
                             MethodInfo invokedMethod;
                             if (instruction.Operand is MethodInfo operand)
                             {
                                 var operatorAttribute = operand.GetCustomAttribute<ShaderOperatorAttribute>();
-                                if (operatorAttribute is not null)
+                                if (operatorAttribute is not null) // method is an overloaded operator
                                 {
                                     string? setValue = null;
                                     if (operatorAttribute.Type == ShaderOperatorType.Index && operand.GetParameters().Length > 1)
@@ -668,24 +669,25 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 builder.AppendLine($"{invocationExpression};");
                             }
                         }
-                        else if (name.StartsWith("ld"))
+                        else if (name.StartsWith("ld")) // load value
                         {
                             string loadType = name[2..];
-                            if (!loadType.StartsWith("ind"))
+                            if (!loadType.StartsWith("ind")) // if were not loading from a pointer
                             {
                                 string expression;
-                                if (instruction.Operand is FieldInfo field)
+                                if (instruction.Operand is FieldInfo field) // loading from a field
                                 {
                                     var fieldName = GetFieldName(field, type);
                                     var layoutAttribute = field.GetCustomAttribute<LayoutAttribute>();
 
-                                    if (field.DeclaringType == type || field.IsStatic)
+                                    if (field.DeclaringType == type || field.IsStatic) // loading a resource/shader input
                                     {
+                                        // todo(nora): abstract into member method. we dont want to repeat this one snippet of code over and over again
                                         if (layoutAttribute is null)
                                         {
                                             throw new InvalidOperationException("Static and/or shader fields must have the Layout attribute applied!");
                                         }
-                                        else if (layoutAttribute.Shared)
+                                        else if (layoutAttribute.Shared) // declaring a shared variable
                                         {
                                             var fieldType = field.FieldType;
                                             ProcessType(fieldType, type);
@@ -695,7 +697,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                                 mSharedVariables.Add(fieldName, fieldType);
                                             }
                                         }
-                                        else if (!mStageResources.ContainsKey(fieldName))
+                                        else if (!mStageResources.ContainsKey(fieldName)) // declaring a stage resource
                                         {
                                             var fieldType = field.FieldType;
 
@@ -766,7 +768,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                         expression = fieldName;
                                     }
                                 }
-                                else if (loadType.StartsWith("loc"))
+                                else if (loadType.StartsWith("loc")) // loading a local variable
                                 {
                                     int variableIndex;
                                     if (instruction.Operand is null)
@@ -780,7 +782,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
                                     expression = $"var_{variableIndex}";
                                 }
-                                else if (loadType.StartsWith("arg"))
+                                else if (loadType.StartsWith("arg")) // loading an argument
                                 {
                                     int argumentIndex;
                                     if (instruction.Operand is null)
@@ -810,7 +812,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                         }
                                     }
                                 }
-                                else if (loadType.StartsWith("elem"))
+                                else if (loadType.StartsWith("elem")) // loading an array index
                                 {
                                     var index = evaluationStack.Pop();
                                     var array = evaluationStack.Pop();
@@ -820,8 +822,9 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 {
                                     throw new InvalidOperationException("Strings are not permitted in shaders!");
                                 }
-                                else
+                                else // loading a raw value
                                 {
+                                    // note(nora): DISGUSTANG
                                     string? parsedExpression = instruction.Operand?.ToString();
                                     if (parsedExpression is null)
                                     {
@@ -850,15 +853,15 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 evaluationStack.Push(expression);
                             }
                         }
-                        else if (name.StartsWith("st"))
+                        else if (name.StartsWith("st")) // store value
                         {
                             var storeType = name[2..];
-                            if (instruction.Operand is FieldInfo field)
+                            if (instruction.Operand is FieldInfo field) // storing in a field
                             {
                                 var expression = evaluationStack.Pop();
                                 var fieldType = field.FieldType;
 
-                                // note(nora): this is fucking gross
+                                // note(nora): this is gross
                                 if (fieldType.IsPrimitive)
                                 {
                                     var fieldTypeName = GetTypeName(fieldType, type, true);
@@ -866,7 +869,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 }
 
                                 var destination = GetFieldName(field, type);
-                                if (storeType.StartsWith("fld"))
+                                if (storeType.StartsWith("fld")) // non-static field
                                 {
                                     var destinationObject = evaluationStack.Pop();
                                     destination = $"{destinationObject}.{destination}";
@@ -874,7 +877,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
                                 builder.AppendLine($"{destination} = {expression};");
                             }
-                            else if (storeType.StartsWith("loc"))
+                            else if (storeType.StartsWith("loc")) // local (scope) variable
                             {
                                 int variableIndex;
                                 if (instruction.Operand is null)
@@ -898,7 +901,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
                                 builder.AppendLine($"var_{variableIndex} = {expression};");
                             }
-                            else if (storeType.StartsWith("elem"))
+                            else if (storeType.StartsWith("elem")) // array element
                             {
                                 var expression = evaluationStack.Pop();
                                 var index = evaluationStack.Pop();
@@ -906,7 +909,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
                                 builder.AppendLine($"{array}[{index}] = {expression};");
                             }
-                            else if (storeType.StartsWith("ind"))
+                            else if (storeType.StartsWith("ind")) // storing to a pointer
                             {
                                 var value = evaluationStack.Pop();
                                 var address = evaluationStack.Pop();
@@ -918,7 +921,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 throw new InvalidOperationException("Unsupported store operation!");
                             }
                         }
-                        else if (name.StartsWith("br"))
+                        else if (name.StartsWith("br")) // conditional/unconditional jump
                         {
                             var conditionalOp = name[2..];
                             var condition = new JumpCondition();
@@ -944,55 +947,55 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 Condition = condition
                             });
                         }
-                        else if (name.StartsWith("add"))
+                        else if (name.StartsWith("add")) // arithmetic operations; x + y
                         {
                             PushOperatorExpression(ShaderOperatorType.Add, evaluationStack);
                         }
-                        else if (name.StartsWith("sub"))
+                        else if (name.StartsWith("sub")) // x - y
                         {
                             PushOperatorExpression(ShaderOperatorType.Subtract, evaluationStack);
                         }
-                        else if (name.StartsWith("mul"))
+                        else if (name.StartsWith("mul")) // x * y
                         {
                             PushOperatorExpression(ShaderOperatorType.Multiply, evaluationStack);
                         }
-                        else if (name.StartsWith("div"))
+                        else if (name.StartsWith("div")) // x / y
                         {
                             PushOperatorExpression(ShaderOperatorType.Divide, evaluationStack);
                         }
-                        else if (name.StartsWith("neg"))
+                        else if (name.StartsWith("neg")) // -x
                         {
                             PushOperatorExpression(ShaderOperatorType.Invert, evaluationStack);
                         }
-                        else if (name.StartsWith("and"))
+                        else if (name.StartsWith("and")) // boolean operations; x & y
                         {
                             PushOperatorExpression(ShaderOperatorType.And, evaluationStack);
                         }
-                        else if (name.StartsWith("or"))
+                        else if (name.StartsWith("or")) // x | y
                         {
                             PushOperatorExpression(ShaderOperatorType.Or, evaluationStack);
                         }
-                        else if (name.StartsWith("shl"))
+                        else if (name.StartsWith("shl")) // bit twiddling; x << y
                         {
                             PushOperatorExpression(ShaderOperatorType.ShiftLeft, evaluationStack);
                         }
-                        else if (name.StartsWith("shr"))
+                        else if (name.StartsWith("shr")) // x >> y
                         {
                             PushOperatorExpression(ShaderOperatorType.ShiftRight, evaluationStack);
                         }
-                        else if (name.StartsWith("ceq"))
+                        else if (name.StartsWith("ceq")) // comparisons; equal
                         {
                             PushOperatorExpression(ShaderOperatorType.Equal, evaluationStack);
                         }
-                        else if (name.StartsWith("cgt"))
+                        else if (name.StartsWith("cgt")) // greater
                         {
                             PushOperatorExpression(ShaderOperatorType.Greater, evaluationStack);
                         }
-                        else if (name.StartsWith("clt"))
+                        else if (name.StartsWith("clt")) // less
                         {
                             PushOperatorExpression(ShaderOperatorType.Less, evaluationStack);
                         }
-                        else if (name.StartsWith("conv"))
+                        else if (name.StartsWith("conv")) // cast one type to the other
                         {
                             int typeIndex = name.IndexOfAny(new char[] { 'u', 'i', 'r' });
                             if (typeIndex < 0)
@@ -1015,20 +1018,20 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             // explicit cases
                             switch (name)
                             {
-                                case "not":
+                                case "not": // boolean inversion
                                     PushOperatorExpression(ShaderOperatorType.Not, evaluationStack);
                                     break;
-                                case "pop":
+                                case "pop": // pop the top value from the stack
                                     {
                                         var expression = evaluationStack.Pop();
                                         builder.AppendLine($"{expression};");
                                     }
 
                                     break;
-                                case "initobj":
+                                case "initobj": // initialize a value-typed object
                                     evaluationStack.Pop();
                                     break;
-                                case "newobj":
+                                case "newobj": // initialize a new class-typed object
                                     {
                                         var constructor = (ConstructorInfo)instruction.Operand!;
                                         var declaringType = constructor.DeclaringType!;
@@ -1047,7 +1050,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                     }
 
                                     break;
-                                case "ret":
+                                case "ret": // return the top value if such a thing exists
                                     if (evaluationStack.TryPop(out string? returnedExpression))
                                     {
                                         if (entrypoint)
@@ -1069,11 +1072,11 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                     }
 
                                     break;
-                                case "dup":
+                                case "dup": // duplicate value on the stack
                                     evaluationStack.Push(evaluationStack.Peek());
                                     break;
                                 default:
-                                    if (name.StartsWith('b'))
+                                    if (name.StartsWith('b')) // comparison-jump
                                     {
                                         bool validInstruction = true;
                                         var operatorType = ShaderOperatorType.Equal;
@@ -1127,6 +1130,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     }
                 }
 
+                // note(nora): ewwww
                 using (OptickMacros.Event("Parse shader IL jumps"))
                 {
                     var nonLoopJumps = new List<JumpInstruction>();
