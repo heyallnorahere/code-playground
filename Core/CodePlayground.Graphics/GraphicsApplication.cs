@@ -34,6 +34,7 @@ namespace CodePlayground.Graphics
     {
         OpenGL,
         Vulkan,
+        Metal,
         Other
     }
 
@@ -77,13 +78,22 @@ namespace CodePlayground.Graphics
         public const int SynchronizationFrames = 2;
         public const string MainThreadName = "Main loop";
 
+        private static AppGraphicsAPI ChooseGraphicsAPI()
+        {
+#if IOS
+            return AppGraphicsAPI.Metal;
+#else
+            return AppGraphicsAPI.Vulkan;
+#endif
+        }
+
         public GraphicsApplication()
         {
             Utilities.BindHandlers(this, this);
 
             mExitCode = 0;
             mIsRunning = false;
-            mAPI = AppGraphicsAPI.Vulkan;
+            mAPI = ChooseGraphicsAPI();
             mInitialSize = new Vector2D<int>(800, 600);
 
             mWindow = null;

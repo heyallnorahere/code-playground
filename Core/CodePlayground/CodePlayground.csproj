@@ -4,14 +4,14 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <TargetFrameworks>net7.0</TargetFrameworks>
 
-    <HomeDirectory Condition="'$(OS)' == 'Windows_NT'">$(USERPROFILE)\</HomeDirectory>
-    <HomeDirectory Condition="'$(OS)' != 'Windows_NT'">$(HOME)\</HomeDirectory>
+    <HomeDirectory Condition="$([MSBuild]::IsOSPlatform(Windows))">$(USERPROFILE)\</HomeDirectory>
+    <HomeDirectory Condition="!$([MSBuild]::IsOSPlatform(Windows))">$(HOME)\</HomeDirectory>
     
     <NuGetCacheDirectory>$(HomeDirectory).nuget\packages\</NuGetCacheDirectory>
     <NETCorePlatformsPackageDir>$(NuGetCacheDirectory)microsoft.netcore.platforms\$(MicrosoftNETCorePlatformsVersion)\</NETCorePlatformsPackageDir>
   </PropertyGroup>
 
-  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform(OSX))">
+  <PropertyGroup Condition="!$([MSBuild]::IsOSPlatform(Linux))">
     <TargetFrameworks>$(TargetFrameworks);net7.0-ios</TargetFrameworks>
   </PropertyGroup>
 
