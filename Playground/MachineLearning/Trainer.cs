@@ -214,10 +214,6 @@ namespace MachineLearning
 
                 advanceBatch = true;
             }
-            else if (wait)
-            {
-                throw new InvalidOperationException("Fence was not submitted to the queue!");
-            }
 
             if (mRunning && advanceBatch)
             {
