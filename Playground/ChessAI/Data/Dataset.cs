@@ -6,7 +6,6 @@ using SQLite;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -37,15 +36,28 @@ namespace ChessAI.Data
         public PieceType Promotion { get; set; }
     }
 
+    internal struct GroupData
+    {
+        public int Offset, Size;
+    }
+
     public sealed class Dataset : IDataset, IDisposable
     {
         public const int NetworkInputCount = Board.Width * Board.Width + 3; // data in a FEN string
         public const int NetworkOutputCount = Board.Width * 4 + 4; // rank and file, source and destination, plus promotion piece types
 
         private static readonly HashSet<string?> sSubmittedFENs;
+        private static readonly IReadOnlyDictionary<DatasetGroup, float> sGroupRatios;
+
         static Dataset()
         {
             sSubmittedFENs = new HashSet<string?>();
+            sGroupRatios = new Dictionary<DatasetGroup, float>
+            {
+                [DatasetGroup.Training] = 0.7f,
+                [DatasetGroup.Testing] = 0.2f,
+                [DatasetGroup.Evaluation] = 0.1f
+            };
         }
 
         public static async Task PullAndLabelAsync(Dataset dataset, string command, int year, int month, int depth)
@@ -187,8 +199,11 @@ namespace ChessAI.Data
             mConnection = new SQLiteConnection(path);
             mConnection.CreateTable<PositionData>();
 
+            mGroupData = new Dictionary<DatasetGroup, GroupData>();
             mCache = mConnection.Table<PositionData>().ToArray();
             mCount = mCache.Length;
+
+            BuildGroupOffsets();
         }
 
         public void Dispose() => mConnection.Dispose();
@@ -196,6 +211,26 @@ namespace ChessAI.Data
         public int Count => mCount;
         public int InputCount => NetworkInputCount;
         public int OutputCount => NetworkOutputCount;
+
+        private void BuildGroupOffsets()
+        {
+            mGroupData.Clear();
+
+            var groups = Enum.GetValues<DatasetGroup>();
+            int currentOffset = 0;
+
+            foreach (var group in groups)
+            {
+                int size = (int)float.Floor(mCount * sGroupRatios[group]);
+                mGroupData[group] = new GroupData
+                {
+                    Offset = currentOffset,
+                    Size = size
+                };
+
+                currentOffset += size;
+            }
+        }
 
         private void VerifyCache()
         {
@@ -205,26 +240,29 @@ namespace ChessAI.Data
                 GC.Collect(); // we dont want to exceed max memory
 
                 mCache = mConnection.Table<PositionData>().ToArray();
+                BuildGroupOffsets();
             }
         }
 
-        public float[] GetInput(int index)
+        public int GetGroupEntryCount(DatasetGroup group) => mGroupData[group].Size;
+
+        public float[] GetInput(DatasetGroup group, int index)
         {
             using var getInputEvent = OptickMacros.Event();
             VerifyCache();
 
-            var data = mCache[index];
+            var data = mCache[index + mGroupData[group].Offset];
             var input = JsonConvert.DeserializeObject<float[]>(data.NetworkInput);
 
             return input ?? throw new ArgumentException("Failed to deserialize network input!");
         }
 
-        public float[] GetExpectedOutput(int index)
+        public float[] GetExpectedOutput(DatasetGroup group, int index)
         {
             using var getOutputEvent = OptickMacros.Event();
             VerifyCache();
 
-            var data = mCache[index];
+            var data = mCache[index + mGroupData[group].Offset];
             var outputs = new float[NetworkOutputCount];
             Array.Fill(outputs, 0f);
 
@@ -248,6 +286,7 @@ namespace ChessAI.Data
         }
 
         private readonly SQLiteConnection mConnection;
+        private readonly Dictionary<DatasetGroup, GroupData> mGroupData;
         private PositionData[] mCache;
         private int mCount;
     }

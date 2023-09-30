@@ -20,12 +20,6 @@ namespace MachineLearning
         public string Labels;
     }
 
-    internal enum DatasetType
-    {
-        Training,
-        Testing
-    }
-
     internal struct DatasetImageSampler : ISamplerSettings
     {
         public AddressMode AddressMode => AddressMode.Repeat;
@@ -47,18 +41,18 @@ namespace MachineLearning
         public static Random RNG => sRandom;
 
         private static readonly Random sRandom;
-        private static readonly IReadOnlyDictionary<DatasetType, DatasetSource> sDatasetSources;
+        private static readonly IReadOnlyDictionary<DatasetGroup, DatasetSource> sDatasetSources;
         static App()
         {
             sRandom = new Random();
-            sDatasetSources = new Dictionary<DatasetType, DatasetSource>
+            sDatasetSources = new Dictionary<DatasetGroup, DatasetSource>
             {
-                [DatasetType.Training] = new DatasetSource
+                [DatasetGroup.Training] = new DatasetSource
                 {
                     Images = "http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz",
                     Labels = "http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz"
                 },
-                [DatasetType.Testing] = new DatasetSource
+                [DatasetGroup.Testing] = new DatasetSource
                 {
                     Images = "http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz",
                     Labels = "http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz"
@@ -76,11 +70,10 @@ namespace MachineLearning
             mInputString = string.Empty;
 
             // load testing dataset as default
-            mSelectedDataset = DatasetType.Testing;
+            mSelectedDataset = DatasetGroup.Testing;
 
             mAverageAbsoluteCost = float.PositiveInfinity;
-            mMinimumAverageCost = 0f;
-            mUseMinimumAverageCost = false;
+            mMinimumAverageCost = -1f;
 
             Load += OnLoad;
             InputReady += OnInputReady;
@@ -120,36 +113,14 @@ namespace MachineLearning
                 }
 
                 mSelectedTestImages = selectedDataString[(separatorPosition + 1)..].Split(new char[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToArray();
-                mSelectedDataset = Enum.Parse<DatasetType>(selectedDataString[..separatorPosition], true);
+                mSelectedDataset = Enum.Parse<DatasetGroup>(selectedDataString[..separatorPosition], true);
             }
             else
             {
                 mMinimumAverageCost = float.Parse(args[1]);
-                mUseMinimumAverageCost = true;
             }
 
             mHeadless = true;
-        }
-
-        [MemberNotNull(nameof(mDataset))]
-        public void LoadDataset(DatasetType type)
-        {
-            var source = sDatasetSources[type];
-            var cachePath = $"data/{type.ToString().ToLower()}/";
-
-            var imageSource = new DatasetFileSource
-            {
-                Url = source.Images,
-                Cache = cachePath + "images"
-            };
-
-            var labelSource = new DatasetFileSource
-            {
-                Url = source.Labels,
-                Cache = cachePath + "labels"
-            };
-
-            mDataset = MNISTDatabase.Load(imageSource, labelSource);
         }
 
         private IDisposable GetSemaphore()
@@ -175,10 +146,6 @@ namespace MachineLearning
         private void OnBatchResults(TrainerBatchResults results)
         {
             Console.WriteLine(mAverageAbsoluteCost = results.AverageAbsoluteCost);
-            if (mUseMinimumAverageCost && mAverageAbsoluteCost < mMinimumAverageCost)
-            {
-                mTrainer?.Stop();
-            }
         }
 
         private static Network InitializeNetwork(IDataset dataset)
@@ -221,9 +188,30 @@ namespace MachineLearning
             NetworkDispatcher.Initialize(mRenderer, mLibrary);
 
             mTrainer = new Trainer(context, 100, 0.1f); // initial batch size and learning rate
+            mTrainer.MinimumAverageCost = mMinimumAverageCost;
             mTrainer.OnBatchResults += OnBatchResults;
 
-            LoadDataset(mSelectedDataset);
+            mDataset = new MNISTDatabase();
+            foreach (var group in sDatasetSources.Keys)
+            {
+                var source = sDatasetSources[group];
+                var cachePath = $"data/{group.ToString().ToLower()}/";
+
+                var imageSource = new DatasetFileSource
+                {
+                    Url = source.Images,
+                    Cache = cachePath + "images"
+                };
+
+                var labelSource = new DatasetFileSource
+                {
+                    Url = source.Labels,
+                    Cache = cachePath + "labels"
+                };
+
+                var data = MNISTGroup.Load(imageSource, labelSource);
+                mDataset.SetGroup(group, data);
+            }
 
             mComputeFence = context.CreateFence(true);
             mDisplayedTexture = context.CreateDeviceImage(new DeviceImageInfo
@@ -384,7 +372,7 @@ namespace MachineLearning
         private void RunNeuralNetwork(int[] imageNumbers)
         {
             // just run headless
-            var inputs = imageNumbers.Select(number => mDataset!.GetInput(number - 1)).ToArray();
+            var inputs = imageNumbers.Select(number => mDataset!.GetInput(mSelectedDataset, number - 1)).ToArray();
 
             var context = GraphicsContext!;
             var queue = context.Device.GetQueue(CommandQueueFlags.Compute);
@@ -426,15 +414,16 @@ namespace MachineLearning
                 }
                 else if (mTrainer is not null)
                 {
-                    LoadDataset(DatasetType.Testing);
-
-                    mTrainer.Start(mDataset, mNetwork!);
+                    mTrainer.Start(mDataset!, mNetwork!);
                     if (!RuntimeInformation.IsOSPlatform(OSPlatform.Create("ios")) && !RuntimeInformation.IsOSPlatform(OSPlatform.Create("maccatalyst")))
                     {
                         Console.CancelKeyPress += (sender, args) =>
                         {
-                            mTrainer.Stop();
-                            args.Cancel = true;
+                            Console.CancelKeyPress += (sender, args) =>
+                            {
+                                mTrainer.Stop();
+                                args.Cancel = true;
+                            };
                         };
                     }
 
@@ -477,12 +466,9 @@ namespace MachineLearning
         {
             ImGui.Begin("Dataset");
 
-            int imageCount = mDataset?.Count ?? 0;
-            ImGui.Text($"{imageCount} images loaded");
-
-            if (ImGui.BeginCombo("##dataset-type", mSelectedDataset.ToString()))
+            if (ImGui.BeginCombo("##dataset-group", mSelectedDataset.ToString()))
             {
-                var types = Enum.GetValues<DatasetType>();
+                var types = Enum.GetValues<DatasetGroup>();
                 foreach (var type in types)
                 {
                     bool isSelected = type == mSelectedDataset;
@@ -512,24 +498,19 @@ namespace MachineLearning
                 ImGui.EndCombo();
             }
 
-            ImGui.SameLine();
-            if (ImGui.Button("Load dataset"))
-            {
-                LoadDataset(mSelectedDataset);
-            }
-
             ImGui.InputInt("##selected-image", ref mSelectedImage);
             ImGui.SameLine();
 
             if (ImGui.Button("Load image"))
             {
+                int imageCount = mDataset!.GetGroupEntryCount(mSelectedDataset);
                 if (mSelectedImage <= 0 || mSelectedImage > imageCount)
                 {
                     throw new IndexOutOfRangeException();
                 }
 
                 int imageIndex = mSelectedImage - 1;
-                var imageData = mDataset!.GetImageData(imageIndex, 4); // rgba
+                var imageData = mDataset!.GetImageData(mSelectedDataset, imageIndex, 4); // rgba
 
                 var context = GraphicsContext!;
                 var buffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, imageData.Length);
@@ -596,13 +577,13 @@ namespace MachineLearning
                 for (int i = 0; i < imageNumbers.Length; i++)
                 {
                     int number = imageNumbers[i];
-                    if (number <= 0 || number > mDataset.Count)
+                    if (number <= 0 || number > mDataset.GetGroupEntryCount(mSelectedDataset))
                     {
                         throw new ArgumentException("Invalid image number!");
                     }
 
                     int imageIndex = number - 1;
-                    inputs[i] = mDataset.GetInput(imageIndex);
+                    inputs[i] = mDataset.GetInput(mSelectedDataset, imageIndex);
                 }
 
                 var context = GraphicsContext!;
@@ -682,16 +663,24 @@ namespace MachineLearning
         {
             ImGui.Begin("Training");
 
-            ImGui.Checkbox("##use-minimum", ref mUseMinimumAverageCost);
-            ImGui.SameLine();
-
-            var minAverageFlags = mUseMinimumAverageCost ? ImGuiInputTextFlags.None : ImGuiInputTextFlags.ReadOnly;
-            ImGui.InputFloat("Minimum average cost", ref mMinimumAverageCost, 0.005f, 0.01f, "%f", minAverageFlags);
-
             bool training = mTrainer!.IsRunning;
             if (training)
             {
                 ImGui.BeginDisabled();
+            }
+
+            float minimumAverageCost = mTrainer.MinimumAverageCost;
+            if (ImGui.InputFloat("Minimum average cost", ref minimumAverageCost, 0.005f, 0.01f, "%f"))
+            {
+                mTrainer.MinimumAverageCost = minimumAverageCost;
+            }
+
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("""
+                    The threshold to verify against after every training/evaluation run.
+                    A negative value will cause training to never terminate.
+                    """);
             }
 
             int batchSize = mTrainer.BatchSize;
@@ -850,7 +839,7 @@ namespace MachineLearning
 
         private bool mHeadless;
         private int[]? mSelectedTestImages;
-        private DatasetType mSelectedDataset;
+        private DatasetGroup mSelectedDataset;
 
         private int mSelectedImage;
         private ITexture? mDisplayedTexture;
@@ -865,7 +854,6 @@ namespace MachineLearning
 
         private Trainer? mTrainer;
         private float mAverageAbsoluteCost, mMinimumAverageCost;
-        private bool mUseMinimumAverageCost;
 
         private readonly Queue<IDisposable> mExistingSemaphores;
         private readonly List<IDisposable> mSignaledSemaphores;

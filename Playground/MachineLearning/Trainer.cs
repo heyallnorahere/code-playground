@@ -29,6 +29,8 @@ namespace MachineLearning
 
         public TrainerBatchData? Batch;
         public int[] ShuffledIndices;
+        public DatasetGroup Phase;
+        public float AverageAbsoluteCost;
     }
 
     public struct InterpretedPassDetails
@@ -49,6 +51,7 @@ namespace MachineLearning
 
             mBatchSize = batchSize;
             mLearningRate = learningRate;
+            mMinimumAverageCost = -1f;
 
             mContext = context;
             mFence = mContext.CreateFence(true);
@@ -176,7 +179,17 @@ namespace MachineLearning
                 var confidences = NetworkDispatcher.GetConfidenceValues(mState.BufferData);
 
                 int outputCount = mState.Network.LayerSizes[^1];
-                float averageAbsoluteCost = 0f;
+                float scale = 1f / (outputCount * mBatchSize);
+
+                if (mState.Phase != DatasetGroup.Training)
+                {
+                    scale /= GetBatchCount(mState.Phase);
+                }
+                else
+                {
+                    mState.AverageAbsoluteCost = 0f;
+                }
+
                 for (int i = 0; i < confidences.Length; i++)
                 {
                     for (int j = 0; j < outputCount; j++)
@@ -185,22 +198,21 @@ namespace MachineLearning
                         float y = batch.Expected[i][j];
 
                         float cost = Cost(x, y);
-                        averageAbsoluteCost += MathF.Abs(cost) / (outputCount * confidences.Length);
+                        mState.AverageAbsoluteCost += MathF.Abs(cost) * scale;
                     }
                 }
 
-                OnBatchResults?.Invoke(new TrainerBatchResults
+                if (mState.Phase == DatasetGroup.Training)
                 {
-                    ConfidenceValues = confidences,
-                    AverageAbsoluteCost = averageAbsoluteCost,
-                    ImageIndices = batch.ImageIndices
-                });
+                    OnBatchResults?.Invoke(new TrainerBatchResults
+                    {
+                        ConfidenceValues = confidences,
+                        AverageAbsoluteCost = mState.AverageAbsoluteCost,
+                        ImageIndices = batch.ImageIndices
+                    });
+                }
 
                 advanceBatch = true;
-            }
-            else if (wait)
-            {
-                throw new InvalidOperationException("Fence was not submitted to the queue!");
             }
 
             if (mRunning && advanceBatch)
@@ -208,11 +220,59 @@ namespace MachineLearning
                 using var advanceBatchEvent = OptickMacros.Event("Advance batch");
 
                 int newBatchIndex = (mState.Batch?.BatchIndex ?? -1) + 1;
-                if (newBatchIndex >= BatchCount)
+                if (newBatchIndex >= GetBatchCount(mState.Phase))
                 {
+                    switch (mState.Phase)
+                    {
+                        case DatasetGroup.Training:
+                            if (mState.Data.GetGroupEntryCount(DatasetGroup.Testing) >= 0)
+                            {
+                                mState.Phase = DatasetGroup.Testing;
+                            }
+                            else if (mState.AverageAbsoluteCost <= mMinimumAverageCost)
+                            {
+                                Stop();
+                                return;
+                            }
+
+                            break;
+                        case DatasetGroup.Testing:
+                            if (mState.AverageAbsoluteCost <= mMinimumAverageCost)
+                            {
+                                if (mState.Data.GetGroupEntryCount(DatasetGroup.Evaluation) >= 0)
+                                {
+                                    mState.Phase = DatasetGroup.Evaluation;
+                                }
+                                else
+                                {
+                                    Stop();
+                                    return;
+                                }
+                            }
+                            else
+                            {
+                                mState.Phase = DatasetGroup.Training;
+                            }
+
+                            break;
+                        case DatasetGroup.Evaluation:
+                            if (mState.AverageAbsoluteCost <= mMinimumAverageCost)
+                            {
+                                Stop();
+                                return;
+                            }
+                            else
+                            {
+                                mState.Phase = DatasetGroup.Training;
+                            }
+
+                            break;
+                    }
+
+                    mState.AverageAbsoluteCost = 0f;
                     newBatchIndex = 0;
 
-                    var indices = new int[mState.Data.Count];
+                    var indices = new int[mState.Data.GetGroupEntryCount(mState.Phase)];
                     for (int i = 0; i < indices.Length; i++)
                     {
                         indices[i] = i;
@@ -230,8 +290,8 @@ namespace MachineLearning
                 {
                     int index = mState.ShuffledIndices[newBatchIndex * mBatchSize + i];
 
-                    inputs[i] = mState.Data.GetInput(index);
-                    expectedOutputs[i] = mState.Data.GetExpectedOutput(index);
+                    inputs[i] = mState.Data.GetInput(mState.Phase, index);
+                    expectedOutputs[i] = mState.Data.GetExpectedOutput(mState.Phase, index);
                     imageIndices[i] = index;
                 }
 
@@ -255,10 +315,13 @@ namespace MachineLearning
                     }
 
                     NetworkDispatcher.ForwardPropagation(commandList, mState.BufferData, inputs);
-                    commandList.ExecutionBarrier();
-                    NetworkDispatcher.BackPropagation(commandList, mState.BufferData, expectedOutputs);
-                    commandList.ExecutionBarrier();
-                    NetworkDispatcher.DeltaComposition(commandList, mState.BufferData);
+                    if (mState.Phase == DatasetGroup.Training)
+                    {
+                        commandList.ExecutionBarrier();
+                        NetworkDispatcher.BackPropagation(commandList, mState.BufferData, expectedOutputs);
+                        commandList.ExecutionBarrier();
+                        NetworkDispatcher.DeltaComposition(commandList, mState.BufferData);
+                    }
                 }
 
                 commandList.End();
@@ -284,12 +347,17 @@ namespace MachineLearning
 
         public bool IsRunning => mRunning;
 
-        public int BatchCount
+        public int GetBatchCount(DatasetGroup group)
         {
-            get
+            int datasetCount = mState.Data.GetGroupEntryCount(group);
+            return (datasetCount - (datasetCount % mBatchSize)) / mBatchSize;
+        }
+
+        private void VerifyStopped()
+        {
+            if (mRunning)
             {
-                int datasetCount = mState.Data.Count;
-                return (datasetCount - (datasetCount % mBatchSize)) / mBatchSize;
+                throw new InvalidOperationException("Network is training!");
             }
         }
 
@@ -298,11 +366,7 @@ namespace MachineLearning
             get => mBatchSize;
             set
             {
-                if (mRunning)
-                {
-                    throw new InvalidOperationException("Network is training!");
-                }
-
+                VerifyStopped();
                 mBatchSize = value;
             }
         }
@@ -312,12 +376,18 @@ namespace MachineLearning
             get => mLearningRate;
             set
             {
-                if (mRunning)
-                {
-                    throw new InvalidOperationException("Network is training!");
-                }
-
+                VerifyStopped();
                 mLearningRate = value;
+            }
+        }
+
+        public float MinimumAverageCost
+        {
+            get => mMinimumAverageCost;
+            set
+            {
+                VerifyStopped();
+                mMinimumAverageCost = value;
             }
         }
 
@@ -334,12 +404,16 @@ namespace MachineLearning
                 Update(true);
             }
 
-            if (mBatchSize > dataset.Count)
+            if (dataset.GetGroupEntryCount(DatasetGroup.Testing) < 0)
             {
-                throw new InvalidOperationException("Batch size is greater than dataset size!");
+                Console.WriteLine("[WARNING] no testing group found! it is strongly recommended to include a testing group in your dataset");
+            }
+            else if (dataset.GetGroupEntryCount(DatasetGroup.Evaluation) < 0)
+            {
+                Console.WriteLine("[WARNING] no evaluation group found! it is strongly recommended to also include a evaluation group in your dataset");
             }
 
-            var indices = new int[dataset.Count];
+            var indices = new int[dataset.GetGroupEntryCount(DatasetGroup.Training)];
             for (int i = 0; i < indices.Length; i++)
             {
                 indices[i] = i;
@@ -356,7 +430,8 @@ namespace MachineLearning
                 Transition = true,
 
                 Batch = null,
-                ShuffledIndices = indices
+                ShuffledIndices = indices,
+                Phase = DatasetGroup.Training
             };
 
             mRunning = true;
@@ -379,7 +454,7 @@ namespace MachineLearning
 
         private TrainerState mState;
         private int mBatchSize;
-        private float mLearningRate;
+        private float mLearningRate, mMinimumAverageCost;
         private bool mDisposed, mRunning;
 
         private readonly Random mRNG;
