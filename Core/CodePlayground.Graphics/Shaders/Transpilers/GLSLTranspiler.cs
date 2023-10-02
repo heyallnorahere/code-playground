@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace CodePlayground.Graphics.Shaders.Transpilers
 {
@@ -282,6 +283,13 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             return expressionString;
         }
 
+        /// <summary>
+        /// Parse the signature of an entrypoint function for resource declaration
+        /// </summary>
+        /// <param name="type">The type of parameter/element/return value</param>
+        /// <param name="provider">Attribute provider of said element, usually a <see cref="ParameterInfo"/> or <see cref="FieldInfo"/> object</param>
+        /// <param name="identifierExpression">The current "built" expression</param>
+        /// <param name="callback">Function to call for every element parsed</param>
         private void ParseSignatureStructure(Type type, ICustomAttributeProvider provider, string identifierExpression, Action<Type, string, string, int, bool> callback)
         {
             using var parseEvent = OptickMacros.Event();
@@ -332,6 +340,12 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             }
         }
 
+        /// <summary>
+        /// Defines a type to be inserted into GLSL code after methods have finished processing
+        /// </summary>
+        /// <param name="type">Type to process</param>
+        /// <param name="shaderType">Type of the shader that's processing</param>
+        /// <param name="defineStruct">Whether or not to actually define this (e.g. buffer type)</param>
         private void ProcessType(Type type, Type shaderType, bool defineStruct = true)
         {
             using var processTypeEvent = OptickMacros.Event();
@@ -388,6 +402,11 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             }
         }
 
+        /// <summary>
+        /// Pops operands from the evaluation stack, and pushes back an operation expression
+        /// </summary>
+        /// <param name="type">The type of operation to perform</param>
+        /// <param name="evaluationStack">The stack on which to operate</param>
         private static void PushOperatorExpression(ShaderOperatorType type, Stack<string> evaluationStack)
         {
             using var pushEvent = OptickMacros.Event();
@@ -492,7 +511,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             }
                             else
                             {
-                                inputName = destination;
+                                inputName = destination; // builtin shader variable (e.g. gl_LocalInvocationID)
                             }
 
                             inputFields.Add(expression, inputName);
@@ -507,10 +526,10 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     parameterString = string.Empty;
                     functionName = EntrypointName;
 
-                    var returnType = method.ReturnType;
-                    var attributes = method.ReturnTypeCustomAttributes;
+                    var outputType = method.ReturnType;
+                    var outputAttributes = method.ReturnTypeCustomAttributes;
 
-                    ParseSignatureStructure(returnType, attributes, string.Empty, (fieldType, expression, destination, location, flat) =>
+                    ParseSignatureStructure(outputType, outputAttributes, string.Empty, (fieldType, expression, destination, location, flat) =>
                     {
                         string outputName;
                         if (location >= 0)
@@ -526,7 +545,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         }
                         else
                         {
-                            outputName = destination;
+                            outputName = destination; // builtin e.g. gl_Position
                         }
 
                         outputFields.Add(expression, outputName);
@@ -869,10 +888,13 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 }
 
                                 var destination = GetFieldName(field, type);
-                                if (storeType.StartsWith("fld")) // non-static field
+                                if (!field.IsStatic) // non-static field
                                 {
                                     var destinationObject = evaluationStack.Pop();
-                                    destination = $"{destinationObject}.{destination}";
+                                    if (destinationObject != "this")
+                                    {
+                                        destination = $"{destinationObject}.{destination}";
+                                    }
                                 }
 
                                 builder.AppendLine($"{destination} = {expression};");
@@ -1003,6 +1025,8 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                 throw new ArgumentException("Invalid convert instruction!");
                             }
 
+                            // type is either 1 or 2 characters
+                            // not clear at all, had to delve into opcodes
                             int end = typeIndex + 1;
                             if (name.Length > end && name[end] != '_')
                             {
@@ -1013,7 +1037,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             string value = evaluationStack.Pop();
                             evaluationStack.Push($"{sConversionTypes[conversionType]}({value})");
                         }
-                        else if (name != "nop")
+                        else
                         {
                             // explicit cases
                             switch (name)
@@ -1151,9 +1175,22 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         string startCode, endCode;
                         var condition = jump.Condition;
 
+                        int instructionIndex = mapCollection.OffsetInstructionMap[jump.Destination];
+                        int jumpInsertDestinationOffset = mapCollection.InstructionOffsets[instructionIndex + 1];
+
                         if (condition.Type != ConditionalType.Unconditional)
                         {
                             var expression = condition.Type != ConditionalType.True ? $"int({condition.Expression}) == 0" : condition.Expression;
+
+                            var whileJump = instructions[instructionIndex - 1];
+                            if (whileJump.OpCode.Name?.ToLower()?.StartsWith("br") ?? false)
+                            {
+                                var match = Regex.Match(condition.Expression!, @"^var_\d+$");
+                                if (match.Success)
+                                {
+
+                                }
+                            }
 
                             startCode = "do {\n";
                             endCode = $"}} while ({expression});\n";
@@ -1164,11 +1201,11 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             endCode = "}\n";
                         }
 
-                        int instructionIndex = mapCollection.OffsetInstructionMap[jump.Offset];
-                        var nextInstruction = mapCollection.InstructionOffsets[instructionIndex + 1];
+                        instructionIndex = mapCollection.OffsetInstructionMap[jump.Offset];
+                        int jumpInsertOffset = mapCollection.InstructionOffsets[instructionIndex + 1];
 
-                        InsertCode(jump.Destination, startCode, builder, mapCollection);
-                        InsertCode(nextInstruction, endCode, builder, mapCollection);
+                        InsertCode(jumpInsertDestinationOffset, startCode, builder, mapCollection);
+                        InsertCode(jumpInsertOffset, endCode, builder, mapCollection);
                     }
 
                     foreach (var jump in nonLoopJumps)
@@ -1396,7 +1433,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     definedStructs[0]
                 };
 
-                while (evaluationList.Count() > 0)
+                while (evaluationList.Any())
                 {
                     var newEvaluationList = new HashSet<Type>();
                     foreach (var type in evaluationList)
@@ -1442,7 +1479,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             foreach (var method in mDependencyGraph.Keys)
             {
                 var dependencies = mDependencyGraph[method].Dependencies;
-                var definedDependencies = dependencies.Where(dependency => dependency.GetCustomAttribute<BuiltinShaderFunctionAttribute>() is null);
+                var definedDependencies = dependencies.Where(dependency => dependency.GetCustomAttribute<BuiltinShaderFunctionAttribute>() is null).ToList();
 
                 foreach (var dependency in definedDependencies)
                 {
@@ -1478,7 +1515,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                     dependencyInfoIndices.Add(method, dependencyInfo.Count);
                     dependencyInfo.Add(new EvaluationMethodInfo
                     {
-                        Dependencies = definedDependencies.ToList(),
+                        Dependencies = definedDependencies,
                         Method = method,
                         Dependents = new List<MethodInfo>()
                     });
@@ -1493,7 +1530,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
             var evaluationList = dependencyInfo.Select(info => info.Method);
             var functionOrder = new List<MethodInfo>();
-            
+
             while (evaluationList.Any())
             {
                 var newEvaluationList = new HashSet<MethodInfo>();
