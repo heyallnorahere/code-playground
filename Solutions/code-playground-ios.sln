@@ -3,19 +3,24 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodePlayground", "..\Core\CodePlayground\CodePlayground.csproj", "{640D872B-BFE6-47C0-95AC-625AE94914A0}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodePlayground", "..\Core\CodePlayground\CodePlayground.csproj", "{640D872B-BFE6-47C0-95AC-625AE94914A0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodePlayground.Graphics", "..\Core\CodePlayground.Graphics\CodePlayground.Graphics.csproj", "{BAEAE42D-43EF-4D02-AC99-29E3B0C5C2D3}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodePlayground.Graphics", "..\Core\CodePlayground.Graphics\CodePlayground.Graphics.csproj", "{BAEAE42D-43EF-4D02-AC99-29E3B0C5C2D3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MetalTest.iOS", "..\Playground\MetalTest.iOS\MetalTest.iOS.csproj", "{953BB4E5-46F1-432C-BC6D-A1EDA2410F42}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MetalTest.iOS", "..\Playground\MetalTest.iOS\MetalTest.iOS.csproj", "{953BB4E5-46F1-432C-BC6D-A1EDA2410F42}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VMASharp", "..\Libraries\VMASharp\VMASharp.csproj", "{1B9868F3-D0DD-40D2-B1E7-3802403F294A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Core", "Core", "{BE952782-E5BA-489B-8C9A-2713E4C347DF}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Playground", "Playground", "{E2428EE8-864B-4ECA-9D83-BB70AD5B0019}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Libraries", "Libraries", "{6B6F8C79-9636-432F-9F6A-6DAA09692DCD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{640D872B-BFE6-47C0-95AC-625AE94914A0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
@@ -30,5 +35,18 @@ Global
 		{953BB4E5-46F1-432C-BC6D-A1EDA2410F42}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{953BB4E5-46F1-432C-BC6D-A1EDA2410F42}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{953BB4E5-46F1-432C-BC6D-A1EDA2410F42}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1B9868F3-D0DD-40D2-B1E7-3802403F294A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1B9868F3-D0DD-40D2-B1E7-3802403F294A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1B9868F3-D0DD-40D2-B1E7-3802403F294A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1B9868F3-D0DD-40D2-B1E7-3802403F294A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{640D872B-BFE6-47C0-95AC-625AE94914A0} = {BE952782-E5BA-489B-8C9A-2713E4C347DF}
+		{BAEAE42D-43EF-4D02-AC99-29E3B0C5C2D3} = {BE952782-E5BA-489B-8C9A-2713E4C347DF}
+		{953BB4E5-46F1-432C-BC6D-A1EDA2410F42} = {E2428EE8-864B-4ECA-9D83-BB70AD5B0019}
+		{1B9868F3-D0DD-40D2-B1E7-3802403F294A} = {6B6F8C79-9636-432F-9F6A-6DAA09692DCD}
 	EndGlobalSection
 EndGlobal

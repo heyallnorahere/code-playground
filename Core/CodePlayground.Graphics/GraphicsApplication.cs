@@ -6,8 +6,10 @@ using Silk.NET.Maths;
 using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Windowing;
+using Silk.NET.Windowing.Sdl;
 using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 
 namespace CodePlayground.Graphics
 {
@@ -152,6 +154,11 @@ namespace CodePlayground.Graphics
                         _ => GraphicsAPI.None
                     }
                 };
+
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Create("ios")) || RuntimeInformation.IsOSPlatform(OSPlatform.Create("maccatalyst")))
+                {
+                    SdlWindowing.RegisterPlatform();
+                }
 
                 mWindow = Window.Create(mOptions.Value);
                 RegisterWindowEvents();

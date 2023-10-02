@@ -22,10 +22,15 @@
     <PackageReference Include="Silk.NET.Vulkan" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="$(SilkNETVersion)" />
-    <PackageReference Include="Silk.NET.Windowing" Version="2.17.1-build3832.0" />
+    <PackageReference Include="Silk.NET.Windowing" Version="$(SilkNETVersion)" />
     <PackageReference Include="SixLabors.ImageSharp" Version="$(SixLaborsImageSharpVersion)" />
     <PackageReference Include="Spirzza.Interop.SpirvCross" Version="$(SpirzzaInteropSpirvCrossVersion)" />
+
     <PackageReference Include="Ultz.Native.SDL" Version="$(SDLVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="Silk.NET.MoltenVK.Native" Version="$(SilkNETVersion)">
       <IncludeAssets>all</IncludeAssets>
     </PackageReference>
   </ItemGroup>
