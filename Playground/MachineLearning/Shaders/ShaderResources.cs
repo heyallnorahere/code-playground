@@ -62,35 +62,35 @@ namespace MachineLearning.Shaders
         public const string PushConstantBufferName = "u_PushConstants";
 
         [Layout(Set = 0, Binding = 0, ResourceType = ShaderResourceType.Uniform)]
-        [ShaderFieldName(SizeBufferName, UseClassName = false)]
+        [NamedShaderSymbol(SizeBufferName)]
         public static SizeBufferData SizeBuffer;
 
         [Layout(Set = 0, Binding = 1, ResourceType = ShaderResourceType.Storage)]
-        [ShaderFieldName(DataBufferName, UseClassName = false)]
+        [NamedShaderSymbol(DataBufferName)]
         public static NetworkDataBuffer DataBuffer;
 
         [Layout(Set = 0, Binding = 2, ResourceType = ShaderResourceType.Storage)]
-        [ShaderFieldName(ActivationBufferName, UseClassName = false)]
+        [NamedShaderSymbol(ActivationBufferName)]
         public static NetworkArrayBuffer ActivationBuffer;
 
         [Layout(Set = 0, Binding = 3, ResourceType = ShaderResourceType.Storage)]
-        [ShaderFieldName(PreSigmoidBufferName, UseClassName = false)]
+        [NamedShaderSymbol(PreSigmoidBufferName)]
         public static NetworkArrayBuffer PreSigmoidBuffer;
 
         [Layout(Set = 0, Binding = 4, ResourceType = ShaderResourceType.Storage)]
-        [ShaderFieldName(DeltaBufferName, UseClassName = false)]
+        [NamedShaderSymbol(DeltaBufferName)]
         public static NetworkDeltaBuffer DeltaBuffer;
 
         [Layout(Set = 1, Binding = 0, Format = ShaderImageFormat.RG16)]
-        [ShaderFieldName(OutputImageName, UseClassName = false)]
+        [NamedShaderSymbol(OutputImageName)]
         public static Image2D<float>? OutputImage;
 
         [Layout(Set = 1, Binding = 1, Format = ShaderImageFormat.R16)]
-        [ShaderFieldName(InputActivationImageName, UseClassName = false)]
+        [NamedShaderSymbol(InputActivationImageName)]
         public static Image2D<float>? InputActivationImage;
 
         [Layout(PushConstant = true)]
-        [ShaderFieldName(PushConstantBufferName, UseClassName = false)]
+        [NamedShaderSymbol(PushConstantBufferName)]
         public static NetworkPushConstantData PushConstants;
 
         public static int GetOutputCount()

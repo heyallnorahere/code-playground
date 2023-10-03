@@ -34,28 +34,37 @@ namespace CodePlayground.Graphics.Shaders
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
     public sealed class PrimitiveShaderTypeAttribute : Attribute
     {
-        public PrimitiveShaderTypeAttribute(string name)
+        public PrimitiveShaderTypeAttribute()
         {
-            Name = name;
             Instantiable = true;
             TypeClass = PrimitiveShaderTypeClass.Value;
         }
 
-        public string Name { get; }
         public bool Instantiable { get; set; }
         public PrimitiveShaderTypeClass TypeClass { get; set; }
+    }
+
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method | AttributeTargets.Field, AllowMultiple = true, Inherited = false)]
+    public sealed class NamedShaderSymbolAttribute : Attribute
+    {
+        public NamedShaderSymbolAttribute(string name)
+        {
+            Name = name;
+            Language = ShaderLanguage.None;
+        }
+
+        public ShaderLanguage Language { get; set; }
+        public string Name { get; }
     }
 
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
     public sealed class BuiltinShaderFunctionAttribute : Attribute
     {
-        public BuiltinShaderFunctionAttribute(string name)
+        public BuiltinShaderFunctionAttribute()
         {
-            Name = name;
             Keyword = false;
         }
 
-        public string Name { get; }
         public bool Keyword { get; set; }
     }
 
@@ -96,8 +105,9 @@ namespace CodePlayground.Graphics.Shaders
 
     public enum ShaderResourceType
     {
+        [NamedShaderSymbol("uniform", Language = ShaderLanguage.GLSL)]
         Uniform,
-        [ShaderFieldName("buffer")]
+        [NamedShaderSymbol("buffer", Language = ShaderLanguage.GLSL)]
         Storage
     }
 
@@ -135,19 +145,6 @@ namespace CodePlayground.Graphics.Shaders
         public bool PushConstant { get; set; }
         public bool Shared { get; set; }
         public bool Flat { get; set; }
-    }
-
-    [AttributeUsage(AttributeTargets.Field, AllowMultiple = false, Inherited = true)]
-    public sealed class ShaderFieldNameAttribute : Attribute
-    {
-        public ShaderFieldNameAttribute(string name)
-        {
-            Name = name;
-            UseClassName = true;
-        }
-
-        public string Name { get; }
-        public bool UseClassName { get; set; }
     }
 
     public enum ShaderVariableID
