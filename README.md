@@ -55,8 +55,6 @@ cd $ROOT_DIR
 dotnet build -c $CONFIG
 ```
 
-**DISCLAIMER**: As of this commit, jumps in shader loops are not translated correctly. Does not break any shaders in this repository, and will be addressed eventually.
-
 ## Running
 
 ```bash

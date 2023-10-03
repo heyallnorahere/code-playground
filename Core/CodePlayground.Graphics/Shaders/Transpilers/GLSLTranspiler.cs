@@ -66,6 +66,21 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             mMethodScopes = new List<Scope>();
         }
 
+        private string? GetMemberName(MemberInfo info)
+        {
+            var attributes = info.GetCustomAttributes<NamedShaderSymbolAttribute>();
+            foreach (var attribute in attributes)
+            {
+                var language = attribute.Language;
+                if (language == ShaderLanguage.None || language == OutputLanguage)
+                {
+                    return attribute.Name;
+                }
+            }
+
+            return null;
+        }
+
         private string GetFieldName(FieldInfo field, Type shaderType)
         {
             using var fieldNameEvent = OptickMacros.Event();
@@ -75,10 +90,10 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 return mFieldNames[field];
             }
 
-            var attribute = field.GetCustomAttribute<ShaderFieldNameAttribute>();
-            string name = attribute?.Name ?? field.Name;
+            var definedName = GetMemberName(field);
+            var name = definedName ?? field.Name;
 
-            if (attribute?.UseClassName ?? true)
+            if (definedName is null)
             {
                 var declaringType = field.DeclaringType;
                 if (field.IsStatic && declaringType is not null && declaringType != shaderType)
@@ -104,8 +119,11 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             var attribute = method.GetCustomAttribute<BuiltinShaderFunctionAttribute>();
             if (attribute is not null)
             {
-                mFunctionNames.Add(method, attribute.Name);
-                return attribute.Name;
+                var definedName = GetMemberName(method);
+                var result = definedName ?? (method.Name[..1].ToLower() + method.Name[1..]);
+
+                mFunctionNames.Add(method, result);
+                return result;
             }
 
             var nameList = new List<string>();
@@ -173,7 +191,12 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
             if (attribute is not null)
             {
-                string primitiveName = attribute.Name;
+                var primitiveName = GetMemberName(type);
+                if (primitiveName is null)
+                {
+                    throw new ArgumentException($"No primitive name defined for type: {type}");
+                }
+
                 if (type.IsConstructedGenericType)
                 {
                     var genericArguments = type.GetGenericArguments();
@@ -201,6 +224,10 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
                 mDefinedTypeNames.Add(type, primitiveName);
                 return primitiveName;
+            } 
+            else if (GetMemberName(type) is not null)
+            {
+                throw new ArgumentException("Cannot define a name for a non-primitive type!");
             }
 
             var declaredTypeNames = new List<string>();
@@ -755,9 +782,9 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                                     var formatEnumName = format.ToString();
 
                                                     var formatField = typeof(ShaderImageFormat).GetField(formatEnumName, BindingFlags.Static | BindingFlags.Public);
-                                                    var fieldNameAttribute = formatField?.GetCustomAttribute<ShaderFieldNameAttribute>();
+                                                    var definedFieldName = formatField is null ? null : GetMemberName(formatField);
 
-                                                    string formatString = fieldNameAttribute?.Name ?? formatEnumName.ToLower();
+                                                    string formatString = definedFieldName ?? formatEnumName.ToLower();
                                                     layoutString += ", " + formatString;
                                                 }
                                             }
@@ -1278,9 +1305,6 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
                         if (condition.Type == ConditionalType.Unconditional)
                         {
-                            var comment = $"// skip to offset 0x{jump.Destination:X}... not sure how thats possible here\n";
-                            InsertCode(nextInstruction, comment, builder, mapCollection);
-
                             continue;
                         }
 
@@ -1658,9 +1682,9 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 var dataType = resourceData.ResourceType;
 
                 var resourceTypeField = typeof(ShaderResourceType).GetField(resourceType.ToString());
-                var nameAttribute = resourceTypeField!.GetCustomAttribute<ShaderFieldNameAttribute>();
+                var definedName = GetMemberName(resourceTypeField!);
 
-                var resourceTypeName = (nameAttribute?.Name ?? resourceType.ToString()).ToLower();
+                var resourceTypeName = (definedName ?? resourceType.ToString()).ToLower();
                 builder.Append($"layout({resourceData.Layout}) {resourceTypeName} ");
 
                 if (dataType.IsValueType)
