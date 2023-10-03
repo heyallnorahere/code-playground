@@ -1177,32 +1177,43 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
                         int instructionIndex = mapCollection.OffsetInstructionMap[jump.Destination];
                         int jumpInsertDestinationOffset = mapCollection.InstructionOffsets[instructionIndex + 1];
+                        ILInstruction? whileJumpInstruction = instructionIndex > 1 ? instructions[instructionIndex - 1] : null;
+
+                        instructionIndex = mapCollection.OffsetInstructionMap[jump.Offset];
+                        int jumpInsertOffset = mapCollection.InstructionOffsets[instructionIndex + 1];
 
                         if (condition.Type != ConditionalType.Unconditional)
                         {
                             var expression = condition.Type != ConditionalType.True ? $"int({condition.Expression}) == 0" : condition.Expression;
-
-                            var whileJump = instructions[instructionIndex - 1];
-                            if (whileJump.OpCode.Name?.ToLower()?.StartsWith("br") ?? false)
+                            if (whileJumpInstruction?.OpCode.Name?.ToLower()?.StartsWith("br") ?? false)
                             {
                                 var match = Regex.Match(condition.Expression!, @"^var_\d+$");
                                 if (match.Success)
                                 {
+                                    var variableAssignmentInstructionOffset = mapCollection.InstructionOffsets[instructionIndex - 2];
+                                    var variableAssignmentSourceOffset = mapCollection.SourceOffsets[variableAssignmentInstructionOffset];
+                                    var jumpSourceOffset = mapCollection.SourceOffsets[jumpInsertOffset];
 
+                                    var source = builder.ToString();
+                                    var variableAssignment = source[variableAssignmentSourceOffset..jumpSourceOffset];
+
+                                    InsertCode(jumpInsertDestinationOffset, variableAssignment, builder, mapCollection);
                                 }
-                            }
 
-                            startCode = "do {\n";
-                            endCode = $"}} while ({expression});\n";
+                                startCode = $"while ({expression}) {{\n";
+                                endCode = "}\n";
+                            }
+                            else
+                            {
+                                startCode = "do {\n";
+                                endCode = $"}} while ({expression});\n";
+                            }
                         }
                         else
                         {
                             startCode = "while (true) {\n";
                             endCode = "}\n";
                         }
-
-                        instructionIndex = mapCollection.OffsetInstructionMap[jump.Offset];
-                        int jumpInsertOffset = mapCollection.InstructionOffsets[instructionIndex + 1];
 
                         InsertCode(jumpInsertDestinationOffset, startCode, builder, mapCollection);
                         InsertCode(jumpInsertOffset, endCode, builder, mapCollection);
