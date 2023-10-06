@@ -107,6 +107,7 @@ namespace CodePlayground.Graphics
 
     public enum ShaderLanguage
     {
+        None,
         HLSL,
         GLSL
     }

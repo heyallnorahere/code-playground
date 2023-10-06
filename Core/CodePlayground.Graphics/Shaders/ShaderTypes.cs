@@ -7,98 +7,112 @@ namespace CodePlayground.Graphics.Shaders
     public static class BuiltinFunctions
     {
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("mix")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("mix", Language = ShaderLanguage.GLSL)]
         public static float Lerp(float a, float b, float t)
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("mix")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("mix", Language = ShaderLanguage.GLSL)]
         public static T Lerp<T>(T a, T b, float t) where T : Vector2<float>
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("length")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("length", Language = ShaderLanguage.GLSL)]
         public static float Length<T>(this T vector) where T : Vector2<float>
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("normalize")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("normalize", Language = ShaderLanguage.GLSL)]
         public static T Normalize<T>(this T vector) where T : Vector2<float>
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("dot")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("dot", Language = ShaderLanguage.GLSL)]
         public static float Dot<T>(T lhs, T rhs) where T : Vector2<float>
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("max")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("max", Language = ShaderLanguage.GLSL)]
         public static T Max<T>(T lhs, T rhs)
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("min")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("min", Language = ShaderLanguage.GLSL)]
         public static T Min<T>(T lhs, T rhs)
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("clamp")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("clamp", Language = ShaderLanguage.GLSL)]
         public static float Clamp(float value, float min, float max)
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("discard", Keyword = true)]
+        [BuiltinShaderFunction(Keyword = true)]
+        [NamedShaderSymbol("discard", Language = ShaderLanguage.GLSL)]
         public static void Discard()
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("barrier")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("barrier", Language = ShaderLanguage.GLSL)]
         public static void Barrier()
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("groupMemoryBarrier")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("groupMemoryBarrier", Language = ShaderLanguage.GLSL)]
         public static void GroupMemoryBarrier()
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("pow")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("pow", Language = ShaderLanguage.GLSL)]
         public static float Pow(float x, float y)
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("exp")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("exp", Language = ShaderLanguage.GLSL)]
         public static float Exp(float x)
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("tanh")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("tanh", Language = ShaderLanguage.GLSL)]
         public static float Tanh(float x)
         {
             throw new NotImplementedException();
@@ -110,21 +124,24 @@ namespace CodePlayground.Graphics.Shaders
     public static class Atomic
     {
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("atomicAdd")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("atomicAdd", Language = ShaderLanguage.GLSL)]
         public static T Add<T>(T lhs, T rhs)
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("atomicExchange")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("atomicExchange", Language = ShaderLanguage.GLSL)]
         public static T Exchange<T>(T lhs, T rhs)
         {
             throw new NotImplementedException();
         }
     }
 
-    [PrimitiveShaderType("vec2")]
+    [PrimitiveShaderType]
+    [NamedShaderSymbol("vec2", Language = ShaderLanguage.GLSL)]
     public class Vector2<T> where T : unmanaged
     {
         public Vector2(T scalar)
@@ -137,14 +154,14 @@ namespace CodePlayground.Graphics.Shaders
             throw new NotImplementedException();
         }
 
-        [ShaderFieldName("x")]
+        [NamedShaderSymbol("x")]
         public T X;
-        [ShaderFieldName("y")]
+        [NamedShaderSymbol("y")]
         public T Y;
 
-        [ShaderFieldName("r")]
+        [NamedShaderSymbol("r")]
         public T R;
-        [ShaderFieldName("g")]
+        [NamedShaderSymbol("g")]
         public T G;
 
         #region Operators
@@ -247,7 +264,8 @@ namespace CodePlayground.Graphics.Shaders
         // todo: swizzles
     }
 
-    [PrimitiveShaderType("vec3")]
+    [PrimitiveShaderType]
+    [NamedShaderSymbol("vec3", Language = ShaderLanguage.GLSL)]
     public class Vector3<T> : Vector2<T> where T : unmanaged
     {
         public Vector3(T scalar) : base(scalar)
@@ -270,9 +288,9 @@ namespace CodePlayground.Graphics.Shaders
             throw new NotImplementedException();
         }
 
-        [ShaderFieldName("z")]
+        [NamedShaderSymbol("z")]
         public T Z;
-        [ShaderFieldName("b")]
+        [NamedShaderSymbol("b")]
         public T B;
 
         #region Operators
@@ -364,7 +382,8 @@ namespace CodePlayground.Graphics.Shaders
         // todo: swizzles
     }
 
-    [PrimitiveShaderType("vec4")]
+    [PrimitiveShaderType]
+    [NamedShaderSymbol("vec4", Language = ShaderLanguage.GLSL)]
     public class Vector4<T> : Vector3<T> where T : unmanaged
     {
         public Vector4(T scalar) : base(scalar)
@@ -402,9 +421,9 @@ namespace CodePlayground.Graphics.Shaders
             throw new NotImplementedException();
         }
 
-        [ShaderFieldName("w")]
+        [NamedShaderSymbol("w")]
         public T W;
-        [ShaderFieldName("a")]
+        [NamedShaderSymbol("a")]
         public T A;
 
         #region Operators
@@ -496,36 +515,42 @@ namespace CodePlayground.Graphics.Shaders
         // todo: swizzles
     }
 
-    [PrimitiveShaderType("sampler2D", Instantiable = false, TypeClass = PrimitiveShaderTypeClass.Sampler)]
+    [PrimitiveShaderType(Instantiable = false, TypeClass = PrimitiveShaderTypeClass.Sampler)]
+    [NamedShaderSymbol("sampler2D", Language = ShaderLanguage.GLSL)]
     public sealed class Sampler2D<T> where T : unmanaged
     {
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("texture")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("texture", Language = ShaderLanguage.GLSL)]
         public Vector4<T> Sample(Vector2<T> uv)
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("texture")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("texture", Language = ShaderLanguage.GLSL)]
         public Vector4<T> Sample(Vector2<T> uv, float bias)
         {
             throw new NotImplementedException();
         }
     }
 
-    [PrimitiveShaderType("image2D", Instantiable = false, TypeClass = PrimitiveShaderTypeClass.Image)]
+    [PrimitiveShaderType(Instantiable = false, TypeClass = PrimitiveShaderTypeClass.Image)]
+    [NamedShaderSymbol("image2D", Language = ShaderLanguage.GLSL)]
     public sealed class Image2D<T> where T : unmanaged
     {
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("imageLoad")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("imageLoad", Language = ShaderLanguage.GLSL)]
         public Vector4<T> Load(Vector2<int> position)
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("imageStore")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("imageStore", Language = ShaderLanguage.GLSL)]
         public void Store(Vector2<int> position, Vector4<T> color)
         {
             throw new NotImplementedException();
@@ -534,13 +559,15 @@ namespace CodePlayground.Graphics.Shaders
         public Vector2<int> Size
         {
             [MethodImpl(MethodImplOptions.NoInlining)]
-            [BuiltinShaderFunction("imageSize")]
+            [BuiltinShaderFunction]
+            [NamedShaderSymbol("imageSize", Language = ShaderLanguage.GLSL)]
             get => throw new NotImplementedException();
         }
     }
 
     // INCOMPLETE
-    [PrimitiveShaderType("mat4")]
+    [PrimitiveShaderType]
+    [NamedShaderSymbol("mat4", Language = ShaderLanguage.GLSL)]
     public sealed class Matrix4x4<T> where T : unmanaged
     {
         public Matrix4x4(T scalar)
@@ -578,7 +605,8 @@ namespace CodePlayground.Graphics.Shaders
     }
 
     // INCOMPLETE
-    [PrimitiveShaderType("mat3")]
+    [PrimitiveShaderType]
+    [NamedShaderSymbol("mat3", Language = ShaderLanguage.GLSL)]
     public sealed class Matrix3x3<T> where T : unmanaged
     {
         public Matrix3x3(T scalar)
@@ -604,14 +632,16 @@ namespace CodePlayground.Graphics.Shaders
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("inverse")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("inverse", Language = ShaderLanguage.GLSL)]
         public Matrix3x3<T> Inverse()
         {
             throw new NotImplementedException();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        [BuiltinShaderFunction("transpose")]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("transpose", Language = ShaderLanguage.GLSL)]
         public Matrix3x3<T> Transpose()
         {
             throw new NotImplementedException();
