@@ -48,6 +48,14 @@ namespace CodePlayground.Graphics.Shaders
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         [BuiltinShaderFunction]
+        [NamedShaderSymbol("cross", Language = ShaderLanguage.GLSL)]
+        public static T Cross<T>(T lhs, T rhs) where T : Vector2<float>
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction]
         [NamedShaderSymbol("max", Language = ShaderLanguage.GLSL)]
         public static T Max<T>(T lhs, T rhs)
         {
@@ -425,6 +433,10 @@ namespace CodePlayground.Graphics.Shaders
         public T W;
         [NamedShaderSymbol("a")]
         public T A;
+
+        // todo: swizzling
+        [NamedShaderSymbol("xyz", Language = ShaderLanguage.GLSL)]
+        public Vector3<T> XYZ;
 
         #region Operators
         [MethodImpl(MethodImplOptions.NoInlining)]

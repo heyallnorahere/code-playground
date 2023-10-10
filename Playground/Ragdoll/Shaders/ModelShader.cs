@@ -15,10 +15,12 @@ namespace Ragdoll.Shaders
             [Layout(Location = 2)]
             public Vector2<float> UV;
             [Layout(Location = 3)]
-            public int BoneCount;
+            public Vector3<float> Tangent;
             [Layout(Location = 4)]
-            public Vector4<int> BoneIDs;
+            public int BoneCount;
             [Layout(Location = 5)]
+            public Vector4<int> BoneIDs;
+            [Layout(Location = 6)]
             public Vector4<float> BoneWeights;
         }
 
@@ -37,6 +39,8 @@ namespace Ragdoll.Shaders
             public Vector2<float> UV;
             [Layout(Location = 2)]
             public Vector3<float> WorldPosition;
+            [Layout(Location = 3)]
+            public Matrix3x3<float> TBN;
         }
 
         public struct CameraBufferData
@@ -63,6 +67,7 @@ namespace Ragdoll.Shaders
         {
             public Vector3<float> DiffuseColor, SpecularColor, AmbientColor;
             public float Shininess, Opacity;
+            public bool HasNormalMap;
         }
 
         [Layout(Set = 0, Binding = 0)]
@@ -78,8 +83,10 @@ namespace Ragdoll.Shaders
         public static Sampler2D<float>? u_DiffuseMap;
         [Layout(Set = 1, Binding = 2)]
         public static Sampler2D<float>? u_SpecularMap;
-        [Layout(Set = 1, Binding = 2)]
+        [Layout(Set = 1, Binding = 3)]
         public static Sampler2D<float>? u_AmbientMap;
+        [Layout(Set = 1, Binding = 4)]
+        public static Sampler2D<float>? u_NormalMap;
 
         [ShaderEntrypoint(ShaderStage.Vertex)]
         public static VertexOut VertexMain(VertexIn input)
@@ -100,13 +107,19 @@ namespace Ragdoll.Shaders
             var vertexPosition = new Vector4<float>(input.Position, 1f);
             var worldPosition = transform * vertexPosition;
 
+            var normalMatrix = new Matrix3x3<float>(transform).Inverse().Transpose();
+            var normal = (normalMatrix * input.Normal).Normalize();
+            var tangent = (normalMatrix * input.Tangent).Normalize();
+            var bitangent = BuiltinFunctions.Cross(normal, tangent).Normalize();
+
             return new VertexOut
             {
                 Position = u_CameraBuffer.Projection * u_CameraBuffer.View * worldPosition,
                 Data = new FragmentIn
                 {
-                    Normal = (new Matrix3x3<float>(transform).Inverse().Transpose() * input.Normal).Normalize(),
-                    UV = input.UV
+                    Normal = normal,
+                    UV = input.UV,
+                    TBN = new Matrix3x3<float>(tangent, bitangent, normal)
                 },
             };
         }
@@ -115,11 +128,19 @@ namespace Ragdoll.Shaders
         [return: Layout(Location = 0)]
         public static Vector4<float> FragmentMain(FragmentIn input)
         {
-            // no shading for now
-            // todo: THAT
+            Vector3<float> normal;
+            if (u_MaterialBuffer.HasNormalMap)
+            {
+                var sampledNormal = (u_NormalMap!.Sample(input.UV).XYZ * 2f - 1f).Normalize();
+                normal = (input.TBN * sampledNormal).Normalize();
+            }
+            else
+            {
+                normal = input.Normal.Normalize();
+            }
 
             var sample = u_DiffuseMap!.Sample(input.UV);
-            var color = new Vector4<float>(u_MaterialBuffer.DiffuseColor, u_MaterialBuffer.Opacity);
+            var color = new Vector4<float>(BuiltinFunctions.Lerp(u_MaterialBuffer.DiffuseColor, normal, 0.5f), u_MaterialBuffer.Opacity);
             return sample * color;
         }
     }

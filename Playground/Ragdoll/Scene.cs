@@ -217,7 +217,7 @@ namespace Ragdoll
             mCurrentCallbackID = 0;
 
             mUpdatePhysics = true;
-            mGravity = Vector3.UnitY * -10f;
+            mGravity = Vector3.UnitY * -9.81f;
             mVelocityDamping = new VelocityDamping
             {
                 Linear = 0.3f,

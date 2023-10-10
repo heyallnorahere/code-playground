@@ -2,6 +2,7 @@ using CodePlayground.Graphics;
 using ImGuiNET;
 using Optick.NET;
 using Ragdoll.Components;
+using Ragdoll.Physics;
 using Ragdoll.Shaders;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -401,12 +402,17 @@ namespace Ragdoll.Layers
 
             using (OptickMacros.Event("Test scene creation"))
             {
-                int modelId = LoadModel("../../../../VulkanTest/Resources/Models/rigged-character.fbx", "rigged-character");
+                int modelId = LoadModel("../../../../VulkanTest/Resources/Models/sledge-hammer.fbx", "sledge-hammer");
                 ulong entity = mScene.NewEntity("Model");
                 mScene.AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
 
                 var transform = mScene.AddComponent<TransformComponent>(entity);
-                transform.Scale = Vector3.One * 0.01f;
+                transform.Scale = Vector3.One * 10f;
+                transform.RotationEuler = new Vector3(45f, 0f, 0f);
+
+                var rigidBody = mScene.AddComponent<RigidBodyComponent>(entity);
+                var staticModelCollider = (StaticModelCollider)rigidBody.CreateCollider(ColliderType.StaticModel);
+                staticModelCollider.SetModel(modelId);
 
                 entity = mScene.NewEntity("Camera");
                 mScene.AddComponent<CameraComponent>(entity).MainCamera = true;
