@@ -123,13 +123,14 @@ namespace Ragdoll
 
         public void RenderMesh(IDeviceBuffer vertices, IDeviceBuffer indices, IPipeline pipeline, int indexOffset, int indexCount, DeviceBufferIndexType indexType, BufferMapCallback? pushConstantCallback = null)
         {
+            using var renderEvent = OptickMacros.GPUEvent("Render mesh");
+            using var cpuEvent = OptickMacros.Event();
+            OptickMacros.Tag("Indices", indexCount);
+            
             if (mFrameInfo.RenderInfo is null)
             {
                 throw new InvalidOperationException("Cannot render right now!");
             }
-
-            using var renderEvent = OptickMacros.GPUEvent("Render mesh");
-            OptickMacros.Tag("Indices", indexCount);
 
             vertices.BindVertices(mFrameInfo.CommandList, 0);
             indices.BindIndices(mFrameInfo.CommandList, indexType);

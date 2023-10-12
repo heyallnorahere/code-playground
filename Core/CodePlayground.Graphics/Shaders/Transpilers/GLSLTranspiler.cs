@@ -224,7 +224,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
                 mDefinedTypeNames.Add(type, primitiveName);
                 return primitiveName;
-            } 
+            }
             else if (GetMemberName(type) is not null)
             {
                 throw new ArgumentException("Cannot define a name for a non-primitive type!");
@@ -1463,11 +1463,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             var structOrder = new List<Type>();
             if (definedStructs.Count != 0)
             {
-                IEnumerable<Type> evaluationList = new Type[]
-                {
-                    definedStructs[0]
-                };
-
+                IEnumerable<Type> evaluationList = definedStructs.Where(type => mStructDependencies[type].Define);
                 while (evaluationList.Any())
                 {
                     var newEvaluationList = new HashSet<Type>();
@@ -1485,9 +1481,14 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             }
                         }
 
-                        if (!hasDependencies)
+                        if (!hasDependencies || structOrder.Contains(type))
                         {
-                            break;
+                            if (!hasDependencies)
+                            {
+                                newEvaluationList.Add(type);
+                            }
+
+                            continue;
                         }
 
                         structOrder.Add(type);

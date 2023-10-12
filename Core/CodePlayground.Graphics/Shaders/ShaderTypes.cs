@@ -125,6 +125,14 @@ namespace CodePlayground.Graphics.Shaders
         {
             throw new NotImplementedException();
         }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("reflect", Language = ShaderLanguage.GLSL)]
+        public static T Reflect<T>(T x, T y) where T : Vector2<float>
+        {
+            throw new NotImplementedException();
+        }
     }
 
     // specifically atomic operations

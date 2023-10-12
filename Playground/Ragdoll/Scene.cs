@@ -34,6 +34,18 @@ namespace Ragdoll
         public object? Context { get; set; }
     }
 
+    public struct VelocityDamping
+    {
+        public float Linear;
+        public float Angular;
+    }
+
+    public enum LightType
+    {
+        Point,
+        // todo: implement more light types
+    }
+
     public sealed class ComponentEventDispatcher
     {
         public ComponentEventDispatcher(ComponentEventInfo eventInfo)
@@ -110,12 +122,6 @@ namespace Ragdoll
 
         private bool mHandled;
         private readonly ComponentEventInfo mEventInfo;
-    }
-
-    public struct VelocityDamping
-    {
-        public float Linear;
-        public float Angular;
     }
 
     internal struct SceneSimulationCallbacks : INarrowPhaseCallbacks, IPoseIntegratorCallbacks
@@ -224,7 +230,8 @@ namespace Ragdoll
                 Angular = 0.3f
             };
 
-            int targetThreadCount = int.Max(1, Environment.ProcessorCount > 4 ? Environment.ProcessorCount - 2 : Environment.ProcessorCount - 1);
+            int threadCount = Environment.ProcessorCount;
+            int targetThreadCount = int.Max(1, threadCount - (threadCount > 4 ? 2 : 1));
             mThreadDispatcher = new ThreadDispatcher(targetThreadCount);
 
             var callbacks = new SceneSimulationCallbacks(this);

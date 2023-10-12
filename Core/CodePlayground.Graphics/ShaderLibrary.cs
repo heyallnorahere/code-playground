@@ -96,24 +96,28 @@ namespace CodePlayground.Graphics
                     var shaderSourceDirectory = Path.GetDirectoryName(sourcePath);
                     Directory.CreateDirectory(shaderSourceDirectory!);
 
-                    using var sourceStream = new FileStream(sourcePath, FileMode.Create, FileAccess.Write);
-                    using var writer = new StreamWriter(sourceStream);
-
                     var stageSource = source[stage];
-                    writer.Write(stageSource.Source);
-                    writer.Flush();
+                    using (var sourceStream = new FileStream(sourcePath, FileMode.Create, FileAccess.Write))
+                    {
+                        using var writer = new StreamWriter(sourceStream, leaveOpen: true);
 
-                    byte[] bytecode = compiler.Compile(stageSource.Source, sourcePath, language, stage, stageSource.Entrypoint);
-                    var shader = mContext.LoadShader(bytecode, stage, stageSource.Entrypoint);
-                    mShaders.Add(shaderId, shader);
+                        writer.Write(stageSource.Source);
+                        writer.Flush();
+                    }
 
                     var binaryPath = Path.Join(binaryDirectory, shaderId) + "." + binaryExtension;
                     var shaderBinaryDirectory = Path.GetDirectoryName(binaryPath);
                     Directory.CreateDirectory(shaderBinaryDirectory!);
 
-                    using var binaryStream = new FileStream(binaryPath, FileMode.Create, FileAccess.Write);
-                    binaryStream.Write(bytecode);
-                    binaryStream.Flush();
+                    byte[] bytecode = compiler.Compile(stageSource.Source, sourcePath, language, stage, stageSource.Entrypoint);
+                    using (var binaryStream = new FileStream(binaryPath, FileMode.Create, FileAccess.Write))
+                    {
+                        binaryStream.Write(bytecode);
+                        binaryStream.Flush();
+                    }
+
+                    var shader = mContext.LoadShader(bytecode, stage, stageSource.Entrypoint);
+                    mShaders.Add(shaderId, shader);
                 }
             }
         }

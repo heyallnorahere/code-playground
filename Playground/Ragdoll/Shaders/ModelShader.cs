@@ -46,10 +46,12 @@ namespace Ragdoll.Shaders
         public struct CameraBufferData
         {
             public Matrix4x4<float> Projection, View;
+            public Vector3<float> Position;
         }
 
         public const int MaxBones = 100;
         public const int MaxInstances = 50;
+        public const int MaxPointLights = 32;
 
         public struct BoneBufferData
         {
@@ -70,10 +72,36 @@ namespace Ragdoll.Shaders
             public bool HasNormalMap;
         }
 
+        public struct AttenuationData
+        {
+            public float Quadratic, Linear, Constant;
+        }
+
+        public struct PointLightData
+        {
+            public Vector3<float> Diffuse, Specular, Ambient;
+            public Vector3<float> Position;
+            public AttenuationData Attenuation;
+        }
+
+        public struct LightBufferData
+        {
+            [ArraySize(MaxPointLights)]
+            public PointLightData[] PointLights;
+            public int PointLightCount;
+        }
+
+        private struct MaterialColorData
+        {
+            public Vector3<float> Diffuse, Specular, Ambient;
+        }
+
         [Layout(Set = 0, Binding = 0)]
         public static CameraBufferData u_CameraBuffer;
         [Layout(Set = 0, Binding = 1)]
         public static BoneBufferData u_BoneBuffer;
+        [Layout(Set = 0, Binding = 2)]
+        public static LightBufferData u_LightBuffer;
         [Layout(PushConstant = true)]
         public static PushConstantData u_PushConstants;
 
@@ -119,9 +147,50 @@ namespace Ragdoll.Shaders
                 {
                     Normal = normal,
                     UV = input.UV,
+                    WorldPosition = worldPosition.XYZ,
                     TBN = new Matrix3x3<float>(tangent, bitangent, normal)
                 },
             };
+        }
+
+        private static float CalculateAttenuation(AttenuationData attenuation, float distance)
+        {
+            // ax^2 + bx + c
+            // inverse square law or something
+            float quadraticTerm = attenuation.Quadratic * distance * distance;
+            float linearTerm = attenuation.Linear * distance;
+            return 1f / (quadraticTerm + linearTerm + attenuation.Constant);
+        }
+
+        private static float CalculateDiffuse(Vector3<float> normal, Vector3<float> direction)
+        {
+            // cosine of the angle between the two vectors
+            // dot of a and b is length(a) * length(b) * cos(theta)
+            // these two vectors are both normals (magnitude of 1)
+            return BuiltinFunctions.Max(BuiltinFunctions.Dot(normal, direction), 0f);
+        }
+
+        private static float CalculateSpecular(Vector3<float> normal, Vector3<float> lightDirection, Vector3<float> worldPosition)
+        {
+            var viewDirection = (u_CameraBuffer.Position - worldPosition).Normalize();
+            var lightReflection = BuiltinFunctions.Reflect(-lightDirection, normal).Normalize();
+            return BuiltinFunctions.Pow(BuiltinFunctions.Max(BuiltinFunctions.Dot(viewDirection, lightReflection), 0f), u_MaterialBuffer.Shininess);
+        }
+
+        private static Vector3<float> CalculatePointLight(int light, Vector3<float> normal, Vector3<float> worldPosition, MaterialColorData colorData)
+        {
+            var lightData = u_LightBuffer.PointLights[light];
+
+            var lightPositionDifference = lightData.Position - worldPosition;
+            var lightDirection = lightPositionDifference.Normalize();
+            float distance = lightPositionDifference.Length();
+
+            var diffuse = colorData.Diffuse * lightData.Diffuse * CalculateDiffuse(normal, lightDirection);
+            var specular = colorData.Specular * lightData.Specular * CalculateSpecular(normal, lightDirection, worldPosition);
+            var ambient = colorData.Ambient * lightData.Ambient;
+
+            var aggregate = diffuse + specular + ambient;
+            return aggregate * CalculateAttenuation(lightData.Attenuation, distance);
         }
 
         [ShaderEntrypoint(ShaderStage.Fragment)]
@@ -139,9 +208,20 @@ namespace Ragdoll.Shaders
                 normal = input.Normal.Normalize();
             }
 
-            var sample = u_DiffuseMap!.Sample(input.UV);
-            var color = new Vector4<float>(BuiltinFunctions.Lerp(u_MaterialBuffer.DiffuseColor, normal, 0.5f), u_MaterialBuffer.Opacity);
-            return sample * color;
+            var aggregate = new Vector3<float>(0f);
+            var colorData = new MaterialColorData
+            {
+                Diffuse = u_DiffuseMap!.Sample(input.UV).XYZ,
+                Specular = u_SpecularMap!.Sample(input.UV).XYZ,
+                Ambient = u_SpecularMap!.Sample(input.UV).XYZ
+            };
+
+            for (int i = 0; i < u_LightBuffer.PointLightCount; i++)
+            {
+                aggregate += CalculatePointLight(i, normal, input.WorldPosition, colorData);
+            }
+
+            return new Vector4<float>(aggregate, u_MaterialBuffer.Opacity);
         }
     }
 }

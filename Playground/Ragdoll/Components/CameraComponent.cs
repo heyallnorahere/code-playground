@@ -1,6 +1,5 @@
 using ImGuiNET;
 using Ragdoll.Layers;
-using System.Numerics;
 
 namespace Ragdoll.Components
 {

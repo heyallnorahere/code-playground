@@ -168,6 +168,7 @@ namespace Ragdoll.Layers
     internal struct CameraBufferData
     {
         public BufferMatrix Projection, View;
+        public Vector3 Position;
     }
 
     internal struct PushConstantData
@@ -267,6 +268,7 @@ namespace Ragdoll.Layers
                 });
 
                 pipeline.Bind(mCameraBuffer!, nameof(ModelShader.u_CameraBuffer));
+                pipeline.Bind(mLightBuffer!, nameof(ModelShader.u_LightBuffer));
                 pipeline.Bind(modelData.BoneBuffer, nameof(ModelShader.u_BoneBuffer));
                 material.Bind(pipeline, nameof(ModelShader.u_MaterialBuffer), textureType => $"u_{textureType}Map");
             }
@@ -370,13 +372,21 @@ namespace Ragdoll.Layers
             using (commandList.Context(GPUQueueType.Transfer))
             {
                 mReflectionView = app.Renderer!.Library.CreateReflectionView<ModelShader>();
-                int bufferSize = mReflectionView.GetBufferSize(nameof(ModelShader.u_CameraBuffer));
-                if (bufferSize < 0)
+                int cameraBufferSize = mReflectionView.GetBufferSize(nameof(ModelShader.u_CameraBuffer));
+                if (cameraBufferSize < 0)
                 {
                     throw new InvalidOperationException("Failed to find camera buffer!");
                 }
 
-                mCameraBuffer = graphicsContext.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize);
+                int lightBufferSize = mReflectionView.GetBufferSize(nameof(ModelShader.u_LightBuffer));
+                if (lightBufferSize < 0)
+                {
+                    throw new InvalidOperationException("Failed to find light buffer!");
+                }
+
+                mCameraBuffer = graphicsContext.CreateDeviceBuffer(DeviceBufferUsage.Uniform, cameraBufferSize);
+                mLightBuffer = graphicsContext.CreateDeviceBuffer(DeviceBufferUsage.Uniform, lightBufferSize);
+
                 mFramebufferSemaphore = graphicsContext.CreateSemaphore();
                 mFramebufferRecreated = true;
 
@@ -430,6 +440,14 @@ namespace Ragdoll.Layers
 
                 mScene.AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
                 mScene.AddComponent<RigidBodyComponent>(entity).BodyType = BodyType.Static;
+
+                entity = mScene.NewEntity("Light");
+                mScene.AddComponent<TransformComponent>(entity).Translation = new Vector3(-1f, 5f, -1f);
+
+                var light = mScene.AddComponent<LightComponent>(entity);
+                light.DiffuseStrength = 1f;
+                light.SpecularStrength = 0.5f;
+                light.AmbientStrength = 0.1f;
             }
 
             mAttached = true;
@@ -499,6 +517,8 @@ namespace Ragdoll.Layers
             mAttached = false;
 
             mCameraBuffer?.Dispose();
+            mLightBuffer?.Dispose();
+
             foreach (var modelData in mLoadedModelInfo.Values)
             {
                 foreach (var pipeline in modelData.Pipelines)
@@ -682,9 +702,54 @@ namespace Ragdoll.Layers
                     mCameraBuffer?.MapStructure(mReflectionView!, nameof(ModelShader.u_CameraBuffer), new CameraBufferData
                     {
                         Projection = math.TranslateMatrix(projection),
-                        View = math.TranslateMatrix(view)
+                        View = math.TranslateMatrix(view),
+                        Position = transform.Translation
                     });
                 }
+
+                mLightBuffer?.Map(data =>
+                {
+                    if (mReflectionView is null)
+                    {
+                        return;
+                    }
+
+                    int currentPointLightIndex = 0;
+                    foreach (ulong entity in mScene.ViewEntities(typeof(LightComponent)))
+                    {
+                        var light = mScene.GetComponent<LightComponent>(entity);
+
+                        Vector3 position;
+                        // no conditional - only point light is defined
+                        if (!mScene.TryGetComponent(entity, out TransformComponent? transform))
+                        {
+                            continue;
+                        }
+
+                        position = Vector3.Transform(light.PositionOffset, transform.CreateMatrix(TransformComponents.NonDeformative));
+
+                        switch (light.Type)
+                        {
+                            case LightType.Point:
+                                {
+                                    // todo: some kind of IReflectionNode system
+                                    string arrayElementPrefix = $"{nameof(ModelShader.LightBufferData.PointLights)}[{currentPointLightIndex++}].";
+                                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), arrayElementPrefix + nameof(ModelShader.PointLightData.Diffuse), light.DiffuseColor * light.DiffuseStrength);
+                                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), arrayElementPrefix + nameof(ModelShader.PointLightData.Specular), light.SpecularColor * light.SpecularStrength);
+                                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), arrayElementPrefix + nameof(ModelShader.PointLightData.Ambient), light.AmbientColor * light.AmbientStrength);
+                                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), arrayElementPrefix + nameof(ModelShader.PointLightData.Position), position);
+
+                                    string attenuationPrefix = $"{arrayElementPrefix}{nameof(ModelShader.PointLightData.Attenuation)}.";
+                                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), attenuationPrefix + nameof(ModelShader.AttenuationData.Quadratic), light.Quadratic);
+                                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), attenuationPrefix + nameof(ModelShader.AttenuationData.Linear), light.Linear);
+                                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), attenuationPrefix + nameof(ModelShader.AttenuationData.Constant), light.Constant);
+                                }
+                                break;
+                        }
+                    }
+
+                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), nameof(ModelShader.LightBufferData.PointLightCount), currentPointLightIndex);
+                });
             }
         }
 
@@ -1146,7 +1211,7 @@ namespace Ragdoll.Layers
         private IDisposable? mFramebufferSemaphore;
         private bool mFramebufferRecreated;
 
-        private IDeviceBuffer? mCameraBuffer;
+        private IDeviceBuffer? mCameraBuffer, mLightBuffer;
         private IReflectionView? mReflectionView;
 
         private bool mAttached;

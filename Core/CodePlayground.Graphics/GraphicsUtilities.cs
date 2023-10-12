@@ -190,6 +190,26 @@ namespace CodePlayground.Graphics
             return result;
         }
 
+        public static unsafe bool Set<T>(this IReflectionView reflectionView, Span<byte> data, string resource, string name, T value) where T : unmanaged
+        {
+            int offset = reflectionView.GetBufferOffset(resource, name);
+            if (offset < 0)
+            {
+                return false;
+            }
+
+            MemoryMarshal.Write(data[offset..], ref value);
+            return true;
+        }
+
+        public static bool Set<T>(this IDeviceBuffer buffer, IReflectionView reflectionView, string resource, string name, T value) where T : unmanaged
+        {
+            bool result = false;
+            buffer.Map(data => result = Set(reflectionView, data, resource, name, value));
+
+            return result;
+        }
+
         public static GPUContextScope Context(this ICommandList commandList, GPUQueueType queueType = GPUQueueType.Graphics, int node = 0)
         {
             return new GPUContextScope(commandList.Address, queueType, node);

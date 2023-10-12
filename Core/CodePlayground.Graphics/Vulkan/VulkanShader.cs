@@ -338,16 +338,20 @@ namespace CodePlayground.Graphics.Vulkan
                     break;
                 case spvc_basetype.SPVC_BASETYPE_STRUCT:
                     {
-                        nuint size;
-                        spvc_compiler_get_declared_struct_size(compiler, handle, &size).Assert();
+                        var baseTypeHandle = spvc_compiler_get_type_handle(compiler, baseType ?? type);
 
-                        var memberCount = spvc_type_get_num_member_types(handle);
+                        nuint size;
+                        spvc_compiler_get_declared_struct_size(compiler, baseTypeHandle, &size).Assert();
+
+                        var memberCount = spvc_type_get_num_member_types(baseTypeHandle);
                         var fields = new Dictionary<string, ReflectedShaderField>();
 
                         for (uint i = 0; i < memberCount; i++)
                         {
-                            var memberTypeId = spvc_type_get_member_type(handle, i);
-                            ProcessType(compiler, memberTypeId.Value, null);
+                            var memberTypeId = spvc_type_get_member_type(baseTypeHandle, i);
+                            var memberTypeHandle = spvc_compiler_get_type_handle(compiler, memberTypeId);
+                            var memberBaseTypeId = spvc_type_get_base_type_id(memberTypeHandle);
+                            ProcessType(compiler, memberTypeId.Value, memberBaseTypeId.Value);
 
                             var memberName = spvc_compiler_get_member_name(compiler, baseType ?? type, i);
                             var key = Marshal.PtrToStringAnsi((nint)memberName);
@@ -679,10 +683,7 @@ namespace CodePlayground.Graphics.Vulkan
     {
         public VulkanShaderCompiler(Version vulkanVersion)
         {
-            mDisposed = false;
-            mCompiler = new Compiler(new Options(false));
-
-            var options = mCompiler.Options;
+            var options = new Options(false);
             uint version = VulkanUtilities.MakeVersion(vulkanVersion);
 
             options.SetTargetEnvironment(TargetEnvironment.Vulkan, (EnvironmentVersion)version);
@@ -690,6 +691,9 @@ namespace CodePlayground.Graphics.Vulkan
 
             options.TargetSpirVVersion = new SpirVVersion(1, 0);
             options.Optimization = OptimizationLevel.Performance;
+
+            mDisposed = false;
+            mCompiler = new Compiler(options);
         }
 
         public void Dispose()
