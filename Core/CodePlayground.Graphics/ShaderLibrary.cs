@@ -11,6 +11,7 @@ namespace CodePlayground.Graphics
     {
         public ShaderLibrary(IGraphicsContext context, Assembly assembly)
         {
+            mCompiledTypes = new HashSet<Type>();
             mShaders = new Dictionary<string, IShader>();
             mContext = context;
             mDisposed = false;
@@ -119,6 +120,8 @@ namespace CodePlayground.Graphics
                     var shader = mContext.LoadShader(bytecode, stage, stageSource.Entrypoint);
                     mShaders.Add(shaderId, shader);
                 }
+
+                mCompiledTypes.Add(type);
             }
         }
 
@@ -197,7 +200,9 @@ namespace CodePlayground.Graphics
         }
 
         public IGraphicsContext Context => mContext;
+        public IReadOnlySet<Type> CompiledTypes => mCompiledTypes;
 
+        private readonly HashSet<Type> mCompiledTypes;
         private readonly Dictionary<string, IShader> mShaders;
         private readonly IGraphicsContext mContext;
 

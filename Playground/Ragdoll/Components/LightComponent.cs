@@ -53,20 +53,22 @@ namespace Ragdoll.Components
                 ImGui.EndCombo();
             }
 
+            const ImGuiColorEditFlags colorEditFlags = ImGuiColorEditFlags.NoInputs;
+
             // diffuse
             ImGui.SliderFloat("##diffuse-strength", ref DiffuseStrength, 0f, 1f);
             ImGui.SameLine();
-            ImGui.ColorEdit3("Diffuse", ref DiffuseColor);
+            ImGui.ColorEdit3("Diffuse", ref DiffuseColor, colorEditFlags);
 
             // specular
             ImGui.SliderFloat("##specular-strength", ref SpecularStrength, 0f, 1f);
             ImGui.SameLine();
-            ImGui.ColorEdit3("Specular", ref SpecularColor);
+            ImGui.ColorEdit3("Specular", ref SpecularColor, colorEditFlags);
 
             // ambient
             ImGui.SliderFloat("##ambient-strength", ref AmbientStrength, 0f, 1f);
             ImGui.SameLine();
-            ImGui.ColorEdit3("Ambient", ref AmbientColor);
+            ImGui.ColorEdit3("Ambient", ref AmbientColor, colorEditFlags);
 
             // no conditional, only point light is implemented
             ImGui.DragFloat3("Position offset", ref PositionOffset, 0.05f);

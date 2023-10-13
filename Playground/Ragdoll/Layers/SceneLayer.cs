@@ -159,24 +159,6 @@ namespace Ragdoll.Layers
         public string DisplayName { get; set; }
     }
 
-    internal struct LoadedModelInfo
-    {
-        public IPipeline[] Pipelines { get; set; }
-        // not much else...
-    }
-
-    internal struct CameraBufferData
-    {
-        public BufferMatrix Projection, View;
-        public Vector3 Position;
-    }
-
-    internal struct PushConstantData
-    {
-        public BufferMatrix Model;
-        public int BoneOffset;
-    }
-
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
     internal sealed class SceneLayer : Layer
     {
@@ -217,12 +199,7 @@ namespace Ragdoll.Layers
             mMenus = LoadMenus();
 
             mModelPath = mModelName = mModelError = string.Empty;
-            mLoadedModelInfo = new Dictionary<int, LoadedModelInfo>();
-
             mFramebufferAttachments = new FramebufferAttachmentInfo[2];
-
-            mCameraBuffer = null;
-            mReflectionView = null;
 
             mAttached = false;
             App.Instance.OptickStateChanged += OnOptickStateChanged;
@@ -252,32 +229,7 @@ namespace Ragdoll.Layers
                 return -1;
             }
 
-            var modelData = registry.Models[modelId];
-            var materials = modelData.Model.Materials;
-
-            var pipelines = new IPipeline[materials.Count];
-            for (int i = 0; i < materials.Count; i++)
-            {
-                var material = materials[i];
-                var pipeline = pipelines[i] = library.LoadPipeline<ModelShader>(new PipelineDescription
-                {
-                    RenderTarget = mRenderTarget,
-                    Type = PipelineType.Graphics,
-                    FrameCount = Renderer.FrameCount,
-                    Specification = material.PipelineSpecification
-                });
-
-                pipeline.Bind(mCameraBuffer!, nameof(ModelShader.u_CameraBuffer));
-                pipeline.Bind(mLightBuffer!, nameof(ModelShader.u_LightBuffer));
-                pipeline.Bind(modelData.BoneBuffer, nameof(ModelShader.u_BoneBuffer));
-                material.Bind(pipeline, nameof(ModelShader.u_MaterialBuffer), textureType => $"u_{textureType}Map");
-            }
-
-            mLoadedModelInfo.Add(modelId, new LoadedModelInfo
-            {
-                Pipelines = pipelines
-            });
-
+            mSceneRenderer?.RegisterModel(modelId, mRenderTarget!);
             return modelId;
         }
 
@@ -363,6 +315,7 @@ namespace Ragdoll.Layers
 
             var app = App.Instance;
             var graphicsContext = app.GraphicsContext!;
+            mSceneRenderer = new SceneRenderer(graphicsContext, app.Renderer!.Library, app.ModelRegistry!);
 
             // for transfer operations
             var queue = graphicsContext.Device.GetQueue(CommandQueueFlags.Transfer);
@@ -371,22 +324,6 @@ namespace Ragdoll.Layers
 
             using (commandList.Context(GPUQueueType.Transfer))
             {
-                mReflectionView = app.Renderer!.Library.CreateReflectionView<ModelShader>();
-                int cameraBufferSize = mReflectionView.GetBufferSize(nameof(ModelShader.u_CameraBuffer));
-                if (cameraBufferSize < 0)
-                {
-                    throw new InvalidOperationException("Failed to find camera buffer!");
-                }
-
-                int lightBufferSize = mReflectionView.GetBufferSize(nameof(ModelShader.u_LightBuffer));
-                if (lightBufferSize < 0)
-                {
-                    throw new InvalidOperationException("Failed to find light buffer!");
-                }
-
-                mCameraBuffer = graphicsContext.CreateDeviceBuffer(DeviceBufferUsage.Uniform, cameraBufferSize);
-                mLightBuffer = graphicsContext.CreateDeviceBuffer(DeviceBufferUsage.Uniform, lightBufferSize);
-
                 mFramebufferSemaphore = graphicsContext.CreateSemaphore();
                 mFramebufferRecreated = true;
 
@@ -516,16 +453,7 @@ namespace Ragdoll.Layers
             using var poppedEvent = OptickMacros.Event();
             mAttached = false;
 
-            mCameraBuffer?.Dispose();
-            mLightBuffer?.Dispose();
-
-            foreach (var modelData in mLoadedModelInfo.Values)
-            {
-                foreach (var pipeline in modelData.Pipelines)
-                {
-                    pipeline.Dispose();
-                }
-            }
+            mSceneRenderer?.Dispose();
 
             AttachOptickScreenshots();
             DestroyFramebuffer();
@@ -599,37 +527,6 @@ namespace Ragdoll.Layers
             }
         }
 
-        private static void ComputeCameraVectors(Vector3 angle, out Vector3 direction, out Vector3 up)
-        {
-            using var computeCameraVectorsEvent = OptickMacros.Event();
-
-            // +X - tilt camera up
-            // +Y - rotate view to the right
-            // +Z - roll camera counterclockwise
-
-            float pitch = -angle.X;
-            float yaw = -angle.Y;
-            float roll = angle.Z + MathF.PI / 2f; // we want the up vector to face +Y at 0 degrees roll
-
-            // yaw offset of 90 degrees - we want the camera to be facing +Z at 0 degrees yaw
-            float directionPitch = MathF.Sin(roll) * pitch - MathF.Cos(roll) * yaw;
-            float directionYaw = MathF.Sin(roll) * yaw - MathF.Cos(roll) * pitch + MathF.PI / 2f;
-
-            direction = Vector3.Normalize(new Vector3
-            {
-                X = MathF.Cos(directionYaw) * MathF.Cos(directionPitch),
-                Y = MathF.Sin(directionPitch),
-                Z = MathF.Sin(directionYaw) * MathF.Cos(directionPitch)
-            });
-
-            up = Vector3.Normalize(new Vector3
-            {
-                X = MathF.Cos(yaw) * MathF.Cos(roll),
-                Y = MathF.Sin(roll),
-                Z = MathF.Sin(yaw) * MathF.Cos(roll)
-            });
-        }
-
         public override void OnUpdate(double delta)
         {
             if (mScene is null)
@@ -639,134 +536,6 @@ namespace Ragdoll.Layers
 
             using var updateEvent = OptickMacros.Event(category: Category.GameLogic);
             mScene.Update(delta);
-
-            var app = App.Instance;
-            var context = app.GraphicsContext;
-            var registry = app.ModelRegistry;
-
-            if (context is not null)
-            {
-                if (registry is not null)
-                {
-                    using var boneUpdateEvent = OptickMacros.Category("Bone update", Category.Animation);
-                    using (OptickMacros.Event("Pre-bone update"))
-                    {
-                        var entityView = mScene.ViewEntities(typeof(BoneControllerComponent), typeof(TransformComponent));
-                        foreach (var entity in entityView)
-                        {
-                            var boneControllerComponent = mScene.GetComponent<BoneControllerComponent>(entity);
-                            mScene.InvokeComponentEvent(boneControllerComponent, entity, ComponentEventID.PreBoneUpdate);
-                        }
-                    }
-
-                    var math = new MatrixMath(context);
-                    foreach (ulong entity in mScene.ViewEntities(typeof(RenderedModelComponent)))
-                    {
-                        var modelData = mScene.GetComponent<RenderedModelComponent>(entity);
-                        if (modelData.ID < 0)
-                        {
-                            continue;
-                        }
-
-                        var boneBuffer = registry.Models[modelData.ID].BoneBuffer;
-                        modelData.BoneController?.Update(boneTransforms => boneBuffer.CopyFromCPU(boneTransforms.Select(math.TranslateMatrix).ToArray(), modelData.BoneOffset * Marshal.SizeOf<BufferMatrix>()));
-                    }
-                }
-
-                using var updateMatricesEvent = OptickMacros.Category("Update scene matrices", Category.Rendering);
-
-                var camera = Scene.Null;
-                foreach (ulong entity in mScene.ViewEntities(typeof(TransformComponent), typeof(CameraComponent)))
-                {
-                    var component = mScene.GetComponent<CameraComponent>(entity);
-                    if (component.MainCamera)
-                    {
-                        camera = entity;
-                        break;
-                    }
-                }
-
-                if (camera != Scene.Null)
-                {
-                    var transform = mScene.GetComponent<TransformComponent>(camera);
-                    var cameraData = mScene.GetComponent<CameraComponent>(camera);
-
-                    var math = new MatrixMath(context);
-                    float aspectRatio = (float)mFramebuffer!.Width / mFramebuffer!.Height;
-                    float fov = cameraData.FOV * MathF.PI / 180f;
-                    var projection = math.Perspective(fov, aspectRatio, 0.1f, 100f);
-
-                    ComputeCameraVectors(transform.RotationEuler, out Vector3 direction, out Vector3 up);
-                    var view = math.LookAt(transform.Translation, transform.Translation + direction, up);
-
-                    mCameraBuffer?.MapStructure(mReflectionView!, nameof(ModelShader.u_CameraBuffer), new CameraBufferData
-                    {
-                        Projection = math.TranslateMatrix(projection),
-                        View = math.TranslateMatrix(view),
-                        Position = transform.Translation
-                    });
-                }
-
-                mLightBuffer?.Map(data =>
-                {
-                    if (mReflectionView is null)
-                    {
-                        return;
-                    }
-
-                    var bufferNode = mReflectionView.GetResourceNode(nameof(ModelShader.u_LightBuffer));
-                    if (bufferNode is null)
-                    {
-                        return;
-                    }
-
-                    int currentPointLightIndex = 0;
-                    foreach (ulong entity in mScene.ViewEntities(typeof(LightComponent)))
-                    {
-                        var light = mScene.GetComponent<LightComponent>(entity);
-
-                        Vector3 position;
-                        // no conditional - only point light is defined
-                        if (!mScene.TryGetComponent(entity, out TransformComponent? transform))
-                        {
-                            continue;
-                        }
-
-                        var transformMatrix = Matrix4x4.Transpose(transform.CreateMatrix(TransformComponents.NonDeformative));
-                        position = Vector3.Transform(light.PositionOffset, transformMatrix);
-
-                        switch (light.Type)
-                        {
-                            case LightType.Point:
-                                {
-                                    var pointLightNode = bufferNode.Find($"{nameof(ModelShader.LightBufferData.PointLights)}[{currentPointLightIndex++}]");
-                                    if (pointLightNode is null)
-                                    {
-                                        continue;
-                                    }
-
-                                    pointLightNode.Set(data, nameof(ModelShader.PointLightData.Diffuse), light.DiffuseColor * light.DiffuseStrength);
-                                    pointLightNode.Set(data, nameof(ModelShader.PointLightData.Specular), light.SpecularColor * light.SpecularStrength);
-                                    pointLightNode.Set(data, nameof(ModelShader.PointLightData.Ambient), light.AmbientColor * light.AmbientStrength);
-                                    pointLightNode.Set(data, nameof(ModelShader.PointLightData.Position), position);
-
-                                    var attenuationNode = pointLightNode.Find(nameof(ModelShader.PointLightData.Attenuation));
-                                    if (attenuationNode is null)
-                                    {
-                                        continue;
-                                    }
-
-                                    attenuationNode.Set(data, nameof(ModelShader.AttenuationData.Quadratic), light.Quadratic);
-                                    attenuationNode.Set(data, nameof(ModelShader.AttenuationData.Linear), light.Linear);
-                                    attenuationNode.Set(data, nameof(ModelShader.AttenuationData.Constant), light.Constant);
-                                }
-                                break;
-                        }
-                    }
-
-                    bufferNode.Set(data, nameof(ModelShader.LightBufferData.PointLightCount), currentPointLightIndex);
-                });
-            }
         }
 
         public override void OnImGuiRender()
@@ -780,7 +549,7 @@ namespace Ragdoll.Layers
         public override void PreRender(Renderer renderer)
         {
             using var preRenderEvent = OptickMacros.Event(category: Category.Rendering);
-            if (mScene is null)
+            if (mScene is null || mFramebuffer is null || mRenderTarget is null)
             {
                 return;
             }
@@ -796,40 +565,14 @@ namespace Ragdoll.Layers
             var attachmentLayout = colorAttachment.Layout!;
             var renderLayout = colorAttachment.Image.Layout;
 
+            // transition framebuffer image to desired layout and begin render
             colorAttachment.Image.TransitionLayout(commandList, renderLayout, attachmentLayout);
-            renderer.BeginRender(mRenderTarget!, mFramebuffer!, new Vector4(0.2f, 0.2f, 0.2f, 1f));
+            renderer.BeginRender(mRenderTarget, mFramebuffer, new Vector4(0.2f, 0.2f, 0.2f, 1f));
 
-            var math = new MatrixMath(renderer.Context);
-            foreach (ulong id in mScene.ViewEntities(typeof(TransformComponent), typeof(RenderedModelComponent)))
-            {
-                var transform = mScene.GetComponent<TransformComponent>(id);
-                var renderedModel = mScene.GetComponent<RenderedModelComponent>(id);
+            // render scene
+            mSceneRenderer?.Render(mScene, mFramebuffer, renderer);
 
-                var model = renderedModel.Model;
-                if (model is null)
-                {
-                    continue;
-                }
-
-                var info = mLoadedModelInfo[renderedModel.ID];
-                foreach (var mesh in model.Submeshes)
-                {
-                    var pipeline = info.Pipelines[mesh.MaterialIndex];
-                    renderer.RenderMesh(model.VertexBuffer, model.IndexBuffer, pipeline,
-                                        mesh.IndexOffset, mesh.IndexCount, DeviceBufferIndexType.UInt32,
-                                        mapped =>
-                    {
-                        using var pushConstantsEvent = OptickMacros.Category("Push constants", Category.Rendering);
-
-                        mReflectionView!.MapStructure(mapped, nameof(ModelShader.u_PushConstants), new PushConstantData
-                        {
-                            Model = math.TranslateMatrix(transform.CreateMatrix()),
-                            BoneOffset = renderedModel.BoneOffset
-                        });
-                    });
-                }
-            }
-
+            // end render and transition image back
             renderer.EndRender();
             colorAttachment.Image.TransitionLayout(commandList, attachmentLayout, renderLayout);
         }
@@ -1214,10 +957,10 @@ namespace Ragdoll.Layers
 
         private ulong mSelectedEntity;
         private Scene? mScene;
+        private SceneRenderer? mSceneRenderer;
 
         private readonly IReadOnlyList<ImGuiMenu> mMenus;
         private string mModelPath, mModelName, mModelError;
-        private readonly Dictionary<int, LoadedModelInfo> mLoadedModelInfo;
 
         private IFramebuffer? mFramebuffer;
         private IRenderTarget? mRenderTarget;
@@ -1226,9 +969,6 @@ namespace Ragdoll.Layers
 
         private IDisposable? mFramebufferSemaphore;
         private bool mFramebufferRecreated;
-
-        private IDeviceBuffer? mCameraBuffer, mLightBuffer;
-        private IReflectionView? mReflectionView;
 
         private bool mAttached;
     }

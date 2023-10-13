@@ -5,20 +5,20 @@ using System.Numerics;
 
 namespace Ragdoll
 {
-    internal struct RendererRenderInfo
+    public struct RendererRenderInfo
     {
         public IRenderTarget RenderTarget { get; set; }
         public IFramebuffer Framebuffer { get; set; }
     }
 
-    internal struct RendererFrameInfo
+    public struct RendererFrameInfo
     {
         public ICommandList CommandList { get; set; }
         public int CurrentFrame { get; set; }
         public RendererRenderInfo? RenderInfo { get; set; }
     }
 
-    internal sealed class Renderer : IDisposable
+    public sealed class Renderer : IDisposable
     {
         public const int FrameCount = GraphicsApplication.SynchronizationFrames;
 
