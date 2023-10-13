@@ -2,8 +2,6 @@
 using Optick.NET;
 using Ragdoll.Components;
 using Ragdoll.Shaders;
-using Silk.NET.Assimp;
-using Silk.NET.Vulkan;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;

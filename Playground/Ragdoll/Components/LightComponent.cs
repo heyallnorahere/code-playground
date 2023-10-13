@@ -1,7 +1,7 @@
-using System;
-using System.Numerics;
 using ImGuiNET;
 using Ragdoll.Layers;
+using System;
+using System.Numerics;
 
 namespace Ragdoll.Components
 {
