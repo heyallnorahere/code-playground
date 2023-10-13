@@ -442,7 +442,7 @@ namespace Ragdoll.Layers
                 mScene.AddComponent<RigidBodyComponent>(entity).BodyType = BodyType.Static;
 
                 entity = mScene.NewEntity("Light");
-                mScene.AddComponent<TransformComponent>(entity).Translation = new Vector3(-1f, 5f, -1f);
+                mScene.AddComponent<TransformComponent>(entity).Translation = Vector3.UnitY * 1.5f;
 
                 var light = mScene.AddComponent<LightComponent>(entity);
                 light.DiffuseStrength = 1f;
@@ -714,6 +714,12 @@ namespace Ragdoll.Layers
                         return;
                     }
 
+                    var bufferNode = mReflectionView.GetResourceNode(nameof(ModelShader.u_LightBuffer));
+                    if (bufferNode is null)
+                    {
+                        return;
+                    }
+
                     int currentPointLightIndex = 0;
                     foreach (ulong entity in mScene.ViewEntities(typeof(LightComponent)))
                     {
@@ -726,29 +732,39 @@ namespace Ragdoll.Layers
                             continue;
                         }
 
-                        position = Vector3.Transform(light.PositionOffset, transform.CreateMatrix(TransformComponents.NonDeformative));
+                        var transformMatrix = Matrix4x4.Transpose(transform.CreateMatrix(TransformComponents.NonDeformative));
+                        position = Vector3.Transform(light.PositionOffset, transformMatrix);
 
                         switch (light.Type)
                         {
                             case LightType.Point:
                                 {
-                                    // todo: some kind of IReflectionNode system
-                                    string arrayElementPrefix = $"{nameof(ModelShader.LightBufferData.PointLights)}[{currentPointLightIndex++}].";
-                                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), arrayElementPrefix + nameof(ModelShader.PointLightData.Diffuse), light.DiffuseColor * light.DiffuseStrength);
-                                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), arrayElementPrefix + nameof(ModelShader.PointLightData.Specular), light.SpecularColor * light.SpecularStrength);
-                                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), arrayElementPrefix + nameof(ModelShader.PointLightData.Ambient), light.AmbientColor * light.AmbientStrength);
-                                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), arrayElementPrefix + nameof(ModelShader.PointLightData.Position), position);
+                                    var pointLightNode = bufferNode.Find($"{nameof(ModelShader.LightBufferData.PointLights)}[{currentPointLightIndex++}]");
+                                    if (pointLightNode is null)
+                                    {
+                                        continue;
+                                    }
 
-                                    string attenuationPrefix = $"{arrayElementPrefix}{nameof(ModelShader.PointLightData.Attenuation)}.";
-                                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), attenuationPrefix + nameof(ModelShader.AttenuationData.Quadratic), light.Quadratic);
-                                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), attenuationPrefix + nameof(ModelShader.AttenuationData.Linear), light.Linear);
-                                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), attenuationPrefix + nameof(ModelShader.AttenuationData.Constant), light.Constant);
+                                    pointLightNode.Set(data, nameof(ModelShader.PointLightData.Diffuse), light.DiffuseColor * light.DiffuseStrength);
+                                    pointLightNode.Set(data, nameof(ModelShader.PointLightData.Specular), light.SpecularColor * light.SpecularStrength);
+                                    pointLightNode.Set(data, nameof(ModelShader.PointLightData.Ambient), light.AmbientColor * light.AmbientStrength);
+                                    pointLightNode.Set(data, nameof(ModelShader.PointLightData.Position), position);
+
+                                    var attenuationNode = pointLightNode.Find(nameof(ModelShader.PointLightData.Attenuation));
+                                    if (attenuationNode is null)
+                                    {
+                                        continue;
+                                    }
+
+                                    attenuationNode.Set(data, nameof(ModelShader.AttenuationData.Quadratic), light.Quadratic);
+                                    attenuationNode.Set(data, nameof(ModelShader.AttenuationData.Linear), light.Linear);
+                                    attenuationNode.Set(data, nameof(ModelShader.AttenuationData.Constant), light.Constant);
                                 }
                                 break;
                         }
                     }
 
-                    mReflectionView.Set(data, nameof(ModelShader.u_LightBuffer), nameof(ModelShader.LightBufferData.PointLightCount), currentPointLightIndex);
+                    bufferNode.Set(data, nameof(ModelShader.LightBufferData.PointLightCount), currentPointLightIndex);
                 });
             }
         }

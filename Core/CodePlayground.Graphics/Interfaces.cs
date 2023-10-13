@@ -472,7 +472,17 @@ namespace CodePlayground.Graphics
     {
         public bool ResourceExists(string resource);
         public int GetBufferSize(string resource);
+
         public int GetBufferOffset(string resource, string expression);
+        public IReflectionNode? GetResourceNode(string resource);
+    }
+
+    public interface IReflectionNode
+    {
+        public string ResourceName { get; }
+        public int Offset { get; }
+
+        public IReflectionNode? Find(string name);
     }
 
     public interface IPipeline : IDisposable

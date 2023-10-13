@@ -139,7 +139,7 @@ namespace CodePlayground.Graphics
                 bool skip = false;
                 for (int i = 0; i < elementCount; i++)
                 {
-                    string expression = baseExpression + field.Name;
+                    string expression = expressionBase + field.Name;
                     if (fixedBufferAttribute is not null)
                     {
                         expression += $"[{i}]";
@@ -206,6 +206,37 @@ namespace CodePlayground.Graphics
         {
             bool result = false;
             buffer.Map(data => result = Set(reflectionView, data, resource, name, value));
+
+            return result;
+        }
+
+        public static void Set<T>(this IReflectionNode node, Span<byte> data, T value) where T : unmanaged
+        {
+            var slice = data[node.Offset..];
+            MemoryMarshal.Write(slice, ref value);
+        }
+
+        public static void Set<T>(this IDeviceBuffer buffer, IReflectionNode node, T value) where T : unmanaged
+        {
+            buffer.Map(data => Set(node, data, value));
+        }
+
+        public static bool Set<T>(this IReflectionNode node, Span<byte> data, string name, T value) where T : unmanaged
+        {
+            var child = node.Find(name);
+            if (child is null)
+            {
+                return false;
+            }
+
+            Set(child, data, value);
+            return true;
+        }
+
+        public static bool Set<T>(this IDeviceBuffer buffer, IReflectionNode node, string name, T value) where T : unmanaged
+        {
+            bool result = false;
+            buffer.Map(data => result = Set(node, data, name, value));
 
             return result;
         }

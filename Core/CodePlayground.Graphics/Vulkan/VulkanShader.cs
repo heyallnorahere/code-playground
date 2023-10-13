@@ -572,11 +572,93 @@ namespace CodePlayground.Graphics.Vulkan
             return GetTypeOffset(stage, typeId, expression);
         }
 
-        private int GetTypeOffset(ShaderStage stage, int type, string expression)
+        internal static int[] ParseFieldExpression(string expression, out string fieldName)
         {
             const char beginIndexCharacter = '[';
             const char endIndexCharacter = ']';
 
+            int beginIndexOperator = expression.IndexOf(beginIndexCharacter);
+            fieldName = beginIndexOperator < 0 ? expression : expression[0..beginIndexOperator];
+
+            if (string.IsNullOrEmpty(fieldName) || beginIndexOperator < 0)
+            {
+                return Array.Empty<int>();
+            }
+
+            var indexStrings = new List<string>();
+            for (int i = beginIndexOperator; i < expression.Length; i++)
+            {
+                char character = expression[i];
+                if (character == beginIndexCharacter)
+                {
+                    indexStrings.Add(beginIndexCharacter.ToString());
+                }
+                else
+                {
+                    var currentString = indexStrings[^1];
+                    if (currentString[^1] == endIndexCharacter)
+                    {
+                        throw new InvalidOperationException("Malformed index operator!");
+                    }
+
+                    indexStrings[^1] = currentString + character;
+                }
+            }
+
+            var indices = new int[indexStrings.Count];
+            for (int i = 0; i < indexStrings.Count; i++)
+            {
+                var indexString = indexStrings[i];
+                if (indexString[^1] != endIndexCharacter)
+                {
+                    throw new InvalidOperationException("Malformed index operator!");
+                }
+
+                indices[i] = int.Parse(indexString[1..^1]);
+            }
+
+            return indices;
+        }
+
+        internal static int GetIndexedOffset(IReadOnlyList<int> indices, ReflectedShaderField field, ReflectedShaderType fieldType)
+        {
+            if (fieldType.ArrayDimensions is null || !fieldType.ArrayDimensions.Any())
+            {
+                throw new InvalidOperationException("Cannot index a non-array field!");
+            }
+
+            int stride = field.Stride;
+            if (stride <= 0)
+            {
+                throw new InvalidOperationException("SPIRV-Cross did not provide a stride value!");
+            }
+
+            int offset = 0;
+            for (int i = 0; i < indices.Count; i++)
+            {
+                int index = indices[i];
+                int dimensionIndex = fieldType.ArrayDimensions.Count - (i + 1);
+                int dimensionStride = stride;
+
+                int dimensionSize = fieldType.ArrayDimensions[dimensionIndex];
+                if (index < 0 || (dimensionSize > 0 && index >= fieldType.ArrayDimensions[dimensionIndex]))
+                {
+                    throw new IndexOutOfRangeException();
+                }
+
+                for (int j = 0; j < dimensionIndex; j++)
+                {
+                    dimensionStride *= fieldType.ArrayDimensions[j];
+                }
+
+                offset += index * dimensionStride;
+            }
+
+            return offset;
+        }
+
+        private int GetTypeOffset(ShaderStage stage, int type, string expression)
+        {
             var reflectionData = mReflectionData[stage];
             var typeData = reflectionData.Types[type];
             var fields = typeData.Fields!;
@@ -588,9 +670,7 @@ namespace CodePlayground.Graphics.Vulkan
 
             int memberOperator = expression.IndexOf('.');
             string fieldExpression = memberOperator < 0 ? expression : expression[0..memberOperator];
-
-            int beginIndexOperator = fieldExpression.IndexOf(beginIndexCharacter);
-            string fieldName = beginIndexOperator < 0 ? fieldExpression : fieldExpression[0..beginIndexOperator];
+            var indices = ParseFieldExpression(fieldExpression, out string fieldName);
 
             if (string.IsNullOrEmpty(fieldName))
             {
@@ -605,78 +685,88 @@ namespace CodePlayground.Graphics.Vulkan
             var field = fields[fieldName];
             int offset = field.Offset;
 
-            if (beginIndexOperator >= 0)
+            if (indices.Length > 0)
             {
                 var fieldType = reflectionData.Types[field.Type];
-                if (fieldType.ArrayDimensions is null || !fieldType.ArrayDimensions.Any())
-                {
-                    throw new InvalidOperationException("Cannot index a non-array field!");
-                }
-
-                int stride = field.Stride;
-                if (stride <= 0)
-                {
-                    throw new InvalidOperationException("SPIRV-Cross did not provide a stride value!");
-                }
-
-                var indexStrings = new List<string>();
-                for (int i = beginIndexOperator; i < fieldExpression.Length; i++)
-                {
-                    char character = fieldExpression[i];
-                    if (character == beginIndexCharacter)
-                    {
-                        indexStrings.Add(beginIndexCharacter.ToString());
-                    }
-                    else
-                    {
-                        var currentString = indexStrings[^1];
-                        if (currentString[^1] == endIndexCharacter)
-                        {
-                            throw new InvalidOperationException("Malformed index operator!");
-                        }
-
-                        indexStrings[^1] = currentString + character;
-                    }
-                }
-
-                for (int i = 0; i < indexStrings.Count; i++)
-                {
-                    var indexString = indexStrings[i];
-                    if (indexString[^1] != endIndexCharacter)
-                    {
-                        throw new InvalidOperationException("Malformed index operator!");
-                    }
-
-                    int index = int.Parse(indexString[1..^1]);
-                    int dimensionIndex = fieldType.ArrayDimensions.Count - (i + 1);
-                    int dimensionStride = stride;
-
-                    int dimensionSize = fieldType.ArrayDimensions[dimensionIndex];
-                    if (index < 0 || (dimensionSize > 0 && index >= fieldType.ArrayDimensions[dimensionIndex]))
-                    {
-                        throw new IndexOutOfRangeException();
-                    }
-
-                    for (int j = 0; j < dimensionIndex; j++)
-                    {
-                        dimensionStride *= fieldType.ArrayDimensions[j];
-                    }
-
-                    offset += index * dimensionStride;
-                }
+                offset += GetIndexedOffset(indices, field, fieldType);
             }
 
-            if (memberOperator >= 0)
+            if (memberOperator > 0)
             {
-                offset += GetTypeOffset(stage, field.Type, expression[(memberOperator + 1)..]);
+                int childOffset = GetTypeOffset(stage, field.Type, expression[(memberOperator + 1)..]);
+                if (childOffset < 0)
+                {
+                    offset = -1;
+                }
+                else
+                {
+                    offset += childOffset;
+                }
             }
 
             return offset;
         }
 
+        IReflectionNode? IReflectionView.GetResourceNode(string resource) => GetResourceNode(resource);
+        public VulkanReflectionNode? GetResourceNode(string resource)
+        {
+            if (!FindResource(resource, out ShaderStage stage, out int set, out int binding))
+            {
+                return null;
+            }
+
+            int type = GetBufferTypeID(stage, set, binding);
+            return type < 0 ? null : new VulkanReflectionNode(this, resource, stage, type, 0);
+        }
+
         public IReadOnlyDictionary<ShaderStage, ShaderReflectionResult> ReflectionData => mReflectionData;
 
         private readonly Dictionary<ShaderStage, ShaderReflectionResult> mReflectionData;
+    }
+
+    public sealed class VulkanReflectionNode : IReflectionNode
+    {
+        internal VulkanReflectionNode(VulkanReflectionView view, string resourceName, ShaderStage stage, int type, int offset)
+        {
+            mView = view;
+            mResourceName = resourceName;
+            mStage = stage;
+
+            mType = type;
+            mOffset = offset;
+        }
+
+        public string ResourceName => mResourceName;
+        public int Offset => mOffset;
+        public ReflectedShaderType TypeData => mView.ReflectionData[mStage].Types[mType];
+
+        IReflectionNode? IReflectionNode.Find(string name) => Find(name);
+        public VulkanReflectionNode? Find(string name)
+        {
+            var indices = VulkanReflectionView.ParseFieldExpression(name, out string fieldName);
+            var fields = TypeData.Fields;
+
+            if (fields is null || !fields.TryGetValue(fieldName, out ReflectedShaderField field))
+            {
+                return null;
+            }
+
+            int offset = mOffset + field.Offset;
+            if (indices.Length > 0)
+            {
+                var fieldType = mView.ReflectionData[mStage].Types[field.Type];
+                offset += VulkanReflectionView.GetIndexedOffset(indices, field, fieldType);
+            }
+
+            return new VulkanReflectionNode(mView, mResourceName, mStage, field.Type, offset);
+        }
+
+        private readonly VulkanReflectionView mView;
+        private readonly string mResourceName;
+        private readonly ShaderStage mStage;
+
+        private readonly int mType;
+        private readonly int mOffset;
     }
 
     internal sealed class VulkanShaderCompiler : IShaderCompiler
