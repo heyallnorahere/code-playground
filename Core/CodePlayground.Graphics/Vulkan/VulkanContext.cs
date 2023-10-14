@@ -621,6 +621,7 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 Size = info.Size,
                 Usage = info.Usage,
+                ImageType = info.ImageType,
                 MipLevels = info.MipLevels,
                 Format = info.Format
             });

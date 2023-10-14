@@ -196,6 +196,7 @@ namespace CodePlayground.Graphics.Vulkan
     {
         public Size Size { get; set; }
         public DeviceImageUsageFlags Usage { get; set; }
+        public DeviceImageType ImageType { get; set; }
         public int MipLevels { get; set; }
         public DeviceImageFormat Format { get; set; }
         public Format VulkanFormat { get; set; }
@@ -253,10 +254,18 @@ namespace CodePlayground.Graphics.Vulkan
             using var constructorEvent = OptickMacros.Event();
 
             Usage = info.Usage;
+            Type = info.ImageType;
             Size = info.Size;
             ImageFormat = info.Format;
             Tiling = info.Tiling;
             Layout = GetLayout(DeviceImageLayoutName.Undefined);
+
+            ArrayLayers = Type switch
+            {
+                DeviceImageType.Type2D => 1,
+                DeviceImageType.TypeCube => 6,
+                _ => throw new ArgumentException("Invalid image type!")
+            };
 
             if (info.VulkanFormat != Format.Undefined)
             {
@@ -363,9 +372,16 @@ namespace CodePlayground.Graphics.Vulkan
         private unsafe void CreateImage()
         {
             using var createEvent = OptickMacros.Event();
+
+            var flags = ImageCreateFlags.None;
+            if (Type == DeviceImageType.TypeCube)
+            {
+                flags |= ImageCreateFlags.CreateCubeCompatibleBit;
+            }
+
             var createInfo = VulkanUtilities.Init<ImageCreateInfo>() with
             {
-                Flags = ImageCreateFlags.None,
+                Flags = flags,
                 ImageType = ImageType.Type2D,
                 Format = VulkanFormat,
                 Extent = new Extent3D
@@ -375,7 +391,7 @@ namespace CodePlayground.Graphics.Vulkan
                     Depth = 1
                 },
                 MipLevels = (uint)MipLevels,
-                ArrayLayers = 1,
+                ArrayLayers = (uint)ArrayLayers,
                 Samples = SampleCountFlags.Count1Bit,
                 Tiling = Tiling,
                 Usage = ConvertUsageFlags(Usage),
@@ -406,7 +422,12 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 Flags = ImageViewCreateFlags.None,
                 Image = mImage,
-                ViewType = ImageViewType.Type2D,
+                ViewType = Type switch
+                {
+                    DeviceImageType.Type2D => ImageViewType.Type2D,
+                    DeviceImageType.TypeCube => ImageViewType.TypeCube,
+                    _ => throw new ArgumentException("Invalid image type!")
+                },
                 Format = VulkanFormat,
                 SubresourceRange = VulkanUtilities.Init<ImageSubresourceRange>() with
                 {
@@ -414,7 +435,7 @@ namespace CodePlayground.Graphics.Vulkan
                     BaseMipLevel = 0,
                     LevelCount = (uint)MipLevels,
                     BaseArrayLayer = 0,
-                    LayerCount = 1
+                    LayerCount = (uint)ArrayLayers
                 }
             };
 
@@ -525,7 +546,7 @@ namespace CodePlayground.Graphics.Vulkan
 
             using (commandBuffer.Context(GPUQueueType.Transfer))
             {
-                CopyFromBuffer(commandBuffer, stagingBuffer, Layout);
+                CopyFromBuffer(commandBuffer, stagingBuffer, Layout, 0, ArrayLayers);
             }
 
             commandBuffer.End();
@@ -539,10 +560,10 @@ namespace CodePlayground.Graphics.Vulkan
                 throw new ArgumentException("Must pass Vulkan objects!");
             }
 
-            CopyFromBuffer((VulkanCommandBuffer)commandList, (VulkanBuffer)source, (VulkanImageLayout)currentLayout);
+            CopyFromBuffer((VulkanCommandBuffer)commandList, (VulkanBuffer)source, (VulkanImageLayout)currentLayout, 0, ArrayLayers);
         }
 
-        public void CopyFromBuffer(VulkanCommandBuffer commandBuffer, VulkanBuffer source, VulkanImageLayout currentLayout)
+        public void CopyFromBuffer(VulkanCommandBuffer commandBuffer, VulkanBuffer source, VulkanImageLayout currentLayout, int arrayLayer, int layerCount)
         {
             using var copyEvent = OptickMacros.Event();
             using var gpuCopyEvent = OptickMacros.GPUEvent("Buffer-to-image copy");
@@ -572,7 +593,7 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             };
 
-            TransitionLayout(commandBuffer, currentLayout, transferDst, 0, MipLevels);
+            TransitionLayout(commandBuffer, currentLayout, transferDst, 0, MipLevels, arrayLayer, layerCount);
             api.CmdCopyBufferToImage(commandBuffer.Buffer, source.Buffer, mImage, transferDst.Layout, 1, copyRegion);
 
             if (MipLevels > 1)
@@ -590,15 +611,15 @@ namespace CodePlayground.Graphics.Vulkan
                         {
                             AspectMask = AspectMask,
                             MipLevel = (uint)i - 1,
-                            BaseArrayLayer = 0,
-                            LayerCount = 1
+                            BaseArrayLayer = (uint)arrayLayer,
+                            LayerCount = (uint)layerCount,
                         },
                         DstSubresource = VulkanUtilities.Init<ImageSubresourceLayers>() with
                         {
                             AspectMask = AspectMask,
                             MipLevel = (uint)i,
-                            BaseArrayLayer = 0,
-                            LayerCount = 1
+                            BaseArrayLayer = (uint)arrayLayer,
+                            LayerCount = (uint)layerCount
                         }
                     };
 
@@ -616,17 +637,17 @@ namespace CodePlayground.Graphics.Vulkan
                         Z = 1
                     };
 
-                    TransitionLayout(commandBuffer, transferDst, transferSrc, i - 1, 1);
+                    TransitionLayout(commandBuffer, transferDst, transferSrc, i - 1, 1, arrayLayer, layerCount);
                     api.CmdBlitImage(commandBuffer.Buffer, mImage, transferSrc.Layout, mImage, transferDst.Layout, 1, blitRegion, mMipmapBlitFilter);
 
                     currentWidth = nextWidth;
                     currentHeight = nextHeight;
                 }
 
-                TransitionLayout(commandBuffer, transferSrc, currentLayout, 0, MipLevels - 1);
+                TransitionLayout(commandBuffer, transferSrc, currentLayout, 0, MipLevels - 1, arrayLayer, layerCount);
             }
 
-            TransitionLayout(commandBuffer, transferDst, currentLayout, MipLevels - 1, 1);
+            TransitionLayout(commandBuffer, transferDst, currentLayout, MipLevels - 1, 1, arrayLayer, layerCount);
         }
 
         void IDeviceImage.CopyToBuffer(ICommandList commandList, IDeviceBuffer destination, IDeviceImageLayout currentLayout)
@@ -636,10 +657,10 @@ namespace CodePlayground.Graphics.Vulkan
                 throw new ArgumentException("Must pass Vulkan objects!");
             }
 
-            CopyToBuffer((VulkanCommandBuffer)commandList, (VulkanBuffer)destination, (VulkanImageLayout)currentLayout);
+            CopyToBuffer((VulkanCommandBuffer)commandList, (VulkanBuffer)destination, (VulkanImageLayout)currentLayout, 0, ArrayLayers);
         }
 
-        public void CopyToBuffer(VulkanCommandBuffer commandBuffer, VulkanBuffer destination, VulkanImageLayout currentLayout)
+        public void CopyToBuffer(VulkanCommandBuffer commandBuffer, VulkanBuffer destination, VulkanImageLayout currentLayout, int arrayLayer, int layerCount)
         {
             using var copyEvent = OptickMacros.Event();
             using var gpuCopyEvent = OptickMacros.GPUEvent("Image-to-buffer copy");
@@ -656,8 +677,8 @@ namespace CodePlayground.Graphics.Vulkan
                 {
                     AspectMask = AspectMask,
                     MipLevel = 0,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1
+                    BaseArrayLayer = (uint)arrayLayer,
+                    LayerCount = (uint)layerCount
                 },
                 ImageOffset = VulkanUtilities.Init<Offset3D>(),
                 ImageExtent = new Extent3D
@@ -668,9 +689,9 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             };
 
-            TransitionLayout(commandBuffer, currentLayout, transferDst, 0, 1);
+            TransitionLayout(commandBuffer, currentLayout, transferDst, 0, 1, arrayLayer, layerCount);
             api.CmdCopyImageToBuffer(commandBuffer.Buffer, mImage, transferDst.Layout, destination.Buffer, 1, copyRegion);
-            TransitionLayout(commandBuffer, transferDst, currentLayout, 0, 1);
+            TransitionLayout(commandBuffer, transferDst, currentLayout, 0, 1, arrayLayer, layerCount);
         }
 
         void IDeviceImage.TransitionLayout(ICommandList commandList, IDeviceImageLayout srcLayout, IDeviceImageLayout dstLayout)
@@ -680,10 +701,10 @@ namespace CodePlayground.Graphics.Vulkan
                 throw new ArgumentException("Must pass Vulkan objects!");
             }
 
-            TransitionLayout((VulkanCommandBuffer)commandList, (VulkanImageLayout)srcLayout, (VulkanImageLayout)dstLayout, 0, MipLevels);
+            TransitionLayout((VulkanCommandBuffer)commandList, (VulkanImageLayout)srcLayout, (VulkanImageLayout)dstLayout, 0, MipLevels, 0, ArrayLayers);
         }
 
-        public unsafe void TransitionLayout(VulkanCommandBuffer commandBuffer, VulkanImageLayout sourceLayout, VulkanImageLayout destinationLayout, int baseMipLevel, int levelCount)
+        public unsafe void TransitionLayout(VulkanCommandBuffer commandBuffer, VulkanImageLayout sourceLayout, VulkanImageLayout destinationLayout, int baseMipLevel, int levelCount, int arrayLayer, int layerCount)
         {
             using var transitionEvent = OptickMacros.Event();
             using var barrierEvent = OptickMacros.GPUEvent("Image pipeline barrier");
@@ -707,8 +728,8 @@ namespace CodePlayground.Graphics.Vulkan
                     AspectMask = AspectMask,
                     BaseMipLevel = (uint)baseMipLevel,
                     LevelCount = (uint)levelCount,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1
+                    BaseArrayLayer = (uint)arrayLayer,
+                    LayerCount = (uint)layerCount
                 }
             };
 
@@ -747,8 +768,10 @@ namespace CodePlayground.Graphics.Vulkan
         }
 
         public DeviceImageUsageFlags Usage { get; }
+        public DeviceImageType Type { get; }
         public Size Size { get; }
         public int MipLevels { get; }
+        public int ArrayLayers { get; }
         public DeviceImageFormat ImageFormat { get; }
         public Format VulkanFormat { get; }
         public ImageAspectFlags AspectMask { get; }

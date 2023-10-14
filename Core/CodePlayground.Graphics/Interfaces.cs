@@ -63,6 +63,12 @@ namespace CodePlayground.Graphics
         Storage = 0x20,
     }
 
+    public enum DeviceImageType
+    {
+        Type2D,
+        TypeCube
+    }
+
     public enum DeviceImageFormat
     {
         RGBA8_SRGB,
@@ -184,6 +190,7 @@ namespace CodePlayground.Graphics
     public struct DeviceImageInfo
     {
         public Size Size { get; set; }
+        public DeviceImageType ImageType { get; set; }
         public DeviceImageUsageFlags Usage { get; set; }
         public DeviceImageFormat Format { get; set; }
         public int MipLevels { get; set; }
@@ -418,6 +425,7 @@ namespace CodePlayground.Graphics
     public interface IDeviceImage : IDisposable
     {
         public DeviceImageUsageFlags Usage { get; }
+        public DeviceImageType Type { get; }
         public Size Size { get; }
         public int MipLevels { get; }
         public DeviceImageFormat ImageFormat { get; }

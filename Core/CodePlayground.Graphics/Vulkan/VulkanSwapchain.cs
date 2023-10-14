@@ -388,7 +388,7 @@ namespace CodePlayground.Graphics.Vulkan
             var newLayout = VulkanImage.GetLayout(DeviceImageLayoutName.DepthStencilAttachment);
             using (commandBuffer.Context(GPUQueueType.Transfer))
             {
-                image.TransitionLayout(commandBuffer, image.Layout, newLayout, 0, 1);
+                image.TransitionLayout(commandBuffer, image.Layout, newLayout, 0, 1, 0, 1);
             }
 
             commandBuffer.End();
