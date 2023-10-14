@@ -29,6 +29,15 @@ namespace Ragdoll
         public int BoneOffset;
     }
 
+    public struct SceneRenderInfo
+    {
+        public Renderer Renderer;
+        public Scene Scene;
+        public IFramebuffer Framebuffer;
+
+        public Action BeginSceneRender, EndSceneRender;
+    }
+
     public sealed class SceneRenderer : IDisposable
     {
         public SceneRenderer(IGraphicsContext context, ShaderLibrary library, ModelRegistry registry)
@@ -236,7 +245,7 @@ namespace Ragdoll
             }
         }
 
-        private void UpdateLightBuffer(Scene scene)
+        private void UpdateLightBuffer(Scene scene, Renderer renderer)
         {
             using var updateLightBufferEvent = OptickMacros.Event();
             mLightBuffer?.Map(data =>
@@ -297,13 +306,13 @@ namespace Ragdoll
             });
         }
 
-        private void PrepareForRender(Scene scene, IFramebuffer framebuffer)
+        private void PrepareForRender(SceneRenderInfo renderInfo)
         {
             using var prepareEvent = OptickMacros.Event(category: Category.Rendering);
 
-            UpdateBones(scene);
-            UpdateSceneMatrices(scene, framebuffer.Width, framebuffer.Height);
-            UpdateLightBuffer(scene);
+            UpdateBones(renderInfo.Scene);
+            UpdateSceneMatrices(renderInfo.Scene, renderInfo.Framebuffer.Width, renderInfo.Framebuffer.Height);
+            UpdateLightBuffer(renderInfo.Scene, renderInfo.Renderer);
         }
 
         // todo: generalize for shadow mapping
@@ -344,12 +353,16 @@ namespace Ragdoll
 
         }
 
-        public void Render(Scene scene, IFramebuffer framebuffer, Renderer renderer)
+        public void Render(SceneRenderInfo renderInfo)
         {
             using var renderEvent = OptickMacros.Event(category: Category.Rendering);
 
-            PrepareForRender(scene, framebuffer);
-            RenderScene<ModelShader>(scene, renderer);
+            // prepare for render (update all device buffers)
+            PrepareForRender(renderInfo);
+
+            renderInfo.BeginSceneRender.Invoke();
+            RenderScene<ModelShader>(renderInfo.Scene, renderInfo.Renderer);
+            renderInfo.EndSceneRender.Invoke();
         }
 
         public IReflectionView GetReflectionView<T>() where T : class => mReflectionViews[typeof(T)];

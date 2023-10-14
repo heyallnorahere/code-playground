@@ -376,13 +376,40 @@ namespace Ragdoll.Layers
                 mScene.AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
                 mScene.AddComponent<RigidBodyComponent>(entity).BodyType = BodyType.Static;
 
-                entity = mScene.NewEntity("Light");
-                mScene.AddComponent<TransformComponent>(entity).Translation = Vector3.UnitY * 1.5f;
+                const float lightHeight = 2.8f;
+                var lightColors = new Vector3[]
+                {
+                    new Vector3(1f, 0f, 0f),
+                    new Vector3(0f, 1f, 0f),
+                    new Vector3(0f, 0f, 1f)
+                };
 
-                var light = mScene.AddComponent<LightComponent>(entity);
-                light.DiffuseStrength = 1f;
-                light.SpecularStrength = 0.5f;
-                light.AmbientStrength = 0.1f;
+                for (int i = 0; i < lightColors.Length; i++)
+                {
+                    entity = mScene.NewEntity($"Light #{i + 1}");
+                    transform = mScene.AddComponent<TransformComponent>(entity);
+
+                    float angle = MathF.PI * 2 * i / lightColors.Length;
+                    transform.RotationQuat = Quaternion.CreateFromYawPitchRoll(angle, angle, angle);
+                    transform.Translation = new Vector3
+                    {
+                        X = MathF.Cos(angle) * lightHeight,
+                        Y = lightHeight,
+                        Z = MathF.Sin(angle) * lightHeight
+                    };
+
+                    mScene.AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
+                    mScene.AddComponent<RigidBodyComponent>(entity);
+
+                    var light = mScene.AddComponent<LightComponent>(entity);
+                    light.DiffuseStrength = 1f;
+                    light.SpecularStrength = 0.5f;
+                    light.AmbientStrength = 0.05f;
+                    light.Quadratic = 0.01f;
+                    light.Linear = 0.5f;
+                    light.Constant = 0f;
+                    light.DiffuseColor = light.AmbientColor = lightColors[i];
+                }
             }
 
             mAttached = true;
@@ -397,7 +424,7 @@ namespace Ragdoll.Layers
             {
                 Size = new Size(width, height),
                 Usage = DeviceImageUsageFlags.Render | DeviceImageUsageFlags.ColorAttachment | DeviceImageUsageFlags.CopySource,
-                Format = DeviceImageFormat.RGBA8_UNORM,
+                Format = DeviceImageFormat.RGBA8_SRGB,
                 MipLevels = 1
             });
 
@@ -563,16 +590,27 @@ namespace Ragdoll.Layers
             var attachmentLayout = colorAttachment.Layout!;
             var renderLayout = colorAttachment.Image.Layout;
 
-            // transition framebuffer image to desired layout and begin render
-            colorAttachment.Image.TransitionLayout(commandList, renderLayout, attachmentLayout);
-            renderer.BeginRender(mRenderTarget, mFramebuffer, new Vector4(0.2f, 0.2f, 0.2f, 1f));
-
             // render scene
-            mSceneRenderer?.Render(mScene, mFramebuffer, renderer);
+            mSceneRenderer?.Render(new SceneRenderInfo
+            {
+                Renderer = renderer,
+                Scene = mScene,
+                Framebuffer = mFramebuffer,
 
-            // end render and transition image back
-            renderer.EndRender();
-            colorAttachment.Image.TransitionLayout(commandList, attachmentLayout, renderLayout);
+                BeginSceneRender = () =>
+                {
+                    // transition framebuffer image to desired layout and begin render
+                    colorAttachment.Image.TransitionLayout(commandList, renderLayout, attachmentLayout);
+                    renderer.BeginRender(mRenderTarget, mFramebuffer, new Vector4(0.2f, 0.2f, 0.2f, 1f));
+                },
+
+                EndSceneRender = () =>
+                {
+                    // end render and transition image back
+                    renderer.EndRender();
+                    colorAttachment.Image.TransitionLayout(commandList, attachmentLayout, renderLayout);
+                }
+            });
         }
 
         #endregion
