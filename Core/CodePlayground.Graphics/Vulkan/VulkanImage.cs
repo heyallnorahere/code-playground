@@ -570,7 +570,6 @@ namespace CodePlayground.Graphics.Vulkan
 
             var api = VulkanContext.API;
             var transferDst = GetLayout(DeviceImageLayoutName.CopyDestination);
-            var transferSrc = GetLayout(DeviceImageLayoutName.CopySource);
 
             var copyRegion = VulkanUtilities.Init<BufferImageCopy>() with
             {
@@ -596,58 +595,73 @@ namespace CodePlayground.Graphics.Vulkan
             TransitionLayout(commandBuffer, currentLayout, transferDst, 0, MipLevels, arrayLayer, layerCount);
             api.CmdCopyBufferToImage(commandBuffer.Buffer, source.Buffer, mImage, transferDst.Layout, 1, copyRegion);
 
-            if (MipLevels > 1)
+            GenerateMipmaps(commandBuffer, currentLayout, arrayLayer, layerCount);
+            TransitionLayout(commandBuffer, transferDst, currentLayout, MipLevels - 1, 1, arrayLayer, layerCount);
+        }
+
+        /// <summary>
+        /// assumes that every mip level is at CopyDestination.
+        /// sets every mip level before the last to the initial layout (currentLayout).
+        /// keeps the last at CopyDestination
+        /// </summary>
+        private void GenerateMipmaps(VulkanCommandBuffer commandBuffer, VulkanImageLayout currentLayout, int arrayLayer, int layerCount)
+        {
+            if (MipLevels <= 1)
             {
-                int currentWidth = Size.Width;
-                int currentHeight = Size.Height;
-                for (int i = 1; i < MipLevels; i++)
-                {
-                    int nextWidth = currentWidth > 1 ? currentWidth / 2 : 1;
-                    int nextHeight = currentHeight > 1 ? currentHeight / 2 : 1;
-
-                    var blitRegion = VulkanUtilities.Init<ImageBlit>() with
-                    {
-                        SrcSubresource = VulkanUtilities.Init<ImageSubresourceLayers>() with
-                        {
-                            AspectMask = AspectMask,
-                            MipLevel = (uint)i - 1,
-                            BaseArrayLayer = (uint)arrayLayer,
-                            LayerCount = (uint)layerCount,
-                        },
-                        DstSubresource = VulkanUtilities.Init<ImageSubresourceLayers>() with
-                        {
-                            AspectMask = AspectMask,
-                            MipLevel = (uint)i,
-                            BaseArrayLayer = (uint)arrayLayer,
-                            LayerCount = (uint)layerCount
-                        }
-                    };
-
-                    blitRegion.SrcOffsets.Element1 = new Offset3D
-                    {
-                        X = currentWidth,
-                        Y = currentHeight,
-                        Z = 1
-                    };
-
-                    blitRegion.DstOffsets.Element1 = new Offset3D
-                    {
-                        X = nextWidth,
-                        Y = nextHeight,
-                        Z = 1
-                    };
-
-                    TransitionLayout(commandBuffer, transferDst, transferSrc, i - 1, 1, arrayLayer, layerCount);
-                    api.CmdBlitImage(commandBuffer.Buffer, mImage, transferSrc.Layout, mImage, transferDst.Layout, 1, blitRegion, mMipmapBlitFilter);
-
-                    currentWidth = nextWidth;
-                    currentHeight = nextHeight;
-                }
-
-                TransitionLayout(commandBuffer, transferSrc, currentLayout, 0, MipLevels - 1, arrayLayer, layerCount);
+                return;
             }
 
-            TransitionLayout(commandBuffer, transferDst, currentLayout, MipLevels - 1, 1, arrayLayer, layerCount);
+            var api = VulkanContext.API;
+            var transferDst = GetLayout(DeviceImageLayoutName.CopyDestination);
+            var transferSrc = GetLayout(DeviceImageLayoutName.CopySource);
+
+            int currentWidth = Size.Width;
+            int currentHeight = Size.Height;
+            for (int i = 1; i < MipLevels; i++)
+            {
+                int nextWidth = currentWidth > 1 ? currentWidth / 2 : 1;
+                int nextHeight = currentHeight > 1 ? currentHeight / 2 : 1;
+
+                var blitRegion = VulkanUtilities.Init<ImageBlit>() with
+                {
+                    SrcSubresource = VulkanUtilities.Init<ImageSubresourceLayers>() with
+                    {
+                        AspectMask = AspectMask,
+                        MipLevel = (uint)i - 1,
+                        BaseArrayLayer = (uint)arrayLayer,
+                        LayerCount = (uint)layerCount,
+                    },
+                    DstSubresource = VulkanUtilities.Init<ImageSubresourceLayers>() with
+                    {
+                        AspectMask = AspectMask,
+                        MipLevel = (uint)i,
+                        BaseArrayLayer = (uint)arrayLayer,
+                        LayerCount = (uint)layerCount
+                    }
+                };
+
+                blitRegion.SrcOffsets.Element1 = new Offset3D
+                {
+                    X = currentWidth,
+                    Y = currentHeight,
+                    Z = 1
+                };
+
+                blitRegion.DstOffsets.Element1 = new Offset3D
+                {
+                    X = nextWidth,
+                    Y = nextHeight,
+                    Z = 1
+                };
+
+                TransitionLayout(commandBuffer, transferDst, transferSrc, i - 1, 1, arrayLayer, layerCount);
+                api.CmdBlitImage(commandBuffer.Buffer, mImage, transferSrc.Layout, mImage, transferDst.Layout, 1, blitRegion, mMipmapBlitFilter);
+
+                currentWidth = nextWidth;
+                currentHeight = nextHeight;
+            }
+
+            TransitionLayout(commandBuffer, transferSrc, currentLayout, 0, MipLevels - 1, arrayLayer, layerCount);
         }
 
         void IDeviceImage.CopyToBuffer(ICommandList commandList, IDeviceBuffer destination, IDeviceImageLayout currentLayout)
@@ -737,6 +751,84 @@ namespace CodePlayground.Graphics.Vulkan
             api.CmdPipelineBarrier(commandBuffer.Buffer, sourceLayout.Stage, destinationLayout.Stage,
                                    DependencyFlags.None, 0, null, 0, null, 1, &barrier);
         }
+
+        void IDeviceImage.CopyCubeFace(ICommandList commandList, int face, IDeviceImage source, IDeviceImageLayout currentLayout, IDeviceImageLayout sourceLayout)
+        {
+            if (commandList is not VulkanCommandBuffer || source is not VulkanImage || currentLayout is not VulkanImageLayout || sourceLayout is not VulkanImageLayout)
+            {
+                throw new ArgumentException("Must pass Vulkan objects!");
+            }
+
+            CopyCubeFace((VulkanCommandBuffer)commandList, face, (VulkanImage)source, (VulkanImageLayout)currentLayout, (VulkanImageLayout)sourceLayout);
+        }
+
+        public unsafe void CopyCubeFace(VulkanCommandBuffer commandBuffer, int face, VulkanImage source, VulkanImageLayout currentLayout, VulkanImageLayout sourceLayout)
+        {
+            using var blitEvent = OptickMacros.Event();
+            using var gpuEvent = OptickMacros.GPUEvent("Cube face copy");
+
+            if (Type != DeviceImageType.TypeCube || source.Type != DeviceImageType.Type2D)
+            {
+                throw new ArgumentException("Incompatible image types!");
+            }
+
+            if (Size != source.Size)
+            {
+                throw new ArgumentException("Mismatching size!");
+            }
+
+            if (face < 0 || face >= ArrayLayers)
+            {
+                throw new ArgumentOutOfRangeException(nameof(face));
+            }
+
+            var api = VulkanContext.API;
+            var transferSrc = GetLayout(DeviceImageLayoutName.CopySource);
+            var transferDst = GetLayout(DeviceImageLayoutName.CopyDestination);
+
+            var copy = VulkanUtilities.Init<ImageCopy>() with
+            {
+                SrcSubresource = VulkanUtilities.Init<ImageSubresourceLayers>() with
+                {
+                    AspectMask = source.AspectMask,
+                    MipLevel = 0,
+                    BaseArrayLayer = 0,
+                    LayerCount = 1
+                },
+                SrcOffset = VulkanUtilities.Init<Offset3D>(),
+                DstSubresource = VulkanUtilities.Init<ImageSubresourceLayers>() with
+                {
+                    AspectMask = AspectMask,
+                    MipLevel = 0,
+                    BaseArrayLayer = (uint)face,
+                    LayerCount = 1
+                },
+                DstOffset = VulkanUtilities.Init<Offset3D>(),
+                Extent = VulkanUtilities.Init<Extent3D>() with
+                {
+                    Width = (uint)Size.Width,
+                    Height = (uint)Size.Height,
+                    Depth = 1
+                }
+            };
+
+            commandBuffer.Checkpoint("Before initial transition");
+            TransitionLayout(commandBuffer, currentLayout, transferDst, 0, MipLevels, face, 1);
+            commandBuffer.Checkpoint("After destination transition; before source");
+            source.TransitionLayout(commandBuffer, sourceLayout, transferSrc, 0, 1, 0, 1);
+
+            commandBuffer.Checkpoint("After initial transition; before copy");
+            api.CmdCopyImage(commandBuffer.Buffer, source.mImage, transferSrc.Layout, mImage, transferDst.Layout, 1, copy);
+            commandBuffer.Checkpoint("Before final source transtion; after copy");
+            source.TransitionLayout(commandBuffer, transferSrc, sourceLayout, 0, 1, 0, 1);
+            commandBuffer.Checkpoint("After final source transition; before mipmaps");
+
+            GenerateMipmaps(commandBuffer, currentLayout, face, 1);
+            commandBuffer.Checkpoint("After mipmaps; before final destination transition");
+            TransitionLayout(commandBuffer, transferDst, currentLayout, MipLevels - 1, 1, face, 1);
+            commandBuffer.Checkpoint("After final transition");
+        }
+
 
         ITexture IDeviceImage.CreateTexture(bool ownsImage, ISamplerSettings? samplerSettings)
         {

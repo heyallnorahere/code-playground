@@ -34,13 +34,20 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 // vertex shader
                 [ShaderVariableID.OutputPosition] = "gl_Position",
 
+                // fragment shader
+                [ShaderVariableID.FragmentDepth] = "gl_FragDepth",
+
+                // geometry shader
+                [ShaderVariableID.CubemapLayer] = "gl_Layer",
+                [ShaderVariableID.GeometryInput] = "gl_in",
+
                 // compute shader
                 [ShaderVariableID.WorkGroupCount] = "gl_NumWorkGroups",
                 [ShaderVariableID.WorkGroupID] = "gl_WorkGroupID",
                 [ShaderVariableID.WorkGroupSize] = "gl_WorkGroupSize", // compile-time constant
                 [ShaderVariableID.LocalInvocationID] = "gl_LocalInvocationID",
                 [ShaderVariableID.GlobalInvocationID] = "gl_GlobalInvocationID",
-                [ShaderVariableID.LocalInvocationIndex] = "gl_LocalInvocationIndex"
+                [ShaderVariableID.LocalInvocationIndex] = "gl_LocalInvocationIndex",
             };
 
             sConversionTypes = new Dictionary<string, string>
@@ -321,6 +328,11 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         {
             using var parseEvent = OptickMacros.Event();
             OptickMacros.Tag("Parsed structure", type);
+
+            if (type == typeof(void))
+            {
+                return;
+            }
 
             var shaderVariableAttributes = provider.GetCustomAttributes(typeof(ShaderVariableAttribute), true);
             if (shaderVariableAttributes.Length != 0)
@@ -718,7 +730,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                         else if (name.StartsWith("ld")) // load value
                         {
                             string loadType = name[2..];
-                            if (!loadType.StartsWith("ind")) // if were not loading from a pointer
+                            if (!loadType.StartsWith("ind")) // if were not loading from a pointer (if we are we dont need to modify the stack at all)
                             {
                                 string expression;
                                 if (instruction.Operand is FieldInfo field) // loading from a field
@@ -729,13 +741,23 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                     if (field.DeclaringType == type || field.IsStatic) // loading a resource/shader input
                                     {
                                         // todo(nora): abstract into member method. we dont want to repeat this one snippet of code over and over again
+                                        var fieldType = field.FieldType;
                                         if (layoutAttribute is null)
                                         {
                                             throw new InvalidOperationException("Static and/or shader fields must have the Layout attribute applied!");
                                         }
+                                        else if (layoutAttribute.Location >= 0)
+                                        {
+                                            mStageIO.TryAdd(fieldName, new StageIOField
+                                            {
+                                                Direction = StageIODirection.In,
+                                                Location = layoutAttribute.Location,
+                                                TypeName = GetTypeName(field.FieldType, type, true),
+                                                Flat = layoutAttribute.Flat
+                                            });
+                                        }
                                         else if (layoutAttribute.Shared) // declaring a shared variable
                                         {
-                                            var fieldType = field.FieldType;
                                             ProcessType(fieldType, type);
 
                                             if (!mSharedVariables.ContainsKey(fieldName))
@@ -745,8 +767,6 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                         }
                                         else if (!mStageResources.ContainsKey(fieldName)) // declaring a stage resource
                                         {
-                                            var fieldType = field.FieldType;
-
                                             int arraySize = -1;
                                             if (fieldType.IsArray)
                                             {
@@ -807,6 +827,14 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                         if (inputFields.TryGetValue(expression, out string? inputName))
                                         {
                                             expression = inputName;
+                                        }
+                                        else if (parentExpression != "this")
+                                        {
+                                            var attribute = field.GetCustomAttribute<ShaderVariableAttribute>();
+                                            if (attribute is not null)
+                                            {
+                                                expression = sShaderVariableNames[attribute.ID];
+                                            }
                                         }
                                     }
                                     else
@@ -914,13 +942,35 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                     expression = $"{fieldTypeName}({expression})";
                                 }
 
-                                var destination = GetFieldName(field, type);
+                                string destination = GetFieldName(field, type);
                                 if (!field.IsStatic) // non-static field
                                 {
                                     var destinationObject = evaluationStack.Pop();
                                     if (destinationObject != "this")
                                     {
                                         destination = $"{destinationObject}.{destination}";
+                                    }
+                                }
+                                else
+                                {
+                                    var shaderVariableAttribute = field.GetCustomAttribute<ShaderVariableAttribute>();
+                                    if (shaderVariableAttribute is not null)
+                                    {
+                                        destination = sShaderVariableNames[shaderVariableAttribute.ID];
+                                    }
+                                    else
+                                    {
+                                        var layoutAttribute = field.GetCustomAttribute<LayoutAttribute>();
+                                        if (layoutAttribute?.Location >= 0 && !mStageIO.ContainsKey(destination))
+                                        {
+                                            mStageIO.Add(destination, new StageIOField
+                                            {
+                                                Direction = StageIODirection.Out,
+                                                Location = layoutAttribute.Location,
+                                                TypeName = GetTypeName(fieldType, type, true),
+                                                Flat = layoutAttribute.Flat
+                                            });
+                                        }
                                     }
                                 }
 
@@ -1667,13 +1717,45 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 builder.AppendLine($"layout(location = {fieldData.Location}) {direction} {fieldData.TypeName} {fieldName};");
             }
 
-            if (stage == ShaderStage.Compute)
+            switch (stage)
             {
-                var attribute = entrypoint.GetCustomAttribute<NumThreadsAttribute>();
-                if (attribute is not null)
-                {
-                    builder.AppendLine($"layout(local_size_x = {attribute.X}, local_size_y = {attribute.Y}, local_size_z = {attribute.Z}) in;");
-                }
+                case ShaderStage.Compute:
+                    {
+                        var attribute = entrypoint.GetCustomAttribute<NumThreadsAttribute>();
+                        if (attribute is not null)
+                        {
+                            builder.AppendLine($"layout(local_size_x = {attribute.X}, local_size_y = {attribute.Y}, local_size_z = {attribute.Z}) in;");
+                        }
+                    }
+                    break;
+                case ShaderStage.Geometry:
+                    {
+                        var attribute = entrypoint.GetCustomAttribute<GeometryPrimitivesAttribute>();
+                        if (attribute is not null)
+                        {
+                            var input = attribute.Input switch
+                            {
+                                GeometryInputPrimitive.Points => "points",
+                                GeometryInputPrimitive.Lines => "lines",
+                                GeometryInputPrimitive.LinesAdjacency => "lines_adjacency",
+                                GeometryInputPrimitive.Triangles => "triangles",
+                                GeometryInputPrimitive.TrianglesAdjacency => "triangles_adjacency",
+                                _ => throw new ArgumentException("Invalid input primitive!")
+                            };
+
+                            var output = attribute.Output switch
+                            {
+                                GeometryOutputPrimitive.Points => "points",
+                                GeometryOutputPrimitive.LineStrip => "line_strip",
+                                GeometryOutputPrimitive.TriangleStrip => "triangle_strip",
+                                _ => throw new ArgumentException("Invalid output primitive!")
+                            };
+
+                            builder.AppendLine($"layout({input}) in;");
+                            builder.AppendLine($"layout({output}, max_vertices = {attribute.MaxVertices}) out;");
+                        }
+                    }
+                    break;
             }
 
             foreach (string fieldName in mStageResources.Keys)

@@ -3,6 +3,7 @@ using Silk.NET.Core;
 using Silk.NET.Core.Attributes;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.NV;
 using Spirzza.Interop.SpirvCross;
 using System;
 using System.Collections.Generic;
@@ -91,12 +92,74 @@ namespace CodePlayground.Graphics.Vulkan
             return Vk.MakeVersion(major, minor, patch);
         }
 
+        private static void DumpCheckpointData()
+        {
+            var app = Application.Instance;
+            if (app is not GraphicsApplication graphicsApplication)
+            {
+                return;
+            }
+
+            var context = graphicsApplication.GraphicsContext;
+            if (context is not VulkanContext vulkanContext)
+            {
+                return;
+            }
+
+            var device = vulkanContext.Device;
+            var api = VulkanContext.API;
+
+            if (!api.TryGetDeviceExtension(device.PhysicalDevice.Instance, device.Device, out NVDeviceDiagnosticCheckpoints extension))
+            {
+                return;
+            }
+
+            Console.WriteLine($"Dumping checkpoint data collected");
+            foreach (int family in device.QueueFamilies)
+            {
+                var queue = device.GetQueue(family);
+                Console.WriteLine($"\tQueue family {family}: {queue.Usage}");
+
+                unsafe
+                {
+                    uint entryCount = 0;
+                    extension.GetQueueCheckpointData(queue.Queue, &entryCount, null);
+
+                    if (entryCount > 0)
+                    {
+                        var entries = new CheckpointDataNV[entryCount];
+                        Array.Fill(entries, Init<CheckpointDataNV>());
+
+                        fixed (CheckpointDataNV* entriesPtr = entries)
+                        {
+                            extension.GetQueueCheckpointData(queue.Queue, &entryCount, entriesPtr);
+                        }
+
+                        foreach (var entry in entries)
+                        {
+                            var identifier = Marshal.PtrToStringUTF8((nint)entry.PCheckpointMarker);
+                            Console.WriteLine($"\t\t{identifier}");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"No entries found");
+                    }
+                }
+            }
+        }
+
         public static void Assert(this Result result, Action<Result>? onFail = null)
         {
             if (result != Result.Success)
             {
                 if (onFail is null)
                 {
+                    if (result == Result.ErrorDeviceLost)
+                    {
+                        DumpCheckpointData();
+                    }
+
                     throw new Exception($"Vulkan error caught: {result}");
                 }
                 else
@@ -200,7 +263,7 @@ namespace CodePlayground.Graphics.Vulkan
 
             string functionName = name[prefix.Length..];
             var voidFunction = api(functionName);
-            
+
             try
             {
                 return Marshal.GetDelegateForFunctionPointer<T>((nint)voidFunction.Handle);

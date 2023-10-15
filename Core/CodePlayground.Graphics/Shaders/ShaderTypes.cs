@@ -133,6 +133,22 @@ namespace CodePlayground.Graphics.Shaders
         {
             throw new NotImplementedException();
         }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("EmitVertex", Language = ShaderLanguage.GLSL)]
+        public static void EmitVertex()
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("EndPrimitive", Language = ShaderLanguage.GLSL)]
+        public static void EndPrimitive()
+        {
+            throw new NotImplementedException();
+        }
     }
 
     // specifically atomic operations
@@ -551,6 +567,27 @@ namespace CodePlayground.Graphics.Shaders
         [BuiltinShaderFunction]
         [NamedShaderSymbol("texture", Language = ShaderLanguage.GLSL)]
         public Vector4<T> Sample(Vector2<T> uv, float bias)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    [PrimitiveShaderType(Instantiable = false, TypeClass = PrimitiveShaderTypeClass.Sampler)]
+    [NamedShaderSymbol("samplerCube", Language = ShaderLanguage.GLSL)]
+    public sealed class SamplerCube<T> where T : unmanaged
+    {
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("texture", Language = ShaderLanguage.GLSL)]
+        public Vector4<T> Sample(Vector3<T> uv)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("texture", Language = ShaderLanguage.GLSL)]
+        public Vector4<T> Sample(Vector3<T> uv, float bias)
         {
             throw new NotImplementedException();
         }

@@ -329,16 +329,17 @@ namespace CodePlayground.Graphics.Vulkan
             using var pushConstantsEvent = OptickMacros.Event();
             using var gpuPushConstantsEvent = OptickMacros.GPUEvent("Push constants");
 
-            mReflectionView!.ProcessPushConstantBuffers(out int size, out ShaderStageFlags stages);
+            int totalSize = mReflectionView!.TotalPushConstantSize;
+            var stages = mReflectionView!.PushConstantStages;
 
-            var buffer = new byte[size];
+            var buffer = new byte[totalSize];
             var span = new Span<byte>(buffer);
             callback.Invoke(span);
 
             fixed (byte* data = buffer)
             {
                 var api = VulkanContext.API;
-                api.CmdPushConstants(commandBuffer.Buffer, mLayout, stages, 0, (uint)size, data);
+                api.CmdPushConstants(commandBuffer.Buffer, mLayout, stages, 0, (uint)totalSize, data);
             }
         }
 
@@ -736,50 +737,9 @@ namespace CodePlayground.Graphics.Vulkan
                 setLayouts[set] = mDescriptorSets[set].Layout;
             }
 
-            var pushConstantRanges = new Dictionary<string, PushConstantRange>();
-            using (OptickMacros.Event("Process push constant ranges"))
-            {
-                int currentOffset = 0;
-                var reflectionData = mReflectionView!.ReflectionData;
-
-                foreach (var stage in reflectionData.Keys)
-                {
-                    var data = reflectionData[stage];
-                    foreach (var pushConstantBuffer in data.PushConstantBuffers)
-                    {
-                        var name = pushConstantBuffer.Name;
-                        var typeData = data.Types[pushConstantBuffer.Type];
-                        var size = typeData.TotalSize;
-
-                        if (!pushConstantRanges.ContainsKey(name))
-                        {
-                            pushConstantRanges.Add(name, new PushConstantRange
-                            {
-                                StageFlags = ConvertStage(stage),
-                                Offset = (uint)currentOffset,
-                                Size = (uint)size
-                            });
-
-                            mPushConstantBufferOffsets.Add(name, currentOffset);
-                            currentOffset += size;
-                        }
-                        else if (pushConstantRanges[name].Size != (uint)size)
-                        {
-                            throw new InvalidOperationException("Mismatching push constant buffer sizes!");
-                        }
-                        else
-                        {
-                            var range = pushConstantRanges[name];
-                            range.StageFlags |= ConvertStage(stage);
-                            pushConstantRanges[name] = range;
-                        }
-                    }
-                }
-            }
-
             fixed (DescriptorSetLayout* layoutPtr = setLayouts)
             {
-                var ranges = pushConstantRanges.Values.ToArray();
+                var ranges = mReflectionView!.PushConstantRanges.Values.ToArray();
                 fixed (PushConstantRange* rangePtr = ranges)
                 {
                     var createInfo = VulkanUtilities.Init<PipelineLayoutCreateInfo>() with

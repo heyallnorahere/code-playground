@@ -1,8 +1,10 @@
 ﻿using Optick.NET;
 using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.NV;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 namespace CodePlayground.Graphics.Vulkan
 {
@@ -14,29 +16,30 @@ namespace CodePlayground.Graphics.Vulkan
 
     public sealed class VulkanCommandBuffer : ICommandList, IDisposable
     {
-        public VulkanCommandBuffer(CommandPool pool, Device device, CommandQueueFlags queueUsage)
+        public VulkanCommandBuffer(VulkanQueue queue)
         {
             using var constructorEvent = OptickMacros.Event();
 
             mDisposed = false;
             mRecording = false;
 
-            mPool = pool;
-            mDevice = device;
-            mQueueUsage = queueUsage;
+            mPool = queue.Pool;
+            mDevice = queue.Device;
+            mQueueUsage = queue.Usage;
+            mMarshal = queue.Marshal;
 
             mStagingObjects = new List<IDisposable>();
             mSemaphores = new List<VulkanSemaphoreInfo>();
 
             var allocInfo = VulkanUtilities.Init<CommandBufferAllocateInfo>() with
             {
-                CommandPool = pool,
+                CommandPool = mPool,
                 Level = CommandBufferLevel.Primary,
                 CommandBufferCount = 1
             };
 
             var api = VulkanContext.API;
-            api.AllocateCommandBuffers(device, allocInfo, out mBuffer).Assert();
+            api.AllocateCommandBuffers(mDevice.Device, allocInfo, out mBuffer).Assert();
         }
 
         ~VulkanCommandBuffer()
@@ -68,7 +71,7 @@ namespace CodePlayground.Graphics.Vulkan
             }
 
             var api = VulkanContext.API;
-            api.FreeCommandBuffers(mDevice, mPool, 1, mBuffer);
+            api.FreeCommandBuffers(mDevice.Device, mPool, 1, mBuffer);
         }
 
         public void Begin()
@@ -94,6 +97,18 @@ namespace CodePlayground.Graphics.Vulkan
 
             var api = VulkanContext.API;
             api.CmdPipelineBarrier(mBuffer, PipelineStageFlags.BottomOfPipeBit, PipelineStageFlags.TopOfPipeBit, DependencyFlags.None, 0, null, 0, null, 0, null);
+        }
+
+        public unsafe void Checkpoint(string identifier)
+        {
+            var api = VulkanContext.API;
+            if (!api.TryGetDeviceExtension(mDevice.PhysicalDevice.Instance, mDevice.Device, out NVDeviceDiagnosticCheckpoints extension))
+            {
+                return;
+            }
+
+            byte* pointer = mMarshal.MarshalString(identifier);
+            extension.CmdSetCheckpoint(mBuffer, pointer);
         }
 
         void ICommandList.AddSemaphore(IDisposable semaphore, SemaphoreUsage usage)
@@ -154,11 +169,12 @@ namespace CodePlayground.Graphics.Vulkan
         public nint Address => mBuffer.Handle;
 
         private bool mDisposed, mRecording;
-        private readonly Device mDevice;
+        private readonly VulkanDevice mDevice;
         private readonly CommandPool mPool;
         private readonly CommandBuffer mBuffer;
         private readonly CommandQueueFlags mQueueUsage;
 
+        private readonly StringMarshal mMarshal;
         private readonly List<IDisposable> mStagingObjects;
         internal readonly List<VulkanSemaphoreInfo> mSemaphores;
     }
@@ -188,7 +204,7 @@ namespace CodePlayground.Graphics.Vulkan
         public unsafe VulkanFence(VulkanDevice device, bool signaled)
         {
             mDisposed = false;
-            mDevice = device.Device;
+            mDevice = device;
 
             var fenceInfo = VulkanUtilities.Init<FenceCreateInfo>() with
             {
@@ -198,7 +214,7 @@ namespace CodePlayground.Graphics.Vulkan
             var api = VulkanContext.API;
             fixed (Fence* fence = &mFence)
             {
-                api.CreateFence(mDevice, fenceInfo, null, fence).Assert();
+                api.CreateFence(mDevice.Device, fenceInfo, null, fence).Assert();
             }
         }
 
@@ -225,13 +241,13 @@ namespace CodePlayground.Graphics.Vulkan
         private unsafe void Dispose(bool disposing)
         {
             var api = VulkanContext.API;
-            api.DestroyFence(mDevice, mFence, null);
+            api.DestroyFence(mDevice.Device, mFence, null);
         }
 
         public bool IsSignaled()
         {
             var api = VulkanContext.API;
-            var result = api.GetFenceStatus(mDevice, mFence);
+            var result = api.GetFenceStatus(mDevice.Device, mFence);
 
             if (result == Result.NotReady)
             {
@@ -245,13 +261,13 @@ namespace CodePlayground.Graphics.Vulkan
         public void Reset()
         {
             var api = VulkanContext.API;
-            api.ResetFences(mDevice, 1, mFence).Assert();
+            api.ResetFences(mDevice.Device, 1, mFence).Assert();
         }
 
         public bool Wait(ulong timeout)
         {
             var api = VulkanContext.API;
-            var result = api.WaitForFences(mDevice, 1, mFence, true, timeout);
+            var result = api.WaitForFences(mDevice.Device, 1, mFence, true, timeout);
 
             if (result == Result.NotReady)
             {
@@ -264,7 +280,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public Fence Fence => mFence;
 
-        private readonly Device mDevice;
+        private readonly VulkanDevice mDevice;
         private readonly Fence mFence;
 
         private bool mDisposed;
@@ -277,12 +293,13 @@ namespace CodePlayground.Graphics.Vulkan
             using var constructorEvent = OptickMacros.Event();
 
             var api = VulkanContext.API;
-            mDevice = device.Device;
-            mQueue = api.GetDeviceQueue(mDevice, (uint)queueFamily, 0);
+            mDevice = device;
+            mQueue = api.GetDeviceQueue(mDevice.Device, (uint)queueFamily, 0);
 
             mStoredBuffers = new Queue<StoredCommandBuffer>();
             mFences = new Queue<Fence>();
             mAllocatedBuffers = new Queue<VulkanCommandBuffer>();
+            mMarshal = new StringMarshal();
 
             mUsage = usage;
             mBufferCap = -1;
@@ -298,7 +315,7 @@ namespace CodePlayground.Graphics.Vulkan
 
                 fixed (CommandPool* ptr = &mPool)
                 {
-                    api.CreateCommandPool(mDevice, &createInfo, null, ptr).Assert();
+                    api.CreateCommandPool(mDevice.Device, &createInfo, null, ptr).Assert();
                 }
             }
         }
@@ -328,11 +345,16 @@ namespace CodePlayground.Graphics.Vulkan
             using var disposeEvent = OptickMacros.Event();
             ClearCache();
 
+            if (disposing)
+            {
+                mMarshal.Dispose();
+            }
+
             var api = VulkanContext.API;
             while (mFences.Count > 0)
             {
                 var fence = mFences.Dequeue();
-                api.DestroyFence(mDevice, fence, null);
+                api.DestroyFence(mDevice.Device, fence, null);
             }
 
             while (mAllocatedBuffers.Count > 0)
@@ -341,7 +363,7 @@ namespace CodePlayground.Graphics.Vulkan
                 buffer.Dispose();
             }
 
-            api.DestroyCommandPool(mDevice, mPool, null);
+            api.DestroyCommandPool(mDevice.Device, mPool, null);
         }
 
         ICommandList ICommandQueue.Release() => Release();
@@ -359,11 +381,11 @@ namespace CodePlayground.Graphics.Vulkan
                 var commandBuffer = buffer.CommandBuffer;
 
                 var api = VulkanContext.API;
-                if (api.GetFenceStatus(mDevice, fence) == Result.Success)
+                if (api.GetFenceStatus(mDevice.Device, fence) == Result.Success)
                 {
                     if (buffer.OwnsFence)
                     {
-                        api.ResetFences(mDevice, 1, fence);
+                        api.ResetFences(mDevice.Device, 1, fence);
                         mFences.Enqueue(fence);
                     }
 
@@ -374,11 +396,11 @@ namespace CodePlayground.Graphics.Vulkan
                 }
                 else if (mBufferCap >= 0 && mStoredBuffers.Count > mBufferCap)
                 {
-                    api.WaitForFences(mDevice, 1, fence, true, ulong.MaxValue).Assert();
+                    api.WaitForFences(mDevice.Device, 1, fence, true, ulong.MaxValue).Assert();
                 }
             }
 
-            return new VulkanCommandBuffer(mPool, mDevice, mUsage);
+            return new VulkanCommandBuffer(this);
         }
 
         void ICommandQueue.Submit(ICommandList commandList, bool wait, IFence? fence)
@@ -415,7 +437,7 @@ namespace CodePlayground.Graphics.Vulkan
                 };
 
                 var api = VulkanContext.API;
-                api.CreateFence(mDevice, &fenceInfo, null, &fence).Assert();
+                api.CreateFence(mDevice.Device, &fenceInfo, null, &fence).Assert();
             }
 
             return fence;
@@ -484,7 +506,7 @@ namespace CodePlayground.Graphics.Vulkan
 
             if (wait)
             {
-                api.WaitForFences(mDevice, 1, fence, true, ulong.MaxValue).Assert();
+                api.WaitForFences(mDevice.Device, 1, fence, true, ulong.MaxValue).Assert();
             }
         }
 
@@ -507,7 +529,7 @@ namespace CodePlayground.Graphics.Vulkan
 
                 if (storedBuffer.OwnsFence)
                 {
-                    api.DestroyFence(mDevice, storedBuffer.Fence, null);
+                    api.DestroyFence(mDevice.Device, storedBuffer.Fence, null);
                 }
             }
         }
@@ -545,11 +567,11 @@ namespace CodePlayground.Graphics.Vulkan
             var api = VulkanContext.API;
             if (wait)
             {
-                api.WaitForFences(mDevice, 1, fence, true, ulong.MaxValue).Assert();
+                api.WaitForFences(mDevice.Device, 1, fence, true, ulong.MaxValue).Assert();
             }
             else
             {
-                var result = api.GetFenceStatus(mDevice, fence);
+                var result = api.GetFenceStatus(mDevice.Device, fence);
                 if (result == Result.NotReady)
                 {
                     return false;
@@ -569,7 +591,7 @@ namespace CodePlayground.Graphics.Vulkan
                 var storedFence = storedBuffer.Fence;
                 if (storedBuffer.OwnsFence)
                 {
-                    api.ResetFences(mDevice, 1, storedFence);
+                    api.ResetFences(mDevice.Device, 1, storedFence);
                     mFences.Enqueue(storedFence);
                 }
 
@@ -584,6 +606,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public CommandQueueFlags Usage => mUsage;
         public Queue Queue => mQueue;
+        public CommandPool Pool => mPool;
+        public VulkanDevice Device => mDevice;
         public int CommandListCap
         {
             get => mBufferCap;
@@ -594,9 +618,12 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
+        internal StringMarshal Marshal => mMarshal;
+
         private readonly Queue mQueue;
-        private readonly Device mDevice;
+        private readonly VulkanDevice mDevice;
         private readonly CommandPool mPool;
+        private readonly StringMarshal mMarshal;
 
         private readonly Queue<StoredCommandBuffer> mStoredBuffers;
         private readonly Queue<Fence> mFences;

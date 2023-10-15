@@ -51,7 +51,7 @@ namespace Ragdoll.Shaders
 
         public const int MaxBones = 100;
         public const int MaxInstances = 50;
-        public const int MaxPointLights = 32;
+        public const int MaxPointLights = 16;
 
         public struct BoneBufferData
         {
@@ -63,6 +63,10 @@ namespace Ragdoll.Shaders
         {
             public Matrix4x4<float> Model;
             public int BoneOffset;
+
+            // hacky workaround for vulkan memory layouts
+            public int LightIndex;
+            public int FaceIndex;
         }
 
         public struct MaterialBufferData
@@ -77,11 +81,15 @@ namespace Ragdoll.Shaders
             public float Quadratic, Linear, Constant;
         }
 
+        public const int CubemapFaceCount = 6;
         public struct PointLightData
         {
             public Vector3<float> Diffuse, Specular, Ambient;
             public Vector3<float> Position;
             public AttenuationData Attenuation;
+
+            [ArraySize(CubemapFaceCount)]
+            public Matrix4x4<float>[] ShadowMatrices;
         }
 
         public struct LightBufferData
@@ -89,6 +97,8 @@ namespace Ragdoll.Shaders
             [ArraySize(MaxPointLights)]
             public PointLightData[] PointLights;
             public int PointLightCount;
+
+            public float FarPlane;
         }
 
         private struct MaterialColorData
@@ -96,14 +106,19 @@ namespace Ragdoll.Shaders
             public Vector3<float> Diffuse, Specular, Ambient;
         }
 
+        [Layout(PushConstant = true)]
+        public static PushConstantData u_PushConstants;
+
         [Layout(Set = 0, Binding = 0)]
         public static CameraBufferData u_CameraBuffer;
         [Layout(Set = 0, Binding = 1)]
         public static BoneBufferData u_BoneBuffer;
+
         [Layout(Set = 0, Binding = 2)]
         public static LightBufferData u_LightBuffer;
-        [Layout(PushConstant = true)]
-        public static PushConstantData u_PushConstants;
+        [Layout(Set = 0, Binding = 3)]
+        [ArraySize(MaxPointLights)]
+        public static SamplerCube<float>[]? u_PointShadowMaps;
 
         [Layout(Set = 1, Binding = 0)]
         public static MaterialBufferData u_MaterialBuffer;
@@ -116,26 +131,33 @@ namespace Ragdoll.Shaders
         [Layout(Set = 1, Binding = 4)]
         public static Sampler2D<float>? u_NormalMap;
 
-        [ShaderEntrypoint(ShaderStage.Vertex)]
-        public static VertexOut VertexMain(VertexIn input)
+        public static Matrix4x4<float> CalculateModelMatrix(int boneCount, Vector4<int> boneIds, Vector4<float> boneWeights)
         {
             var transform = u_PushConstants.Model;
-            if (input.BoneCount > 0)
+            if (boneCount > 0)
             {
                 var boneTransform = new Matrix4x4<float>(0f);
-                for (int i = 0; i < input.BoneCount; i++)
+                for (int i = 0; i < boneCount; i++)
                 {
-                    int transformIndex = u_PushConstants.BoneOffset + input.BoneIDs[i];
-                    boneTransform += u_BoneBuffer.BoneTransforms[transformIndex] * input.BoneWeights[i];
+                    int transformIndex = u_PushConstants.BoneOffset + boneIds[i];
+                    boneTransform += u_BoneBuffer.BoneTransforms[transformIndex] * boneWeights[i];
                 }
-                
+
                 transform *= boneTransform;
             }
 
-            var vertexPosition = new Vector4<float>(input.Position, 1f);
-            var worldPosition = transform * vertexPosition;
+            return transform;
+        }
 
-            var normalMatrix = new Matrix3x3<float>(transform).Inverse().Transpose();
+        [ShaderEntrypoint(ShaderStage.Vertex)]
+        public static VertexOut VertexMain(VertexIn input)
+        {
+            var model = CalculateModelMatrix(input.BoneCount, input.BoneIDs, input.BoneWeights);
+
+            var vertexPosition = new Vector4<float>(input.Position, 1f);
+            var worldPosition = model * vertexPosition;
+
+            var normalMatrix = new Matrix3x3<float>(model).Inverse().Transpose();
             var normal = (normalMatrix * input.Normal).Normalize();
             var tangent = (normalMatrix * input.Tangent).Normalize();
             var bitangent = BuiltinFunctions.Cross(normal, tangent).Normalize();
@@ -211,9 +233,9 @@ namespace Ragdoll.Shaders
             var aggregate = new Vector3<float>(0f);
             var colorData = new MaterialColorData
             {
-                Diffuse = u_DiffuseMap!.Sample(input.UV).XYZ,
-                Specular = u_SpecularMap!.Sample(input.UV).XYZ,
-                Ambient = u_SpecularMap!.Sample(input.UV).XYZ
+                Diffuse = u_DiffuseMap!.Sample(input.UV).XYZ * u_MaterialBuffer.DiffuseColor,
+                Specular = u_SpecularMap!.Sample(input.UV).XYZ * u_MaterialBuffer.SpecularColor,
+                Ambient = u_SpecularMap!.Sample(input.UV).XYZ * u_MaterialBuffer.AmbientColor
             };
 
             for (int i = 0; i < u_LightBuffer.PointLightCount; i++)

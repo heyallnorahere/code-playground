@@ -152,13 +152,20 @@ namespace CodePlayground.Graphics.Shaders
         // vertex shader
         OutputPosition,
 
+        // fragment shader
+        FragmentDepth,
+
+        // geometry shader
+        CubemapLayer,
+        GeometryInput,
+
         // compute shader
         WorkGroupCount,
         WorkGroupID,
         WorkGroupSize,
         LocalInvocationID,
         GlobalInvocationID,
-        LocalInvocationIndex
+        LocalInvocationIndex,
     }
 
     [AttributeUsage(AttributeTargets.ReturnValue | AttributeTargets.Field | AttributeTargets.Parameter, AllowMultiple = false, Inherited = true)]
@@ -196,5 +203,36 @@ namespace CodePlayground.Graphics.Shaders
         public uint X { get; }
         public uint Y { get; }
         public uint Z { get; }
+    }
+
+    public enum GeometryInputPrimitive
+    {
+        Points,
+        Lines,
+        LinesAdjacency,
+        Triangles,
+        TrianglesAdjacency
+    }
+
+    public enum GeometryOutputPrimitive
+    {
+        Points,
+        LineStrip,
+        TriangleStrip
+    }
+
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
+    public sealed class GeometryPrimitivesAttribute : Attribute
+    {
+        public GeometryPrimitivesAttribute(GeometryInputPrimitive input, GeometryOutputPrimitive output, int maxVertices)
+        {
+            Input = input;
+            Output = output;
+            MaxVertices = maxVertices;
+        }
+
+        public GeometryInputPrimitive Input { get; }
+        public GeometryOutputPrimitive Output { get; }
+        public int MaxVertices { get; }
     }
 }

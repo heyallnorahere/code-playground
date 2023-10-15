@@ -427,14 +427,18 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 mReflectionData.Add(stage, shaders[stage].ReflectionData);
             }
+
+            mRanges = ProcessPushConstantBuffers(out mTotalPushConstantSize, out mPushConstantStages);
         }
 
-        public void ProcessPushConstantBuffers(out int size, out ShaderStageFlags stages)
+        private Dictionary<string, PushConstantRange> ProcessPushConstantBuffers(out int totalSize, out ShaderStageFlags stages)
         {
-            size = 0;
+            using var processPushConstantsEvent = OptickMacros.Event();
+
+            totalSize = 0;
             stages = ShaderStageFlags.None;
 
-            var processedBuffers = new HashSet<string>();
+            var ranges = new Dictionary<string, PushConstantRange>();
             foreach (var stage in mReflectionData.Keys)
             {
                 var data = mReflectionData[stage];
@@ -443,20 +447,33 @@ namespace CodePlayground.Graphics.Vulkan
                     continue;
                 }
 
-                stages |= VulkanPipeline.ConvertStage(stage);
+                var stageFlag = VulkanPipeline.ConvertStage(stage);
+                stages |= stageFlag;
+
                 foreach (var pushConstantBuffer in data.PushConstantBuffers)
                 {
-                    if (processedBuffers.Contains(pushConstantBuffer.Name))
+                    string name = pushConstantBuffer.Name;
+                    if (ranges.TryGetValue(name, out PushConstantRange range))
                     {
-                        continue;
+                        range.StageFlags |= stageFlag;
+                        ranges[name] = range;
                     }
+                    else
+                    {
+                        var typeData = data.Types[pushConstantBuffer.Type];
+                        ranges.Add(name, new PushConstantRange
+                        {
+                            StageFlags = stageFlag,
+                            Offset = (uint)totalSize,
+                            Size = (uint)typeData.Size
+                        });
 
-                    var typeData = data.Types[pushConstantBuffer.Type];
-                    size += typeData.Size;
-
-                    processedBuffers.Add(pushConstantBuffer.Name);
+                        totalSize += typeData.Size;
+                    }
                 }
             }
+
+            return ranges;
         }
 
         public int GetDescriptorSetBindingCount(int set)
@@ -520,10 +537,10 @@ namespace CodePlayground.Graphics.Vulkan
             return FindResource(resource, out _, out _, out _);
         }
 
-        private int GetBufferTypeID(ShaderStage stage, int set, int binding)
+        private int GetBufferTypeID(ShaderStage stage, int set, int binding, out bool pushConstant)
         {
             var reflectionData = mReflectionData[stage];
-            int typeId = set < 0 ? reflectionData.PushConstantBuffers[binding].Type : reflectionData.Resources[set][binding].Type;
+            int typeId = (pushConstant = set < 0) ? reflectionData.PushConstantBuffers[binding].Type : reflectionData.Resources[set][binding].Type;
 
             var typeData = reflectionData.Types[typeId];
             return typeData.Class != ShaderTypeClass.Struct ? -1 : typeId;
@@ -541,7 +558,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public int GetBufferSize(ShaderStage stage, int set, int binding)
         {
-            int typeId = GetBufferTypeID(stage, set, binding);
+            int typeId = GetBufferTypeID(stage, set, binding, out _);
             if (typeId < 0)
             {
                 return -1;
@@ -563,13 +580,20 @@ namespace CodePlayground.Graphics.Vulkan
 
         public int GetBufferOffset(ShaderStage stage, int set, int binding, string expression)
         {
-            int typeId = GetBufferTypeID(stage, set, binding);
+            int typeId = GetBufferTypeID(stage, set, binding, out bool pushConstant);
             if (typeId < 0)
             {
                 return -1;
             }
 
-            return GetTypeOffset(stage, typeId, expression);
+            int baseOffset = 0;
+            if (pushConstant)
+            {
+                string name = mReflectionData[stage].PushConstantBuffers[binding].Name;
+                baseOffset = (int)mRanges[name].Offset;
+            }
+
+            return baseOffset + GetTypeOffset(stage, typeId, expression);
         }
 
         internal static int[] ParseFieldExpression(string expression, out string fieldName)
@@ -715,12 +739,26 @@ namespace CodePlayground.Graphics.Vulkan
                 return null;
             }
 
-            int type = GetBufferTypeID(stage, set, binding);
-            return type < 0 ? null : new VulkanReflectionNode(this, resource, stage, type, 0);
+            int type = GetBufferTypeID(stage, set, binding, out bool pushConstant);
+            int baseOffset = 0;
+
+            if (pushConstant)
+            {
+                string name = mReflectionData[stage].PushConstantBuffers[binding].Name;
+                baseOffset = (int)mRanges[name].Offset;
+            }
+
+            return type < 0 ? null : new VulkanReflectionNode(this, resource, stage, type, baseOffset);
         }
 
+        public IReadOnlyDictionary<string, PushConstantRange> PushConstantRanges => mRanges;
+        public ShaderStageFlags PushConstantStages => mPushConstantStages;
+        public int TotalPushConstantSize => mTotalPushConstantSize;
         public IReadOnlyDictionary<ShaderStage, ShaderReflectionResult> ReflectionData => mReflectionData;
 
+        private readonly Dictionary<string, PushConstantRange> mRanges;
+        private readonly ShaderStageFlags mPushConstantStages;
+        private readonly int mTotalPushConstantSize;
         private readonly Dictionary<ShaderStage, ShaderReflectionResult> mReflectionData;
     }
 
@@ -743,22 +781,29 @@ namespace CodePlayground.Graphics.Vulkan
         IReflectionNode? IReflectionNode.Find(string name) => Find(name);
         public VulkanReflectionNode? Find(string name)
         {
-            var indices = VulkanReflectionView.ParseFieldExpression(name, out string fieldName);
-            var fields = TypeData.Fields;
+            try
+            {
+                var indices = VulkanReflectionView.ParseFieldExpression(name, out string fieldName);
+                var fields = TypeData.Fields;
 
-            if (fields is null || !fields.TryGetValue(fieldName, out ReflectedShaderField field))
+                if (fields is null || !fields.TryGetValue(fieldName, out ReflectedShaderField field))
+                {
+                    return null;
+                }
+
+                int offset = mOffset + field.Offset;
+                if (indices.Length > 0)
+                {
+                    var fieldType = mView.ReflectionData[mStage].Types[field.Type];
+                    offset += VulkanReflectionView.GetIndexedOffset(indices, field, fieldType);
+                }
+
+                return new VulkanReflectionNode(mView, mResourceName, mStage, field.Type, offset);
+            }
+            catch (Exception)
             {
                 return null;
             }
-
-            int offset = mOffset + field.Offset;
-            if (indices.Length > 0)
-            {
-                var fieldType = mView.ReflectionData[mStage].Types[field.Type];
-                offset += VulkanReflectionView.GetIndexedOffset(indices, field, fieldType);
-            }
-
-            return new VulkanReflectionNode(mView, mResourceName, mStage, field.Type, offset);
         }
 
         private readonly VulkanReflectionView mView;

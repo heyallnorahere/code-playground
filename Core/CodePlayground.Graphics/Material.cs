@@ -31,6 +31,7 @@ namespace CodePlayground.Graphics
 
     public sealed class Material : IDisposable
     {
+        public static IPipelineSpecification CreateDefaultPipelineSpec() => new MaterialPipelineSpecification();
         public Material(string name, ITexture whiteTexture, IGraphicsContext context)
         {
             PipelineSpecification = new MaterialPipelineSpecification();
@@ -80,7 +81,7 @@ namespace CodePlayground.Graphics
         public unsafe void Set<T>(string name, T data) where T : unmanaged
         {
             var buffer = new byte[sizeof(T)];
-            Marshal.Copy((nint)(void*)&data, buffer, 0, sizeof(T));
+            MemoryMarshal.Write(buffer, ref data);
             mFields[name] = buffer;
         }
 

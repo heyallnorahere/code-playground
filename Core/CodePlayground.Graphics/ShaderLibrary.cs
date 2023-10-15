@@ -48,6 +48,20 @@ namespace CodePlayground.Graphics
             return string.IsNullOrEmpty(attribute.ID) ? type.Name : attribute.ID;
         }
 
+        public static string ConvertResourceName<S, D>(string resourceName) where S : class where D : class => ConvertResourceName(resourceName, typeof(S), typeof(D));
+        public static string ConvertResourceName(string resourceName, Type shaderType, Type declaredType)
+        {
+            if (shaderType != declaredType)
+            {
+                var declaredName = declaredType.FullName ?? declaredType.Name;
+                return $"{declaredName.Replace('.', '_')}_{resourceName}";
+            }
+            else
+            {
+                return resourceName;
+            }
+        }
+
         private void Load(Assembly assembly)
         {
             using var loadEvent = OptickMacros.Event();

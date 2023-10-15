@@ -336,6 +336,7 @@ namespace CodePlayground.Graphics
         public void End();
 
         public void ExecutionBarrier();
+        public void Checkpoint(string identifier);
 
         public void AddSemaphore(IDisposable semaphore, SemaphoreUsage usage);
         public void PushStagingObject(IDisposable stagingObject);
@@ -440,6 +441,7 @@ namespace CodePlayground.Graphics
         public void CopyFromBuffer(ICommandList commandList, IDeviceBuffer source, IDeviceImageLayout currentLayout);
         public void CopyToBuffer(ICommandList commandList, IDeviceBuffer destination, IDeviceImageLayout currentLayout);
         public void TransitionLayout(ICommandList commandList, IDeviceImageLayout srcLayout, IDeviceImageLayout dstLayout);
+        public void CopyCubeFace(ICommandList commandList, int face, IDeviceImage source, IDeviceImageLayout currentLayout, IDeviceImageLayout sourceLayout);
 
         public ITexture CreateTexture(bool ownsImage, ISamplerSettings? samplerSettings = null);
     }

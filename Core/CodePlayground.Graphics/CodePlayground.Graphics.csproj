@@ -21,6 +21,7 @@
     <PackageReference Include="Silk.NET.Input" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="$(SilkNETVersion)" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.NV" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Windowing" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.SDL" Version="2.17.1-build3832.0" />

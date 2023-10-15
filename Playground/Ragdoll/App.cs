@@ -1,12 +1,15 @@
 using CodePlayground;
 using CodePlayground.Graphics;
+using CodePlayground.Graphics.Vulkan;
 using Optick.NET;
 using Ragdoll.Layers;
+using Silk.NET.Vulkan.Extensions.NV;
 using System.Numerics;
 
 namespace Ragdoll
 {
     [ApplicationTitle("Ragdoll")]
+    [RequestedVulkanExtension(NVDeviceDiagnosticCheckpoints.ExtensionName, VulkanExtensionLevel.Device, VulkanExtensionType.Extension, Required = false)]
     internal sealed class App : GraphicsApplication
     {
         public static int Main(string[] args) => RunApplication<App>(args);
@@ -45,7 +48,7 @@ namespace Ragdoll
 
             // enable profiling
             InitializeOptick();
-            var loadEvent = OptickMacros.Event();
+            using var loadEvent = OptickMacros.Event();
 
             mRenderer = new Renderer(context);
             mModelRegistry = new ModelRegistry(context);
