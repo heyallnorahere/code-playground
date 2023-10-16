@@ -267,6 +267,7 @@ namespace CodePlayground.Graphics
         public PipelineType Type { get; set; }
         public int FrameCount { get; set; }
         public IPipelineSpecification? Specification { get; set; }
+        public object? VertexAttributeLayout { get; set; }
     }
 
     public interface IGraphicsContext : IDisposable
@@ -482,6 +483,7 @@ namespace CodePlayground.Graphics
     {
         public bool ResourceExists(string resource);
         public int GetBufferSize(string resource);
+        public object CreateVertexAttributeLayout();
 
         public int GetBufferOffset(string resource, string expression);
         public IReflectionNode? GetResourceNode(string resource);

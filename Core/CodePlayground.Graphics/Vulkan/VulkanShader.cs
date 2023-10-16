@@ -418,8 +418,43 @@ namespace CodePlayground.Graphics.Vulkan
         private bool mDisposed;
     }
 
+    public struct VulkanVertexAttributeLayout
+    {
+        public int TotalSize;
+        public VertexInputAttributeDescription[] Attributes;
+    }
+
     public sealed class VulkanReflectionView : IReflectionView
     {
+        private static readonly IReadOnlyDictionary<ShaderTypeClass, IReadOnlyDictionary<int, Format>> sAttributeFormats;
+        static VulkanReflectionView()
+        {
+            sAttributeFormats = new Dictionary<ShaderTypeClass, IReadOnlyDictionary<int, Format>>
+            {
+                [ShaderTypeClass.Float] = new Dictionary<int, Format>
+                {
+                    [1] = Format.R32Sfloat,
+                    [2] = Format.R32G32Sfloat,
+                    [3] = Format.R32G32B32Sfloat,
+                    [4] = Format.R32G32B32A32Sfloat
+                },
+                [ShaderTypeClass.SInt] = new Dictionary<int, Format>
+                {
+                    [1] = Format.R32Sint,
+                    [2] = Format.R32G32Sint,
+                    [3] = Format.R32G32B32Sint,
+                    [4] = Format.R32G32B32A32Sint
+                },
+                [ShaderTypeClass.UInt] = new Dictionary<int, Format>
+                {
+                    [1] = Format.R32Uint,
+                    [2] = Format.R32G32Uint,
+                    [3] = Format.R32G32B32Uint,
+                    [4] = Format.R32G32B32A32Uint
+                }
+            };
+        }
+
         public VulkanReflectionView(IReadOnlyDictionary<ShaderStage, IShader> shaders)
         {
             mReflectionData = new Dictionary<ShaderStage, ShaderReflectionResult>();
@@ -594,6 +629,68 @@ namespace CodePlayground.Graphics.Vulkan
             }
 
             return baseOffset + GetTypeOffset(stage, typeId, expression);
+        }
+
+        public static Format GetAttributeFormat(ReflectedShaderType attributeType)
+        {
+            using var getFormatEvent = OptickMacros.Event();
+            if (attributeType.Columns != 1 || (attributeType.ArrayDimensions?.Any() ?? false))
+            {
+                throw new InvalidOperationException("Every vertex attribute must be a single vector!");
+            }
+
+            if (attributeType.Size != 4)
+            {
+                throw new InvalidOperationException("Vector columns must be 32-bit integers or floats!");
+            }
+
+            if (!sAttributeFormats.ContainsKey(attributeType.Class))
+            {
+                throw new InvalidOperationException($"Unsupported vector type: {attributeType.Class}");
+            }
+
+            var formats = sAttributeFormats[attributeType.Class];
+            if (!formats.ContainsKey(attributeType.Rows))
+            {
+                throw new InvalidOperationException($"Invalid vector size: {attributeType.Rows}");
+            }
+
+            return formats[attributeType.Rows];
+        }
+
+        object IReflectionView.CreateVertexAttributeLayout() => CreateVertexAttributeLayout();
+        public VulkanVertexAttributeLayout CreateVertexAttributeLayout()
+        {
+            using var createLayoutEvent = OptickMacros.Event();
+            var vertexReflectionData = mReflectionData[ShaderStage.Vertex];
+
+            var inputs = vertexReflectionData.StageIO.Where(field => field.Direction == StageIODirection.In).ToList();
+            inputs.Sort((a, b) => a.Location.CompareTo(b.Location));
+
+            int vertexSize = 0;
+            var attributes = new VertexInputAttributeDescription[inputs.Count];
+
+            for (int i = 0; i < inputs.Count; i++)
+            {
+                var input = inputs[i];
+                var type = vertexReflectionData.Types[input.Type];
+
+                attributes[i] = VulkanUtilities.Init<VertexInputAttributeDescription>() with
+                {
+                    Location = (uint)input.Location,
+                    Binding = 0,
+                    Format = GetAttributeFormat(type),
+                    Offset = (uint)vertexSize
+                };
+
+                vertexSize += type.TotalSize;
+            }
+
+            return new VulkanVertexAttributeLayout
+            {
+                TotalSize = vertexSize,
+                Attributes = attributes
+            };
         }
 
         internal static int[] ParseFieldExpression(string expression, out string fieldName)

@@ -2,13 +2,11 @@
 using Optick.NET;
 using Ragdoll.Components;
 using Ragdoll.Shaders;
-using Silk.NET.Vulkan;
 using SixLabors.ImageSharp;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
-using System.Net.Mail;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -47,113 +45,11 @@ namespace Ragdoll
         Render
     }
 
-    public sealed class CheckpointStack
-    {
-        private static int sCurrentID;
-        static CheckpointStack()
-        {
-            sCurrentID = 0;
-        }
-
-        private sealed class CheckpointEvent : IDisposable
-        {
-            public CheckpointEvent(string value, int id, CheckpointStack stack)
-            {
-                mValue = value;
-                mID = id;
-                mStack = stack;
-
-                mStack.Event(mValue);
-            }
-
-            public void Dispose()
-            {
-                if (mStack.mEvents.Peek().mID != mID)
-                {
-                    throw new InvalidOperationException($"Scope mismatch!");
-                }
-
-                mStack.mEvents.Pop();
-                mStack.Event(mValue + '~');
-            }
-
-            public string Value => mValue;
-
-            private readonly string mValue;
-            private readonly int mID;
-            private readonly CheckpointStack mStack;
-        }
-
-        public CheckpointStack()
-        {
-            mEvents = new Stack<CheckpointEvent>();
-            mCurrentList = null;
-        }
-
-        public void SetCommandList(ICommandList commandList)
-        {
-            mCurrentList = commandList;
-        }
-
-        [MemberNotNull(nameof(mCurrentList))]
-        private void VerifyCommandList()
-        {
-            if (mCurrentList is not null)
-            {
-                return;
-            }
-
-            throw new InvalidOperationException("No command list set!");
-        }
-
-        public IDisposable Push(string name)
-        {
-            var result = new CheckpointEvent(name, sCurrentID++, this);
-            mEvents.Push(result);
-            return result;
-        }
-
-        public void Event(string name)
-        {
-            string identifier = CreateIdentifier(name);
-            PushCheckpoint(identifier);
-        }
-
-        private void PushCheckpoint(string name)
-        {
-            VerifyCommandList();
-            mCurrentList.Checkpoint(name);
-        }
-
-        private string CreateIdentifier(string name)
-        {
-            var names = new List<string>();
-            names.Add(name);
-            names.AddRange(mEvents.Select(checkpointEvent => checkpointEvent.Value));
-
-            var identifier = string.Empty;
-            foreach (var scopeName in names)
-            {
-                var prepend = scopeName;
-                if (identifier.Length > 0)
-                {
-                    prepend += '/';
-                }
-
-                identifier = prepend + identifier;
-            }
-
-            return identifier;
-        }
-
-        private readonly Stack<CheckpointEvent> mEvents;
-        private ICommandList? mCurrentList;
-    }
-
     internal delegate void PushConstantCallback(Span<byte> data, IReflectionNode reflectionNode);
     public sealed class SceneRenderer : IDisposable
     {
         public const int ShadowResolution = 1024;
+        public const bool CheckpointsEnabled = false;
 
         public const float FarPlane = 100f;
         public const float NearPlane = 0.1f;
@@ -178,7 +74,7 @@ namespace Ragdoll
 
             mLoadedModelInfo = new Dictionary<int, LoadedModelInfo>();
             mReflectionViews = new Dictionary<Type, IReflectionView>();
-            mCheckpointStack = new CheckpointStack();
+            mCheckpointStack = new CheckpointStack(CheckpointsEnabled);
 
             foreach (var type in library.CompiledTypes)
             {
@@ -379,7 +275,8 @@ namespace Ragdoll
                 RenderTarget = renderTarget,
                 Type = PipelineType.Graphics,
                 FrameCount = Renderer.FrameCount,
-                Specification = material?.PipelineSpecification ?? Material.CreateDefaultPipelineSpec()
+                Specification = material?.PipelineSpecification ?? Material.CreateDefaultPipelineSpec(),
+                VertexAttributeLayout = GetReflectionView<ModelShader>().CreateVertexAttributeLayout()
             });
 
             var boundBuffers = new Dictionary<string, IDeviceBuffer>
@@ -635,19 +532,13 @@ namespace Ragdoll
             var commandList = renderer.FrameInfo.CommandList;
             for (int i = 0; i < lightCount; i++)
             {
-                using var lightCheckpoint = mCheckpointStack.Push($"Light {i}");
-
                 var shadowMap = mShadowMaps[LightType.Point][i];
                 for (int j = 0; j < ModelShader.CubemapFaceCount; j++)
                 {
-                    using var faceCheckpoint = mCheckpointStack.Push($"Face {j}");
-
                     var framebuffer = mShadowMapFramebuffers[j];
-                    using (mCheckpointStack.Push("BeginRender"))
-                    {
-                        framebuffer.Attachment.TransitionLayout(commandList, framebuffer.Attachment.Layout, DeviceImageLayoutName.DepthStencilAttachment);
-                        renderer.BeginRender(mShadowMapRenderTarget, framebuffer.Framebuffer, Vector4.One);
-                    }
+                    
+                    framebuffer.Attachment.TransitionLayout(commandList, framebuffer.Attachment.Layout, DeviceImageLayoutName.DepthStencilAttachment);
+                    renderer.BeginRender(mShadowMapRenderTarget, framebuffer.Framebuffer, Vector4.One);
 
                     RenderScene(scene, renderer, RenderPassType.PointShadowMap, (data, node) =>
                     {
@@ -655,16 +546,10 @@ namespace Ragdoll
                         node.Set(data, nameof(ModelShader.PushConstantData.FaceIndex), j);
                     });
 
-                    using (mCheckpointStack.Push("EndRender"))
-                    {
-                        renderer.EndRender();
-                        framebuffer.Attachment.TransitionLayout(commandList, DeviceImageLayoutName.DepthStencilAttachment, framebuffer.Attachment.Layout);
-                    }
+                    renderer.EndRender();
+                    framebuffer.Attachment.TransitionLayout(commandList, DeviceImageLayoutName.DepthStencilAttachment, framebuffer.Attachment.Layout);
 
-                    using (mCheckpointStack.Push("CopyCubeFace"))
-                    {
-                        shadowMap.Image.CopyCubeFace(commandList, j, framebuffer.Attachment, shadowMap.Image.Layout, framebuffer.Attachment.Layout);
-                    }
+                    shadowMap.Image.CopyCubeFace(commandList, j, framebuffer.Attachment, shadowMap.Image.Layout, framebuffer.Attachment.Layout);
                 }
             }
         }
@@ -672,7 +557,6 @@ namespace Ragdoll
         private void PrepareForRender(SceneRenderInfo renderInfo)
         {
             using var prepareEvent = OptickMacros.Event(category: Category.Rendering);
-            using var checkpoint = mCheckpointStack.Push("PrepareForRender");
 
             UpdateBones(renderInfo.Scene);
             UpdateSceneMatrices(renderInfo.Scene, renderInfo.Framebuffer.Width, renderInfo.Framebuffer.Height);
@@ -687,7 +571,6 @@ namespace Ragdoll
         private void RenderScene(Scene scene, Renderer renderer, RenderPassType passType, PushConstantCallback? pushConstantCallback = null)
         {
             using var renderEvent = OptickMacros.Event(category: Category.Rendering);
-            using var checkpoint = mCheckpointStack.Push("RenderScene");
 
             var passShader = passType switch
             {
@@ -744,9 +627,6 @@ namespace Ragdoll
         public void Render(SceneRenderInfo renderInfo)
         {
             using var renderEvent = OptickMacros.Event(category: Category.Rendering);
-
-            mCheckpointStack.SetCommandList(renderInfo.Renderer.FrameInfo.CommandList);
-            using var checkpoint = mCheckpointStack.Push("Render");
 
             if (mWaitForInitialization)
             {

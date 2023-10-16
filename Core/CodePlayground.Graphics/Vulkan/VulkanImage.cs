@@ -812,21 +812,14 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             };
 
-            commandBuffer.Checkpoint("Before initial transition");
             TransitionLayout(commandBuffer, currentLayout, transferDst, 0, MipLevels, face, 1);
-            commandBuffer.Checkpoint("After destination transition; before source");
             source.TransitionLayout(commandBuffer, sourceLayout, transferSrc, 0, 1, 0, 1);
 
-            commandBuffer.Checkpoint("After initial transition; before copy");
             api.CmdCopyImage(commandBuffer.Buffer, source.mImage, transferSrc.Layout, mImage, transferDst.Layout, 1, copy);
-            commandBuffer.Checkpoint("Before final source transtion; after copy");
             source.TransitionLayout(commandBuffer, transferSrc, sourceLayout, 0, 1, 0, 1);
-            commandBuffer.Checkpoint("After final source transition; before mipmaps");
 
             GenerateMipmaps(commandBuffer, currentLayout, face, 1);
-            commandBuffer.Checkpoint("After mipmaps; before final destination transition");
             TransitionLayout(commandBuffer, transferDst, currentLayout, MipLevels - 1, 1, face, 1);
-            commandBuffer.Checkpoint("After final transition");
         }
 
 
