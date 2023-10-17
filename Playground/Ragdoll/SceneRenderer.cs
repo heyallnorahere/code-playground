@@ -454,25 +454,24 @@ namespace Ragdoll
                                 pointLightNode.Set(data, nameof(ModelShader.PointLightData.Ambient), light.AmbientColor * light.AmbientStrength);
                                 pointLightNode.Set(data, nameof(ModelShader.PointLightData.Position), position);
 
-                                var viewDirections = new Vector3[]
+                                var directions = new Vector3[]
                                 {
                                     Vector3.UnitX,
                                     -Vector3.UnitX,
                                     Vector3.UnitY,
                                     -Vector3.UnitY,
                                     Vector3.UnitZ,
-                                    -Vector3.UnitZ
+                                    -Vector3.UnitZ,
                                 };
 
-                                var projection = mMatrixMath.Perspective(MathF.PI / 2f, 1f, NearPlane, FarPlane);
-                                for (int i = 0; i < viewDirections.Length; i++)
+                                for (int i = 0; i < directions.Length; i++)
                                 {
-                                    var direction = viewDirections[i];
+                                    var direction = directions[i];
                                     var up = MathF.Abs(direction.Y) < float.Epsilon ? -Vector3.UnitY : Vector3.UnitZ * MathF.Sign(direction.Y);
                                     var view = mMatrixMath.LookAt(position, position + direction, up);
 
                                     string fieldName = $"{nameof(ModelShader.PointLightData.ShadowMatrices)}[{i}]";
-                                    pointLightNode.Set(data, fieldName, mMatrixMath.TranslateMatrix(Matrix4x4.Transpose(view * projection)));
+                                    pointLightNode.Set(data, fieldName, mMatrixMath.TranslateMatrix(view));
                                 }
 
                                 var attenuationNode = pointLightNode.Find(nameof(ModelShader.PointLightData.Attenuation));
@@ -490,9 +489,11 @@ namespace Ragdoll
                 }
 
                 int pointLightCount = lightCounts.GetValueOrDefault(LightType.Point, 0);
+                var projection = mMatrixMath.Perspective(MathF.PI / 2f, 1f, NearPlane, FarPlane);
 
                 bufferNode.Set(data, nameof(ModelShader.LightBufferData.PointLightCount), pointLightCount);
                 bufferNode.Set(data, nameof(ModelShader.LightBufferData.FarPlane), FarPlane);
+                bufferNode.Set(data, nameof(ModelShader.LightBufferData.Projection), mMatrixMath.TranslateMatrix(projection));
             });
 
             return lightCounts;

@@ -833,7 +833,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                                             var attribute = field.GetCustomAttribute<ShaderVariableAttribute>();
                                             if (attribute is not null)
                                             {
-                                                expression = sShaderVariableNames[attribute.ID];
+                                                expression = $"{parentExpression}.{sShaderVariableNames[attribute.ID]}";
                                             }
                                         }
                                     }

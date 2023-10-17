@@ -102,6 +102,7 @@ namespace Ragdoll.Shaders
             public int PointLightCount;
 
             public float FarPlane;
+            public Matrix4x4<float> Projection;
         }
 
         private struct MaterialColorData
@@ -212,7 +213,7 @@ namespace Ragdoll.Shaders
             float currentDepth = positionDifference.Length();
 
             const float bias = 0.05f;
-            return /*currentDepth - bias > closestDepth ? 1f : 0f*/ 1f - closestDepth;
+            return currentDepth - bias > closestDepth ? 1f : 0f;
         }
 
         private static Vector3<float> CalculatePointLight(int light, Vector3<float> normal, Vector3<float> worldPosition, MaterialColorData colorData)
@@ -228,13 +229,10 @@ namespace Ragdoll.Shaders
             var ambient = colorData.Ambient * lightData.Ambient;
 
             float shadowFactor = 1f - PointShadowCalculation(worldPosition, light);
-            /*
             var directLight = shadowFactor * (diffuse + specular);
             var aggregate = directLight + ambient;
 
             return aggregate * CalculateAttenuation(lightData.Attenuation, distance);
-            */
-            return new Vector3<float>(shadowFactor);
         }
 
         [ShaderEntrypoint(ShaderStage.Fragment)]

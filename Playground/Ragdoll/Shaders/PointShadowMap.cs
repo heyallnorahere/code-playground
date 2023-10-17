@@ -39,14 +39,14 @@ namespace Ragdoll.Shaders
             for (int i = 0; i < ModelShader.CubemapFaceCount; i++)
             {
                 s_CubemapLayer = i;
+                var shadowMatrix = ModelShader.u_LightBuffer.Projection * lightData.ShadowMatrices[i];
 
                 for (int j = 0; j < 3; j++)
                 {
-                    var shadowMatrix = lightData.ShadowMatrices[j];
-                    var fragmentPosition = shadowMatrix * input[j].OutputPosition;
+                    var worldPosition = input[j].OutputPosition;
 
-                    s_FragmentPosition = fragmentPosition.XYZ;
-                    s_OutputPosition = fragmentPosition;
+                    s_FragmentPosition = worldPosition.XYZ;
+                    s_OutputPosition = shadowMatrix * worldPosition;
 
                     BuiltinFunctions.EmitVertex();
                 }
