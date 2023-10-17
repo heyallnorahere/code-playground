@@ -40,7 +40,11 @@ namespace Ragdoll.Shaders
             [Layout(Location = 2)]
             public Vector3<float> WorldPosition;
             [Layout(Location = 3)]
-            public Matrix3x3<float> TBN;
+            public Vector3<float> TBN_0;
+            [Layout(Location = 4)]
+            public Vector3<float> TBN_1;
+            [Layout(Location = 5)]
+            public Vector3<float> TBN_2;
         }
 
         public struct CameraBufferData
@@ -66,7 +70,6 @@ namespace Ragdoll.Shaders
 
             // hacky workaround for vulkan memory layouts
             public int LightIndex;
-            public int FaceIndex;
         }
 
         public struct MaterialBufferData
@@ -161,6 +164,7 @@ namespace Ragdoll.Shaders
             var normal = (normalMatrix * input.Normal).Normalize();
             var tangent = (normalMatrix * input.Tangent).Normalize();
             var bitangent = BuiltinFunctions.Cross(normal, tangent).Normalize();
+            var tbn = new Matrix3x3<float>(tangent, bitangent, normal);
 
             return new VertexOut
             {
@@ -170,7 +174,7 @@ namespace Ragdoll.Shaders
                     Normal = normal,
                     UV = input.UV,
                     WorldPosition = worldPosition.XYZ,
-                    TBN = new Matrix3x3<float>(tangent, bitangent, normal)
+                    TBN_0 = tbn[0],
                 },
             };
         }
@@ -199,6 +203,18 @@ namespace Ragdoll.Shaders
             return BuiltinFunctions.Pow(BuiltinFunctions.Max(BuiltinFunctions.Dot(viewDirection, lightReflection), 0f), u_MaterialBuffer.Shininess);
         }
 
+        private static float PointShadowCalculation(Vector3<float> worldPosition, int light)
+        {
+            var lightPosition = u_LightBuffer.PointLights[light].Position;
+            var positionDifference = worldPosition - lightPosition;
+
+            float closestDepth = u_PointShadowMaps![light].Sample(positionDifference).R * u_LightBuffer.FarPlane;
+            float currentDepth = positionDifference.Length();
+
+            const float bias = 0.05f;
+            return /*currentDepth - bias > closestDepth ? 1f : 0f*/ 1f - closestDepth;
+        }
+
         private static Vector3<float> CalculatePointLight(int light, Vector3<float> normal, Vector3<float> worldPosition, MaterialColorData colorData)
         {
             var lightData = u_LightBuffer.PointLights[light];
@@ -211,8 +227,14 @@ namespace Ragdoll.Shaders
             var specular = colorData.Specular * lightData.Specular * CalculateSpecular(normal, lightDirection, worldPosition);
             var ambient = colorData.Ambient * lightData.Ambient;
 
-            var aggregate = diffuse + specular + ambient;
+            float shadowFactor = 1f - PointShadowCalculation(worldPosition, light);
+            /*
+            var directLight = shadowFactor * (diffuse + specular);
+            var aggregate = directLight + ambient;
+
             return aggregate * CalculateAttenuation(lightData.Attenuation, distance);
+            */
+            return new Vector3<float>(shadowFactor);
         }
 
         [ShaderEntrypoint(ShaderStage.Fragment)]
@@ -222,8 +244,10 @@ namespace Ragdoll.Shaders
             Vector3<float> normal;
             if (u_MaterialBuffer.HasNormalMap)
             {
+                var tbn = new Matrix3x3<float>(input.TBN_0, input.TBN_1, input.TBN_2);
+
                 var sampledNormal = (u_NormalMap!.Sample(input.UV).XYZ * 2f - 1f).Normalize();
-                normal = (input.TBN * sampledNormal).Normalize();
+                normal = (tbn * sampledNormal).Normalize();
             }
             else
             {

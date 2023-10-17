@@ -431,7 +431,7 @@ namespace CodePlayground.Graphics.Vulkan
                 Format = VulkanFormat,
                 SubresourceRange = VulkanUtilities.Init<ImageSubresourceRange>() with
                 {
-                    AspectMask = AspectMask,
+                    AspectMask = AspectMask & (ImageAspectFlags.ColorBit | ImageAspectFlags.DepthBit),
                     BaseMipLevel = 0,
                     LevelCount = (uint)MipLevels,
                     BaseArrayLayer = 0,

@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Net.Mail;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -27,7 +28,7 @@ namespace Ragdoll
     internal struct ShadowMapFramebuffer
     {
         public IFramebuffer Framebuffer;
-        public IDeviceImage Attachment;
+        public ITexture ShadowMap;
     }
 
     public struct SceneRenderInfo
@@ -87,8 +88,7 @@ namespace Ragdoll
             commandList.Begin();
             using (commandList.Context(GPUQueueType.Transfer))
             {
-                CreateShadowMaps(commandList, out mShadowMaps);
-                CreateShadowMapFramebuffer(commandList, out mShadowMapRenderTarget, out mShadowMapFramebuffers);
+                CreateShadowMaps(commandList, out mShadowMaps, out mShadowMapRenderTarget);
             }
 
             mInitializationSemaphore = context.CreateSemaphore();
@@ -141,110 +141,81 @@ namespace Ragdoll
                 modelData.PointShadowMap.Dispose();
             }
 
-            foreach (var shadowMaps in mShadowMaps.Values)
+            foreach (var framebuffers in mShadowMaps.Values)
             {
-                foreach (var shadowMap in shadowMaps)
+                foreach (var framebuffer in framebuffers)
                 {
-                    shadowMap.Dispose();
+                    framebuffer.Framebuffer.Dispose();
+                    framebuffer.ShadowMap.Dispose();
                 }
-            }
-
-            foreach (var framebuffer in mShadowMapFramebuffers)
-            {
-                framebuffer.Framebuffer.Dispose();
-                framebuffer.Attachment.Dispose();
             }
 
             mShadowMapRenderTarget.Dispose();
             mInitializationSemaphore.Dispose();
         }
 
-        private void CreateShadowMaps(ICommandList commandList, out Dictionary<LightType, ITexture[]> shadowMaps)
+        private void CreateShadowMaps(ICommandList commandList, out Dictionary<LightType, ShadowMapFramebuffer[]> shadowMaps, out IRenderTarget renderTarget)
         {
             using var createFramebuffersEvent = OptickMacros.Event();
+            IRenderTarget? createdRenderTarget = null;
 
-            shadowMaps = new Dictionary<LightType, ITexture[]>();
+            shadowMaps = new Dictionary<LightType, ShadowMapFramebuffer[]>();
             foreach ((var type, int limit) in sLightCountLimits)
             {
-                var lightShadowMaps = new ITexture[limit];
+                var framebuffers = new ShadowMapFramebuffer[limit];
                 for (int i = 0; i < limit; i++)
                 {
                     var image = mContext.CreateDeviceImage(new DeviceImageInfo
                     {
                         Size = new Size(ShadowResolution, ShadowResolution),
                         ImageType = DeviceImageType.TypeCube,
-                        Usage = DeviceImageUsageFlags.Render | DeviceImageUsageFlags.CopyDestination,
+                        Usage = DeviceImageUsageFlags.Render | DeviceImageUsageFlags.DepthStencilAttachment,
                         Format = DeviceImageFormat.DepthStencil,
                         MipLevels = 1
                     });
 
-                    var newLayout = image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
-                    image.TransitionLayout(commandList, image.Layout, newLayout);
-                    image.Layout = newLayout;
+                    var layout = image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
+                    image.TransitionLayout(commandList, image.Layout, layout);
+                    image.Layout = layout;
 
-                    lightShadowMaps[i] = image.CreateTexture(true);
-                }
-
-                shadowMaps.Add(type, lightShadowMaps);
-            }
-        }
-
-        private void CreateShadowMapFramebuffer(ICommandList commandList, out IRenderTarget renderTarget, out ShadowMapFramebuffer[] framebuffers)
-        {
-            IRenderTarget? framebufferRenderTarget = null;
-            framebuffers = new ShadowMapFramebuffer[ModelShader.CubemapFaceCount];
-
-            for (int i = 0; i < framebuffers.Length; i++)
-            {
-                var attachment = mContext.CreateDeviceImage(new DeviceImageInfo
-                {
-                    Size = new Size(ShadowResolution, ShadowResolution),
-                    ImageType = DeviceImageType.Type2D,
-                    Usage = DeviceImageUsageFlags.CopySource | DeviceImageUsageFlags.DepthStencilAttachment,
-                    Format = DeviceImageFormat.DepthStencil,
-                    MipLevels = 1
-                });
-
-                var layout = attachment.GetLayout(DeviceImageLayoutName.CopySource);
-                attachment.TransitionLayout(commandList, attachment.Layout, layout);
-                attachment.Layout = layout;
-
-                layout = attachment.GetLayout(DeviceImageLayoutName.DepthStencilAttachment);
-                var info = new FramebufferInfo
-                {
-                    Width = ShadowResolution,
-                    Height = ShadowResolution,
-                    Attachments = new FramebufferAttachmentInfo[]
+                    var info = new FramebufferInfo
                     {
-                        new FramebufferAttachmentInfo
+                        Width = ShadowResolution,
+                        Height = ShadowResolution,
+                        Attachments = new FramebufferAttachmentInfo[]
                         {
-                            Image = attachment,
-                            Type = AttachmentType.DepthStencil,
-                            InitialLayout = layout,
-                            FinalLayout = layout,
-                            Layout = layout
+                            new FramebufferAttachmentInfo
+                            {
+                                Image = image,
+                                Type = AttachmentType.DepthStencil,
+                                InitialLayout = layout,
+                                FinalLayout = layout,
+                                Layout = image.GetLayout(DeviceImageLayoutName.DepthStencilAttachment)
+                            }
                         }
+                    };
+
+                    IFramebuffer framebuffer;
+                    if (createdRenderTarget is null)
+                    {
+                        framebuffer = mContext.CreateFramebuffer(info, out createdRenderTarget);
                     }
-                };
+                    else
+                    {
+                        framebuffer = mContext.CreateFramebuffer(info, createdRenderTarget);
+                    }
 
-                IFramebuffer framebuffer;
-                if (framebufferRenderTarget is null)
-                {
-                    framebuffer = mContext.CreateFramebuffer(info, out framebufferRenderTarget);
-                }
-                else
-                {
-                    framebuffer = mContext.CreateFramebuffer(info, framebufferRenderTarget);
+                    framebuffers[i] = new ShadowMapFramebuffer
+                    {
+                        Framebuffer = framebuffer,
+                        ShadowMap = image.CreateTexture(true)
+                    };
                 }
 
-                framebuffers[i] = new ShadowMapFramebuffer
-                {
-                    Framebuffer = framebuffer,
-                    Attachment = attachment
-                };
+                shadowMaps.Add(type, framebuffers);
             }
 
-            renderTarget = framebufferRenderTarget!;
+            renderTarget = createdRenderTarget!;
         }
 
         private void CreateBuffers(out IDeviceBuffer cameraBuffer, out IDeviceBuffer lightBuffer)
@@ -320,12 +291,12 @@ namespace Ragdoll
             for (int i = 0; i < materials.Count; i++)
             {
                 var pipeline = renderPipelines[i] = CreatePipeline<ModelShader>(renderTarget, materials[i], boundBuffers);
-                foreach ((var type, var shadowMaps) in mShadowMaps)
+                foreach ((var type, var framebuffers) in mShadowMaps)
                 {
                     string textureArrayName = $"u_{type}ShadowMaps";
-                    for (int j = 0; j < shadowMaps.Length; j++)
+                    for (int j = 0; j < framebuffers.Length; j++)
                     {
-                        pipeline.Bind(shadowMaps[j], textureArrayName, j);
+                        pipeline.Bind(framebuffers[j].ShadowMap, textureArrayName, j);
                     }
                 }
             }
@@ -501,7 +472,7 @@ namespace Ragdoll
                                     var view = mMatrixMath.LookAt(position, position + direction, up);
 
                                     string fieldName = $"{nameof(ModelShader.PointLightData.ShadowMatrices)}[{i}]";
-                                    pointLightNode.Set(data, fieldName, mMatrixMath.TranslateMatrix(projection * view));
+                                    pointLightNode.Set(data, fieldName, mMatrixMath.TranslateMatrix(Matrix4x4.Transpose(view * projection)));
                                 }
 
                                 var attenuationNode = pointLightNode.Find(nameof(ModelShader.PointLightData.Attenuation));
@@ -529,28 +500,23 @@ namespace Ragdoll
 
         private void GeneratePointShadowMaps(Scene scene, Renderer renderer, int lightCount)
         {
+            using var generateEvent = OptickMacros.Event();
+
             var commandList = renderer.FrameInfo.CommandList;
             for (int i = 0; i < lightCount; i++)
             {
+                using var lightEvent = OptickMacros.Event("Render from light POV");
+                OptickMacros.Tag("Light", i);
+
                 var shadowMap = mShadowMaps[LightType.Point][i];
-                for (int j = 0; j < ModelShader.CubemapFaceCount; j++)
+                renderer.BeginRender(mShadowMapRenderTarget, shadowMap.Framebuffer, Vector4.One);
+
+                RenderScene(scene, renderer, RenderPassType.PointShadowMap, (data, node) =>
                 {
-                    var framebuffer = mShadowMapFramebuffers[j];
-                    
-                    framebuffer.Attachment.TransitionLayout(commandList, framebuffer.Attachment.Layout, DeviceImageLayoutName.DepthStencilAttachment);
-                    renderer.BeginRender(mShadowMapRenderTarget, framebuffer.Framebuffer, Vector4.One);
+                    node.Set(data, nameof(ModelShader.PushConstantData.LightIndex), i);
+                });
 
-                    RenderScene(scene, renderer, RenderPassType.PointShadowMap, (data, node) =>
-                    {
-                        node.Set(data, nameof(ModelShader.PushConstantData.LightIndex), i);
-                        node.Set(data, nameof(ModelShader.PushConstantData.FaceIndex), j);
-                    });
-
-                    renderer.EndRender();
-                    framebuffer.Attachment.TransitionLayout(commandList, DeviceImageLayoutName.DepthStencilAttachment, framebuffer.Attachment.Layout);
-
-                    shadowMap.Image.CopyCubeFace(commandList, j, framebuffer.Attachment, shadowMap.Image.Layout, framebuffer.Attachment.Layout);
-                }
+                renderer.EndRender();
             }
         }
 
@@ -664,7 +630,6 @@ namespace Ragdoll
         private readonly Dictionary<Type, IReflectionView> mReflectionViews;
 
         private readonly IRenderTarget mShadowMapRenderTarget;
-        private readonly ShadowMapFramebuffer[] mShadowMapFramebuffers;
-        private readonly Dictionary<LightType, ITexture[]> mShadowMaps;
+        private readonly Dictionary<LightType, ShadowMapFramebuffer[]> mShadowMaps;
     }
 }
