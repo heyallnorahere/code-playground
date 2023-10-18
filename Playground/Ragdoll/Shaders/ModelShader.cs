@@ -214,8 +214,7 @@ namespace Ragdoll.Shaders
             float closestDepth = u_PointShadowMaps![light].Sample(positionDifference).R * u_LightBuffer.FarPlane;
             float currentDepth = positionDifference.Length();
 
-            const float bias = 0.15f;
-            if (currentDepth - closestDepth > bias)
+            if (currentDepth > closestDepth)
             {
                 return 1f;
             }
@@ -233,8 +232,19 @@ namespace Ragdoll.Shaders
             var lightDirection = lightPositionDifference.Normalize();
             float distance = lightPositionDifference.Length();
 
-            var diffuse = colorData.Diffuse * lightData.Diffuse * CalculateDiffuse(normal, lightDirection);
-            var specular = colorData.Specular * lightData.Specular * CalculateSpecular(normal, lightDirection, worldPosition);
+            float diffuseStrength, specularStrength;
+            if (lightData.EntityIndex == u_PushConstants.EntityIndex)
+            {
+                diffuseStrength = specularStrength = 1f;
+            }
+            else
+            {
+                diffuseStrength = CalculateDiffuse(normal, lightDirection);
+                specularStrength = CalculateSpecular(normal, lightDirection, worldPosition);
+            }
+
+            var diffuse = colorData.Diffuse * lightData.Diffuse * diffuseStrength;
+            var specular = colorData.Specular * lightData.Specular * specularStrength;
             var ambient = colorData.Ambient * lightData.Ambient;
 
             float shadowFactor = 1f - PointShadowCalculation(worldPosition, light);
