@@ -862,6 +862,7 @@ namespace CodePlayground.Graphics.Vulkan
         public ImageAspectFlags AspectMask { get; }
         public ImageTiling Tiling { get; }
         public ImageView View => mView;
+        public Silk.NET.Vulkan.Image Image => mImage;
 
         public VulkanImageLayout Layout
         {

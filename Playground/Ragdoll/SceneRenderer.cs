@@ -1,4 +1,5 @@
 ﻿using CodePlayground.Graphics;
+using CodePlayground.Graphics.Vulkan;
 using Optick.NET;
 using Ragdoll.Components;
 using Ragdoll.Shaders;
@@ -7,7 +8,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
-using System.Net.Mail;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -29,6 +29,12 @@ namespace Ragdoll
     {
         public IFramebuffer Framebuffer;
         public ITexture ShadowMap;
+    }
+
+    internal struct ShadowMapSampler : ISamplerSettings
+    {
+        public AddressMode AddressMode => AddressMode.ClampToEdge;
+        public SamplerFilter Filter => SamplerFilter.Nearest;
     }
 
     public struct SceneRenderInfo
@@ -208,7 +214,7 @@ namespace Ragdoll
                     framebuffers[i] = new ShadowMapFramebuffer
                     {
                         Framebuffer = framebuffer,
-                        ShadowMap = image.CreateTexture(true)
+                        ShadowMap = image.CreateTexture(true, new ShadowMapSampler())
                     };
                 }
 
@@ -453,6 +459,7 @@ namespace Ragdoll
                                 pointLightNode.Set(data, nameof(ModelShader.PointLightData.Specular), light.SpecularColor * light.SpecularStrength);
                                 pointLightNode.Set(data, nameof(ModelShader.PointLightData.Ambient), light.AmbientColor * light.AmbientStrength);
                                 pointLightNode.Set(data, nameof(ModelShader.PointLightData.Position), position);
+                                pointLightNode.Set(data, nameof(ModelShader.PointLightData.EntityIndex), (int)entity);
 
                                 var directions = new Vector3[]
                                 {
@@ -467,7 +474,7 @@ namespace Ragdoll
                                 for (int i = 0; i < directions.Length; i++)
                                 {
                                     var direction = directions[i];
-                                    var up = MathF.Abs(direction.Y) < float.Epsilon ? -Vector3.UnitY : Vector3.UnitZ * MathF.Sign(direction.Y);
+                                    var up = MathF.Abs(direction.Y) < float.Epsilon ? Vector3.UnitY : Vector3.UnitZ * -MathF.Sign(direction.Y);
                                     var view = mMatrixMath.LookAt(position, position + direction, up);
 
                                     string fieldName = $"{nameof(ModelShader.PointLightData.ShadowMatrices)}[{i}]";
@@ -586,6 +593,7 @@ namespace Ragdoll
                                             var model = mMatrixMath.TranslateMatrix(transform.CreateMatrix());
                                             pushConstantBufferNode.Set(mapped, nameof(ModelShader.PushConstantData.Model), model);
                                             pushConstantBufferNode.Set(mapped, nameof(ModelShader.PushConstantData.BoneOffset), renderedModel.BoneOffset);
+                                            pushConstantBufferNode.Set(mapped, nameof(ModelShader.PushConstantData.EntityIndex), (int)id);
                                         });
                 }
             }

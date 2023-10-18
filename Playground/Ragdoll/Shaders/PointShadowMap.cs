@@ -34,17 +34,22 @@ namespace Ragdoll.Shaders
         public static void GeometryMain([ShaderVariable(ShaderVariableID.GeometryInput)] VertexOut[] input)
         {
             int lightIndex = ModelShader.u_PushConstants.LightIndex;
-            var lightData = ModelShader.u_LightBuffer.PointLights[lightIndex];
+            int entityIndex = ModelShader.u_PushConstants.EntityIndex;
 
+            if (entityIndex == ModelShader.u_LightBuffer.PointLights[lightIndex].EntityIndex)
+            {
+                return;
+            }
+
+            var lightData = ModelShader.u_LightBuffer.PointLights[lightIndex];
             for (int i = 0; i < ModelShader.CubemapFaceCount; i++)
             {
-                s_CubemapLayer = i;
                 var shadowMatrix = ModelShader.u_LightBuffer.Projection * lightData.ShadowMatrices[i];
-
                 for (int j = 0; j < 3; j++)
                 {
                     var worldPosition = input[j].OutputPosition;
 
+                    s_CubemapLayer = i;
                     s_FragmentPosition = worldPosition.XYZ;
                     s_OutputPosition = shadowMatrix * worldPosition;
 

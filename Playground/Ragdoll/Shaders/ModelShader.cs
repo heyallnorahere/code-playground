@@ -67,6 +67,7 @@ namespace Ragdoll.Shaders
         {
             public Matrix4x4<float> Model;
             public int BoneOffset;
+            public int EntityIndex;
 
             // hacky workaround for vulkan memory layouts
             public int LightIndex;
@@ -90,6 +91,7 @@ namespace Ragdoll.Shaders
             public Vector3<float> Diffuse, Specular, Ambient;
             public Vector3<float> Position;
             public AttenuationData Attenuation;
+            public int EntityIndex;
 
             [ArraySize(CubemapFaceCount)]
             public Matrix4x4<float>[] ShadowMatrices;
@@ -212,8 +214,15 @@ namespace Ragdoll.Shaders
             float closestDepth = u_PointShadowMaps![light].Sample(positionDifference).R * u_LightBuffer.FarPlane;
             float currentDepth = positionDifference.Length();
 
-            const float bias = 0.05f;
-            return currentDepth - bias > closestDepth ? 1f : 0f;
+            const float bias = 0.15f;
+            if (currentDepth - closestDepth > bias)
+            {
+                return 1f;
+            }
+            else
+            {
+                return 0f;
+            }
         }
 
         private static Vector3<float> CalculatePointLight(int light, Vector3<float> normal, Vector3<float> worldPosition, MaterialColorData colorData)
