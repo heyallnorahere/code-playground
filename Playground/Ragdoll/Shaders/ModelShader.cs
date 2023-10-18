@@ -1,3 +1,4 @@
+using System.Numerics;
 using CodePlayground.Graphics;
 using CodePlayground.Graphics.Shaders;
 
@@ -103,7 +104,11 @@ namespace Ragdoll.Shaders
             public PointLightData[] PointLights;
             public int PointLightCount;
 
-            public float FarPlane;
+            public float FarPlane, Bias;
+            public int SampleCount;
+            [ArraySize(32)]
+            public Vector3<float>[] SampleOffsetDirections;
+
             public Matrix4x4<float> Projection;
         }
 
@@ -211,17 +216,23 @@ namespace Ragdoll.Shaders
             var lightPosition = u_LightBuffer.PointLights[light].Position;
             var positionDifference = worldPosition - lightPosition;
 
-            float closestDepth = u_PointShadowMaps![light].Sample(positionDifference).R * u_LightBuffer.FarPlane;
             float currentDepth = positionDifference.Length();
+            float viewDistance = (u_CameraBuffer.Position - worldPosition).Length();
+            float diskRadius = (viewDistance / u_LightBuffer.FarPlane + 1f) / 25f;
 
-            if (currentDepth > closestDepth)
+            float shadow = 0f;
+            for (int i = 0; i < u_LightBuffer.SampleCount; i++)
             {
-                return 1f;
+                var uvw = positionDifference + u_LightBuffer.SampleOffsetDirections[i] * diskRadius;
+                float closestDepth = u_PointShadowMaps![light].Sample(uvw).R * u_LightBuffer.FarPlane;
+
+                if (currentDepth - u_LightBuffer.Bias > closestDepth)
+                {
+                    shadow += 1f;
+                }
             }
-            else
-            {
-                return 0f;
-            }
+
+            return shadow / u_LightBuffer.SampleCount;
         }
 
         private static Vector3<float> CalculatePointLight(int light, Vector3<float> normal, Vector3<float> worldPosition, MaterialColorData colorData)

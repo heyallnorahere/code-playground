@@ -62,11 +62,22 @@ namespace Ragdoll
         public const float NearPlane = 0.1f;
 
         private static readonly IReadOnlyDictionary<LightType, int> sLightCountLimits;
+        private static readonly Vector3[] sSampleOffsetDirections;
+
         static SceneRenderer()
         {
             sLightCountLimits = new Dictionary<LightType, int>
             {
                 [LightType.Point] = ModelShader.MaxPointLights
+            };
+
+            sSampleOffsetDirections = new Vector3[]
+            {
+                new Vector3(1f, 1f, 1f), new Vector3(1f, -1f, 1f), new Vector3(-1f, -1f, 1f), new Vector3(-1f, 1f, 1f),
+                new Vector3(1f, 1f, -1f), new Vector3(1f, -1f, -1f), new Vector3(-1f, -1f, -1f), new Vector3(-1f, 1f, -1f),
+                new Vector3(1f, 1f, 0f), new Vector3(1f, -1f, 0f), new Vector3(-1f, -1f, 0f), new Vector3(-1f, 1f, 0f),
+                new Vector3(1f, 0f, 1f), new Vector3(-1f, 0f, 1f), new Vector3(1f, 0f, -1f), new Vector3(-1f, 0f, -1f),
+                new Vector3(0f, 1f, 1f), new Vector3(0f, -1f, 1f), new Vector3(0f, -1f, -1f), new Vector3(0f, 1f, -1f)
             };
         }
 
@@ -211,6 +222,11 @@ namespace Ragdoll
                         framebuffer = mContext.CreateFramebuffer(info, createdRenderTarget);
                     }
 
+                    if (framebuffer is VulkanFramebuffer vulkanFramebuffer)
+                    {
+                        vulkanFramebuffer.Flip = false;
+                    }
+
                     framebuffers[i] = new ShadowMapFramebuffer
                     {
                         Framebuffer = framebuffer,
@@ -243,6 +259,24 @@ namespace Ragdoll
 
             cameraBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Uniform, cameraBufferSize);
             lightBuffer = mContext.CreateDeviceBuffer(DeviceBufferUsage.Uniform, lightBufferSize);
+
+            var lightNode = reflectionView.GetResourceNode(nameof(ModelShader.u_LightBuffer));
+            if (lightNode is not null)
+            {
+                lightBuffer.Map(data =>
+                {
+                    lightNode.Set(data, nameof(ModelShader.LightBufferData.SampleCount), sSampleOffsetDirections.Length);
+                    lightNode.Set(data, nameof(ModelShader.LightBufferData.Bias), 0.05f);
+                    
+                    for (int i = 0; i < sSampleOffsetDirections.Length; i++)
+                    {
+                        var name = $"{nameof(ModelShader.LightBufferData.SampleOffsetDirections)}[{i}]";
+                        var direction = sSampleOffsetDirections[i];
+
+                        lightNode.Set(data, name, direction);
+                    }
+                });
+            }
         }
 
         private IPipeline CreatePipeline<T>(IRenderTarget renderTarget, Material? material, IReadOnlyDictionary<string, IDeviceBuffer>? additionalBuffers = null) where T : class
@@ -473,11 +507,33 @@ namespace Ragdoll
 
                                 for (int i = 0; i < directions.Length; i++)
                                 {
+                                    /*
                                     var direction = directions[i];
-                                    var up = MathF.Abs(direction.Y) < float.Epsilon ? Vector3.UnitY : Vector3.UnitZ * -MathF.Sign(direction.Y);
+                                    var up = MathF.Abs(direction.Y) < float.Epsilon ? -Vector3.UnitY : Vector3.UnitZ * MathF.Sign(direction.Y);
                                     var view = mMatrixMath.LookAt(position, position + direction, up);
+                                    */
+
+                                    var rotation = i switch
+                                    {
+                                        0 =>
+                                            Matrix4x4.CreateRotationY(MathF.PI / 2f) *
+                                            Matrix4x4.CreateRotationX(MathF.PI),
+                                        1 =>
+                                            Matrix4x4.CreateRotationY(MathF.PI / -2f) *
+                                            Matrix4x4.CreateRotationX(MathF.PI),
+                                        2 =>
+                                            Matrix4x4.CreateRotationX(MathF.PI / -2f),
+                                        3 =>
+                                            Matrix4x4.CreateRotationX(MathF.PI / 2f),
+                                        4 =>
+                                            Matrix4x4.CreateRotationX(MathF.PI),
+                                        5 =>
+                                            Matrix4x4.CreateRotationZ(MathF.PI),
+                                        _ => throw new ArgumentException("Invalid face!")
+                                    };
 
                                     string fieldName = $"{nameof(ModelShader.PointLightData.ShadowMatrices)}[{i}]";
+                                    var view = rotation * Matrix4x4.CreateTranslation(-position);
                                     pointLightNode.Set(data, fieldName, mMatrixMath.TranslateMatrix(view));
                                 }
 
