@@ -222,11 +222,6 @@ namespace Ragdoll
                         framebuffer = mContext.CreateFramebuffer(info, createdRenderTarget);
                     }
 
-                    if (framebuffer is VulkanFramebuffer vulkanFramebuffer)
-                    {
-                        vulkanFramebuffer.Flip = false;
-                    }
-
                     framebuffers[i] = new ShadowMapFramebuffer
                     {
                         Framebuffer = framebuffer,
@@ -507,33 +502,11 @@ namespace Ragdoll
 
                                 for (int i = 0; i < directions.Length; i++)
                                 {
-                                    /*
                                     var direction = directions[i];
-                                    var up = MathF.Abs(direction.Y) < float.Epsilon ? -Vector3.UnitY : Vector3.UnitZ * MathF.Sign(direction.Y);
+                                    var up = MathF.Abs(direction.Y) < float.Epsilon ? Vector3.UnitY : Vector3.UnitZ * -MathF.Sign(direction.Y);
                                     var view = mMatrixMath.LookAt(position, position + direction, up);
-                                    */
-
-                                    var rotation = i switch
-                                    {
-                                        0 =>
-                                            Matrix4x4.CreateRotationY(MathF.PI / 2f) *
-                                            Matrix4x4.CreateRotationX(MathF.PI),
-                                        1 =>
-                                            Matrix4x4.CreateRotationY(MathF.PI / -2f) *
-                                            Matrix4x4.CreateRotationX(MathF.PI),
-                                        2 =>
-                                            Matrix4x4.CreateRotationX(MathF.PI / -2f),
-                                        3 =>
-                                            Matrix4x4.CreateRotationX(MathF.PI / 2f),
-                                        4 =>
-                                            Matrix4x4.CreateRotationX(MathF.PI),
-                                        5 =>
-                                            Matrix4x4.CreateRotationZ(MathF.PI),
-                                        _ => throw new ArgumentException("Invalid face!")
-                                    };
 
                                     string fieldName = $"{nameof(ModelShader.PointLightData.ShadowMatrices)}[{i}]";
-                                    var view = rotation * Matrix4x4.CreateTranslation(-position);
                                     pointLightNode.Set(data, fieldName, mMatrixMath.TranslateMatrix(view));
                                 }
 

@@ -71,20 +71,20 @@ namespace Ragdoll.Components
             var result = Matrix4x4.Identity;
             if (components.HasFlag(TransformComponents.Translation))
             {
-                result = Matrix4x4.CreateTranslation(Translation);
+                result = MatrixMath.Translate(Matrix4x4.Identity, Translation);
             }
 
             if (components.HasFlag(TransformComponents.Rotation))
             {
-                result = Matrix4x4.CreateFromQuaternion(mQuat) * result;
+                result *= MatrixMath.Rotate(mQuat);
             }
 
             if (components.HasFlag(TransformComponents.Scale))
             {
-                result = Matrix4x4.CreateScale(Scale) * result;
+                result *= MatrixMath.Scale(Matrix4x4.Identity, Scale);
             }
 
-            return Matrix4x4.Transpose(result);
+            return result;
         }
 
         internal bool OnEvent(ComponentEventInfo eventInfo)
