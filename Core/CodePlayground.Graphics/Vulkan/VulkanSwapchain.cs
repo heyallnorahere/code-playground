@@ -14,7 +14,6 @@ namespace CodePlayground.Graphics.Vulkan
     internal struct VulkanSwapchainFramebuffer
     {
         public Image Image { get; set; }
-        public ImageView View { get; set; }
         public VulkanFramebuffer Framebuffer { get; set; }
     }
 
@@ -388,7 +387,7 @@ namespace CodePlayground.Graphics.Vulkan
             var newLayout = VulkanImage.GetLayout(DeviceImageLayoutName.DepthStencilAttachment);
             using (commandBuffer.Context(GPUQueueType.Transfer))
             {
-                image.TransitionLayout(commandBuffer, image.Layout, newLayout, 0, 1);
+                image.TransitionLayout(commandBuffer, image.Layout, newLayout, 0, 1, 0, 1);
             }
 
             commandBuffer.End();
@@ -441,45 +440,31 @@ namespace CodePlayground.Graphics.Vulkan
             var api = VulkanContext.API;
             for (uint i = 0; i < imageCount; i++)
             {
-                var viewInfo = VulkanUtilities.Init<ImageViewCreateInfo>() with
-                {
-                    Flags = ImageViewCreateFlags.None,
-                    Image = images[i],
-                    ViewType = ImageViewType.Type2D,
-                    Format = mImageFormat,
-                    Components = VulkanUtilities.Init<ComponentMapping>() with
-                    {
-                        R = ComponentSwizzle.R,
-                        G = ComponentSwizzle.G,
-                        B = ComponentSwizzle.B,
-                        A = ComponentSwizzle.A
-                    },
-                    SubresourceRange = VulkanUtilities.Init<ImageSubresourceRange>() with
-                    {
-                        AspectMask = ImageAspectFlags.ColorBit,
-                        BaseMipLevel = 0,
-                        LevelCount = 1,
-                        BaseArrayLayer = 0,
-                        LayerCount = 1
-                    }
-                };
-
-                ImageView view;
-                api.CreateImageView(mDevice.Device, &viewInfo, null, &view).Assert();
-
+                var image = images[i];
                 framebuffers[i] = new VulkanSwapchainFramebuffer
                 {
-                    Image = viewInfo.Image,
-                    View = view,
+                    Image = image,
                     Framebuffer = new VulkanFramebuffer(mDevice, new VulkanFramebufferInfo
                     {
                         Width = Width,
                         Height = Height,
                         RenderPass = mRenderPass,
-                        Attachments = new ImageView[]
+                        Attachments = new VulkanFramebufferAttachmentInfo[]
                         {
-                            view,
-                            mDepthBuffer.View
+                            new VulkanFramebufferAttachmentInfo
+                            {
+                                Image = image,
+                                ImageFormat = mImageFormat,
+                                AspectFlags = ImageAspectFlags.ColorBit,
+                                Layers = 1
+                            },
+                            new VulkanFramebufferAttachmentInfo
+                            {
+                                Image = mDepthBuffer.Image,
+                                ImageFormat = mDepthBuffer.VulkanFormat,
+                                AspectFlags = mDepthBuffer.AspectMask,
+                                Layers = mDepthBuffer.ArrayLayers
+                            }
                         }
                     })
                 };
@@ -497,7 +482,6 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 var framebuffer = mFramebuffers[i];
                 framebuffer.Framebuffer.Dispose();
-                api.DestroyImageView(mDevice.Device, framebuffer.View, null);
             }
         }
 

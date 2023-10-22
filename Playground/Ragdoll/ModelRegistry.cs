@@ -22,6 +22,7 @@ namespace Ragdoll
         public Vector3 Position;
         public Vector3 Normal;
         public Vector2 UV;
+        public Vector3 Tangent;
         public int BoneCount;
         public unsafe fixed int BoneIDs[ModelRegistry.BoneLimitPerVertex];
         public unsafe fixed float BoneWeights[ModelRegistry.BoneLimitPerVertex];
@@ -105,6 +106,7 @@ namespace Ragdoll
                     Position = src.Position,
                     Normal = src.Normal,
                     UV = src.UV,
+                    Tangent = src.Tangent,
                     BoneCount = src.Bones.Count
                 };
 

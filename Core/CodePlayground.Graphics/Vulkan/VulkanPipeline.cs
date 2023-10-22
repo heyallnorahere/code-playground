@@ -50,36 +50,10 @@ namespace CodePlayground.Graphics.Vulkan
 
     public sealed class VulkanPipeline : IPipeline
     {
-        private static readonly IReadOnlyDictionary<ShaderTypeClass, IReadOnlyDictionary<int, Format>> sAttributeFormats;
         private static ulong sCurrentID;
-
         static VulkanPipeline()
         {
             sCurrentID = 0;
-            sAttributeFormats = new Dictionary<ShaderTypeClass, IReadOnlyDictionary<int, Format>>
-            {
-                [ShaderTypeClass.Float] = new Dictionary<int, Format>
-                {
-                    [1] = Format.R32Sfloat,
-                    [2] = Format.R32G32Sfloat,
-                    [3] = Format.R32G32B32Sfloat,
-                    [4] = Format.R32G32B32A32Sfloat
-                },
-                [ShaderTypeClass.SInt] = new Dictionary<int, Format>
-                {
-                    [1] = Format.R32Sint,
-                    [2] = Format.R32G32Sint,
-                    [3] = Format.R32G32B32Sint,
-                    [4] = Format.R32G32B32A32Sint
-                },
-                [ShaderTypeClass.UInt] = new Dictionary<int, Format>
-                {
-                    [1] = Format.R32Uint,
-                    [2] = Format.R32G32Uint,
-                    [3] = Format.R32G32B32Uint,
-                    [4] = Format.R32G32B32A32Uint
-                }
-            };
         }
 
         public static ShaderStageFlags ConvertStage(ShaderStage stage)
@@ -329,16 +303,17 @@ namespace CodePlayground.Graphics.Vulkan
             using var pushConstantsEvent = OptickMacros.Event();
             using var gpuPushConstantsEvent = OptickMacros.GPUEvent("Push constants");
 
-            mReflectionView!.ProcessPushConstantBuffers(out int size, out ShaderStageFlags stages);
+            int totalSize = mReflectionView!.TotalPushConstantSize;
+            var stages = mReflectionView!.PushConstantStages;
 
-            var buffer = new byte[size];
+            var buffer = new byte[totalSize];
             var span = new Span<byte>(buffer);
             callback.Invoke(span);
 
             fixed (byte* data = buffer)
             {
                 var api = VulkanContext.API;
-                api.CmdPushConstants(commandBuffer.Buffer, mLayout, stages, 0, (uint)size, data);
+                api.CmdPushConstants(commandBuffer.Buffer, mLayout, stages, 0, (uint)totalSize, data);
             }
         }
 
@@ -736,50 +711,9 @@ namespace CodePlayground.Graphics.Vulkan
                 setLayouts[set] = mDescriptorSets[set].Layout;
             }
 
-            var pushConstantRanges = new Dictionary<string, PushConstantRange>();
-            using (OptickMacros.Event("Process push constant ranges"))
-            {
-                int currentOffset = 0;
-                var reflectionData = mReflectionView!.ReflectionData;
-
-                foreach (var stage in reflectionData.Keys)
-                {
-                    var data = reflectionData[stage];
-                    foreach (var pushConstantBuffer in data.PushConstantBuffers)
-                    {
-                        var name = pushConstantBuffer.Name;
-                        var typeData = data.Types[pushConstantBuffer.Type];
-                        var size = typeData.TotalSize;
-
-                        if (!pushConstantRanges.ContainsKey(name))
-                        {
-                            pushConstantRanges.Add(name, new PushConstantRange
-                            {
-                                StageFlags = ConvertStage(stage),
-                                Offset = (uint)currentOffset,
-                                Size = (uint)size
-                            });
-
-                            mPushConstantBufferOffsets.Add(name, currentOffset);
-                            currentOffset += size;
-                        }
-                        else if (pushConstantRanges[name].Size != (uint)size)
-                        {
-                            throw new InvalidOperationException("Mismatching push constant buffer sizes!");
-                        }
-                        else
-                        {
-                            var range = pushConstantRanges[name];
-                            range.StageFlags |= ConvertStage(stage);
-                            pushConstantRanges[name] = range;
-                        }
-                    }
-                }
-            }
-
             fixed (DescriptorSetLayout* layoutPtr = setLayouts)
             {
-                var ranges = pushConstantRanges.Values.ToArray();
+                var ranges = mReflectionView!.PushConstantRanges.Values.ToArray();
                 fixed (PushConstantRange* rangePtr = ranges)
                 {
                     var createInfo = VulkanUtilities.Init<PipelineLayoutCreateInfo>() with
@@ -798,33 +732,6 @@ namespace CodePlayground.Graphics.Vulkan
                     }
                 }
             }
-        }
-
-        private static Format GetAttributeFormat(ReflectedShaderType attributeType)
-        {
-            using var getFormatEvent = OptickMacros.Event();
-            if (attributeType.Columns != 1 || (attributeType.ArrayDimensions?.Any() ?? false))
-            {
-                throw new InvalidOperationException("Every vertex attribute must be a single vector!");
-            }
-
-            if (attributeType.Size != 4)
-            {
-                throw new InvalidOperationException("Vector columns must be 32-bit integers or floats!");
-            }
-
-            if (!sAttributeFormats.ContainsKey(attributeType.Class))
-            {
-                throw new InvalidOperationException($"Unsupported vector type: {attributeType.Class}");
-            }
-
-            var formats = sAttributeFormats[attributeType.Class];
-            if (!formats.ContainsKey(attributeType.Rows))
-            {
-                throw new InvalidOperationException($"Invalid vector size: {attributeType.Rows}");
-            }
-
-            return formats[attributeType.Rows];
         }
 
         private unsafe void CreateGraphicsPipeline(IReadOnlyDictionary<ShaderStage, IShader> shaders)
@@ -866,39 +773,12 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             }
 
-            var reflectionData = mReflectionView!.ReflectionData;
-            var vertexReflectionData = reflectionData[ShaderStage.Vertex];
-
-            var inputs = vertexReflectionData.StageIO.Where(field => field.Direction == StageIODirection.In).ToList();
-            inputs.Sort((a, b) => a.Location.CompareTo(b.Location));
-
-            int vertexSize = 0;
-            var attributes = new VertexInputAttributeDescription[inputs.Count];
-
-            using (OptickMacros.Event("Pipeline vertex input attributes"))
-            {
-                for (int i = 0; i < inputs.Count; i++)
-                {
-                    var input = inputs[i];
-                    var type = vertexReflectionData.Types[input.Type];
-
-                    attributes[i] = VulkanUtilities.Init<VertexInputAttributeDescription>() with
-                    {
-                        Location = (uint)input.Location,
-                        Binding = 0,
-                        Format = GetAttributeFormat(type),
-                        Offset = (uint)vertexSize
-                    };
-
-                    vertexSize += type.TotalSize;
-                }
-            }
-
             var spec = mDesc.Specification;
             var frontFace = spec?.FrontFace ?? default;
             var blendMode = spec?.BlendMode ?? default;
             var enableDepthTesting = spec?.EnableDepthTesting ?? default;
             bool disableCulling = spec?.DisableCulling ?? default;
+            var vertexLayout = (VulkanVertexAttributeLayout?)mDesc.VertexAttributeLayout ?? mReflectionView!.CreateVertexAttributeLayout();
 
             var dynamicStates = new DynamicState[]
             {
@@ -908,14 +788,14 @@ namespace CodePlayground.Graphics.Vulkan
 
             fixed (DynamicState* dynamicStatePtr = dynamicStates)
             {
-                fixed (VertexInputAttributeDescription* attributePtr = attributes)
+                fixed (VertexInputAttributeDescription* attributePtr = vertexLayout.Attributes)
                 {
                     fixed (PipelineShaderStageCreateInfo* stagePtr = shaderStageInfo)
                     {
                         var binding = VulkanUtilities.Init<VertexInputBindingDescription>() with
                         {
                             Binding = 0,
-                            Stride = (uint)vertexSize,
+                            Stride = (uint)vertexLayout.TotalSize,
                             InputRate = VertexInputRate.Vertex
                         };
 
@@ -923,7 +803,7 @@ namespace CodePlayground.Graphics.Vulkan
                         {
                             VertexBindingDescriptionCount = 1,
                             PVertexBindingDescriptions = &binding,
-                            VertexAttributeDescriptionCount = (uint)attributes.Length,
+                            VertexAttributeDescriptionCount = (uint)vertexLayout.Attributes.Length,
                             PVertexAttributeDescriptions = attributePtr
                         };
 

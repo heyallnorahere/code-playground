@@ -2,6 +2,7 @@ using CodePlayground.Graphics;
 using ImGuiNET;
 using Optick.NET;
 using Ragdoll.Components;
+using Ragdoll.Physics;
 using Ragdoll.Shaders;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -9,10 +10,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
-using System.Linq;
 using System.Numerics;
 using System.Reflection;
-using System.Runtime.InteropServices;
 
 namespace Ragdoll.Layers
 {
@@ -158,23 +157,6 @@ namespace Ragdoll.Layers
         public string DisplayName { get; set; }
     }
 
-    internal struct LoadedModelInfo
-    {
-        public IPipeline[] Pipelines { get; set; }
-        // not much else...
-    }
-
-    internal struct CameraBufferData
-    {
-        public BufferMatrix Projection, View;
-    }
-
-    internal struct PushConstantData
-    {
-        public BufferMatrix Model;
-        public int BoneOffset;
-    }
-
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
     internal sealed class SceneLayer : Layer
     {
@@ -215,12 +197,7 @@ namespace Ragdoll.Layers
             mMenus = LoadMenus();
 
             mModelPath = mModelName = mModelError = string.Empty;
-            mLoadedModelInfo = new Dictionary<int, LoadedModelInfo>();
-
             mFramebufferAttachments = new FramebufferAttachmentInfo[2];
-
-            mCameraBuffer = null;
-            mReflectionView = null;
 
             mAttached = false;
             App.Instance.OptickStateChanged += OnOptickStateChanged;
@@ -250,31 +227,7 @@ namespace Ragdoll.Layers
                 return -1;
             }
 
-            var modelData = registry.Models[modelId];
-            var materials = modelData.Model.Materials;
-
-            var pipelines = new IPipeline[materials.Count];
-            for (int i = 0; i < materials.Count; i++)
-            {
-                var material = materials[i];
-                var pipeline = pipelines[i] = library.LoadPipeline<ModelShader>(new PipelineDescription
-                {
-                    RenderTarget = mRenderTarget,
-                    Type = PipelineType.Graphics,
-                    FrameCount = Renderer.FrameCount,
-                    Specification = material.PipelineSpecification
-                });
-
-                pipeline.Bind(mCameraBuffer!, nameof(ModelShader.u_CameraBuffer));
-                pipeline.Bind(modelData.BoneBuffer, nameof(ModelShader.u_BoneBuffer));
-                material.Bind(pipeline, nameof(ModelShader.u_MaterialBuffer), textureType => $"u_{textureType}Map");
-            }
-
-            mLoadedModelInfo.Add(modelId, new LoadedModelInfo
-            {
-                Pipelines = pipelines
-            });
-
+            mSceneRenderer?.RegisterModel(modelId, mRenderTarget!);
             return modelId;
         }
 
@@ -360,6 +313,7 @@ namespace Ragdoll.Layers
 
             var app = App.Instance;
             var graphicsContext = app.GraphicsContext!;
+            mSceneRenderer = new SceneRenderer(graphicsContext, app.Renderer!.Library, app.ModelRegistry!);
 
             // for transfer operations
             var queue = graphicsContext.Device.GetQueue(CommandQueueFlags.Transfer);
@@ -368,18 +322,10 @@ namespace Ragdoll.Layers
 
             using (commandList.Context(GPUQueueType.Transfer))
             {
-                mReflectionView = app.Renderer!.Library.CreateReflectionView<ModelShader>();
-                int bufferSize = mReflectionView.GetBufferSize(nameof(ModelShader.u_CameraBuffer));
-                if (bufferSize < 0)
-                {
-                    throw new InvalidOperationException("Failed to find camera buffer!");
-                }
-
-                mCameraBuffer = graphicsContext.CreateDeviceBuffer(DeviceBufferUsage.Uniform, bufferSize);
                 mFramebufferSemaphore = graphicsContext.CreateSemaphore();
                 mFramebufferRecreated = true;
 
-                var size = app.RootWindow!.FramebufferSize;
+                var size = app.RootView!.FramebufferSize;
                 CreateFramebufferAttachments(size.X, size.Y, commandList);
                 mFramebuffer = graphicsContext.CreateFramebuffer(new FramebufferInfo
                 {
@@ -401,12 +347,17 @@ namespace Ragdoll.Layers
 
             using (OptickMacros.Event("Test scene creation"))
             {
-                int modelId = LoadModel("../../../../VulkanTest/Resources/Models/rigged-character.fbx", "rigged-character");
+                int modelId = LoadModel("../../../../VulkanTest/Resources/Models/sledge-hammer.fbx", "sledge-hammer");
                 ulong entity = mScene.NewEntity("Model");
                 mScene.AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
 
                 var transform = mScene.AddComponent<TransformComponent>(entity);
-                transform.Scale = Vector3.One * 0.01f;
+                transform.Scale = Vector3.One * 10f;
+                transform.RotationEuler = new Vector3(45f, 0f, 0f);
+
+                var rigidBody = mScene.AddComponent<RigidBodyComponent>(entity);
+                var staticModelCollider = (StaticModelCollider)rigidBody.CreateCollider(ColliderType.StaticModel);
+                staticModelCollider.SetModel(modelId);
 
                 entity = mScene.NewEntity("Camera");
                 mScene.AddComponent<CameraComponent>(entity).MainCamera = true;
@@ -424,6 +375,41 @@ namespace Ragdoll.Layers
 
                 mScene.AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
                 mScene.AddComponent<RigidBodyComponent>(entity).BodyType = BodyType.Static;
+
+                const float lightHeight = 2.8f;
+                var lightColors = new Vector3[]
+                {
+                    new Vector3(1f, 0f, 0f),
+                    new Vector3(0f, 1f, 0f),
+                    new Vector3(0f, 0f, 1f)
+                };
+
+                for (int i = 0; i < lightColors.Length; i++)
+                {
+                    entity = mScene.NewEntity($"Light #{i + 1}");
+                    transform = mScene.AddComponent<TransformComponent>(entity);
+
+                    float angle = MathF.PI * 2 * i / lightColors.Length;
+                    transform.RotationQuat = Quaternion.CreateFromYawPitchRoll(angle, angle, angle);
+                    transform.Translation = new Vector3
+                    {
+                        X = MathF.Cos(angle) * lightHeight,
+                        Y = lightHeight,
+                        Z = MathF.Sin(angle) * lightHeight
+                    };
+
+                    mScene.AddComponent<RenderedModelComponent>(entity).UpdateModel(modelId, entity);
+                    mScene.AddComponent<RigidBodyComponent>(entity);
+
+                    var light = mScene.AddComponent<LightComponent>(entity);
+                    light.DiffuseStrength = 1f;
+                    light.SpecularStrength = 0.5f;
+                    light.AmbientStrength = 0.05f;
+                    light.Quadratic = 0.01f;
+                    light.Linear = 0.5f;
+                    light.Constant = 0f;
+                    light.DiffuseColor = light.AmbientColor = lightColors[i];
+                }
             }
 
             mAttached = true;
@@ -438,7 +424,7 @@ namespace Ragdoll.Layers
             {
                 Size = new Size(width, height),
                 Usage = DeviceImageUsageFlags.Render | DeviceImageUsageFlags.ColorAttachment | DeviceImageUsageFlags.CopySource,
-                Format = DeviceImageFormat.RGBA8_UNORM,
+                Format = DeviceImageFormat.RGBA8_SRGB,
                 MipLevels = 1
             });
 
@@ -492,14 +478,7 @@ namespace Ragdoll.Layers
             using var poppedEvent = OptickMacros.Event();
             mAttached = false;
 
-            mCameraBuffer?.Dispose();
-            foreach (var modelData in mLoadedModelInfo.Values)
-            {
-                foreach (var pipeline in modelData.Pipelines)
-                {
-                    pipeline.Dispose();
-                }
-            }
+            mSceneRenderer?.Dispose();
 
             AttachOptickScreenshots();
             DestroyFramebuffer();
@@ -573,37 +552,6 @@ namespace Ragdoll.Layers
             }
         }
 
-        private static void ComputeCameraVectors(Vector3 angle, out Vector3 direction, out Vector3 up)
-        {
-            using var computeCameraVectorsEvent = OptickMacros.Event();
-
-            // +X - tilt camera up
-            // +Y - rotate view to the right
-            // +Z - roll camera counterclockwise
-
-            float pitch = -angle.X;
-            float yaw = -angle.Y;
-            float roll = angle.Z + MathF.PI / 2f; // we want the up vector to face +Y at 0 degrees roll
-
-            // yaw offset of 90 degrees - we want the camera to be facing +Z at 0 degrees yaw
-            float directionPitch = MathF.Sin(roll) * pitch - MathF.Cos(roll) * yaw;
-            float directionYaw = MathF.Sin(roll) * yaw - MathF.Cos(roll) * pitch + MathF.PI / 2f;
-
-            direction = Vector3.Normalize(new Vector3
-            {
-                X = MathF.Cos(directionYaw) * MathF.Cos(directionPitch),
-                Y = MathF.Sin(directionPitch),
-                Z = MathF.Sin(directionYaw) * MathF.Cos(directionPitch)
-            });
-
-            up = Vector3.Normalize(new Vector3
-            {
-                X = MathF.Cos(yaw) * MathF.Cos(roll),
-                Y = MathF.Sin(roll),
-                Z = MathF.Sin(yaw) * MathF.Cos(roll)
-            });
-        }
-
         public override void OnUpdate(double delta)
         {
             if (mScene is null)
@@ -613,73 +561,6 @@ namespace Ragdoll.Layers
 
             using var updateEvent = OptickMacros.Event(category: Category.GameLogic);
             mScene.Update(delta);
-
-            var app = App.Instance;
-            var context = app.GraphicsContext;
-            var registry = app.ModelRegistry;
-
-            if (context is not null)
-            {
-                if (registry is not null)
-                {
-                    using var boneUpdateEvent = OptickMacros.Category("Bone update", Category.Animation);
-                    using (OptickMacros.Event("Pre-bone update"))
-                    {
-                        var entityView = mScene.ViewEntities(typeof(BoneControllerComponent), typeof(TransformComponent));
-                        foreach (var entity in entityView)
-                        {
-                            var boneControllerComponent = mScene.GetComponent<BoneControllerComponent>(entity);
-                            mScene.InvokeComponentEvent(boneControllerComponent, entity, ComponentEventID.PreBoneUpdate);
-                        }
-                    }
-
-                    var math = new MatrixMath(context);
-                    foreach (ulong entity in mScene.ViewEntities(typeof(RenderedModelComponent)))
-                    {
-                        var modelData = mScene.GetComponent<RenderedModelComponent>(entity);
-                        if (modelData.ID < 0)
-                        {
-                            continue;
-                        }
-
-                        var boneBuffer = registry.Models[modelData.ID].BoneBuffer;
-                        modelData.BoneController?.Update(boneTransforms => boneBuffer.CopyFromCPU(boneTransforms.Select(math.TranslateMatrix).ToArray(), modelData.BoneOffset * Marshal.SizeOf<BufferMatrix>()));
-                    }
-                }
-
-                using var updateMatricesEvent = OptickMacros.Category("Update scene matrices", Category.Rendering);
-
-                var camera = Scene.Null;
-                foreach (ulong entity in mScene.ViewEntities(typeof(TransformComponent), typeof(CameraComponent)))
-                {
-                    var component = mScene.GetComponent<CameraComponent>(entity);
-                    if (component.MainCamera)
-                    {
-                        camera = entity;
-                        break;
-                    }
-                }
-
-                if (camera != Scene.Null)
-                {
-                    var transform = mScene.GetComponent<TransformComponent>(camera);
-                    var cameraData = mScene.GetComponent<CameraComponent>(camera);
-
-                    var math = new MatrixMath(context);
-                    float aspectRatio = (float)mFramebuffer!.Width / mFramebuffer!.Height;
-                    float fov = cameraData.FOV * MathF.PI / 180f;
-                    var projection = math.Perspective(fov, aspectRatio, 0.1f, 100f);
-
-                    ComputeCameraVectors(transform.RotationEuler, out Vector3 direction, out Vector3 up);
-                    var view = math.LookAt(transform.Translation, transform.Translation + direction, up);
-
-                    mCameraBuffer?.MapStructure(mReflectionView!, nameof(ModelShader.u_CameraBuffer), new CameraBufferData
-                    {
-                        Projection = math.TranslateMatrix(projection),
-                        View = math.TranslateMatrix(view)
-                    });
-                }
-            }
         }
 
         public override void OnImGuiRender()
@@ -693,7 +574,7 @@ namespace Ragdoll.Layers
         public override void PreRender(Renderer renderer)
         {
             using var preRenderEvent = OptickMacros.Event(category: Category.Rendering);
-            if (mScene is null)
+            if (mScene is null || mFramebuffer is null || mRenderTarget is null)
             {
                 return;
             }
@@ -709,42 +590,27 @@ namespace Ragdoll.Layers
             var attachmentLayout = colorAttachment.Layout!;
             var renderLayout = colorAttachment.Image.Layout;
 
-            colorAttachment.Image.TransitionLayout(commandList, renderLayout, attachmentLayout);
-            renderer.BeginRender(mRenderTarget!, mFramebuffer!, new Vector4(0.2f, 0.2f, 0.2f, 1f));
-
-            var math = new MatrixMath(renderer.Context);
-            foreach (ulong id in mScene.ViewEntities(typeof(TransformComponent), typeof(RenderedModelComponent)))
+            // render scene
+            mSceneRenderer?.Render(new SceneRenderInfo
             {
-                var transform = mScene.GetComponent<TransformComponent>(id);
-                var renderedModel = mScene.GetComponent<RenderedModelComponent>(id);
+                Renderer = renderer,
+                Scene = mScene,
+                Framebuffer = mFramebuffer,
 
-                var model = renderedModel.Model;
-                if (model is null)
+                BeginSceneRender = () =>
                 {
-                    continue;
-                }
+                    // transition framebuffer image to desired layout and begin render
+                    colorAttachment.Image.TransitionLayout(commandList, renderLayout, attachmentLayout);
+                    renderer.BeginRender(mRenderTarget, mFramebuffer, new Vector4(0.2f, 0.2f, 0.2f, 1f));
+                },
 
-                var info = mLoadedModelInfo[renderedModel.ID];
-                foreach (var mesh in model.Submeshes)
+                EndSceneRender = () =>
                 {
-                    var pipeline = info.Pipelines[mesh.MaterialIndex];
-                    renderer.RenderMesh(model.VertexBuffer, model.IndexBuffer, pipeline,
-                                        mesh.IndexOffset, mesh.IndexCount, DeviceBufferIndexType.UInt32,
-                                        mapped =>
-                    {
-                        using var pushConstantsEvent = OptickMacros.Category("Push constants", Category.Rendering);
-
-                        mReflectionView!.MapStructure(mapped, nameof(ModelShader.u_PushConstants), new PushConstantData
-                        {
-                            Model = math.TranslateMatrix(transform.CreateMatrix()),
-                            BoneOffset = renderedModel.BoneOffset
-                        });
-                    });
+                    // end render and transition image back
+                    renderer.EndRender();
+                    colorAttachment.Image.TransitionLayout(commandList, attachmentLayout, renderLayout);
                 }
-            }
-
-            renderer.EndRender();
-            colorAttachment.Image.TransitionLayout(commandList, attachmentLayout, renderLayout);
+            });
         }
 
         #endregion
@@ -1127,10 +993,10 @@ namespace Ragdoll.Layers
 
         private ulong mSelectedEntity;
         private Scene? mScene;
+        private SceneRenderer? mSceneRenderer;
 
         private readonly IReadOnlyList<ImGuiMenu> mMenus;
         private string mModelPath, mModelName, mModelError;
-        private readonly Dictionary<int, LoadedModelInfo> mLoadedModelInfo;
 
         private IFramebuffer? mFramebuffer;
         private IRenderTarget? mRenderTarget;
@@ -1139,9 +1005,6 @@ namespace Ragdoll.Layers
 
         private IDisposable? mFramebufferSemaphore;
         private bool mFramebufferRecreated;
-
-        private IDeviceBuffer? mCameraBuffer;
-        private IReflectionView? mReflectionView;
 
         private bool mAttached;
     }

@@ -48,6 +48,14 @@ namespace CodePlayground.Graphics.Shaders
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         [BuiltinShaderFunction]
+        [NamedShaderSymbol("cross", Language = ShaderLanguage.GLSL)]
+        public static T Cross<T>(T lhs, T rhs) where T : Vector2<float>
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction]
         [NamedShaderSymbol("max", Language = ShaderLanguage.GLSL)]
         public static T Max<T>(T lhs, T rhs)
         {
@@ -114,6 +122,30 @@ namespace CodePlayground.Graphics.Shaders
         [BuiltinShaderFunction]
         [NamedShaderSymbol("tanh", Language = ShaderLanguage.GLSL)]
         public static float Tanh(float x)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("reflect", Language = ShaderLanguage.GLSL)]
+        public static T Reflect<T>(T x, T y) where T : Vector2<float>
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("EmitVertex", Language = ShaderLanguage.GLSL)]
+        public static void EmitVertex()
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("EndPrimitive", Language = ShaderLanguage.GLSL)]
+        public static void EndPrimitive()
         {
             throw new NotImplementedException();
         }
@@ -426,6 +458,10 @@ namespace CodePlayground.Graphics.Shaders
         [NamedShaderSymbol("a")]
         public T A;
 
+        // todo: swizzling
+        [NamedShaderSymbol("xyz", Language = ShaderLanguage.GLSL)]
+        public Vector3<T> XYZ;
+
         #region Operators
         [MethodImpl(MethodImplOptions.NoInlining)]
         [ShaderOperator(ShaderOperatorType.Add)]
@@ -531,6 +567,27 @@ namespace CodePlayground.Graphics.Shaders
         [BuiltinShaderFunction]
         [NamedShaderSymbol("texture", Language = ShaderLanguage.GLSL)]
         public Vector4<T> Sample(Vector2<T> uv, float bias)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    [PrimitiveShaderType(Instantiable = false, TypeClass = PrimitiveShaderTypeClass.Sampler)]
+    [NamedShaderSymbol("samplerCube", Language = ShaderLanguage.GLSL)]
+    public sealed class SamplerCube<T> where T : unmanaged
+    {
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("texture", Language = ShaderLanguage.GLSL)]
+        public Vector4<T> Sample(Vector3<T> uv)
+        {
+            throw new NotImplementedException();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [BuiltinShaderFunction]
+        [NamedShaderSymbol("texture", Language = ShaderLanguage.GLSL)]
+        public Vector4<T> Sample(Vector3<T> uv, float bias)
         {
             throw new NotImplementedException();
         }

@@ -296,10 +296,10 @@ namespace MachineLearning
         {
             var graphicsContext = GraphicsContext;
             var inputContext = InputContext;
-            var window = RootWindow;
+            var view = RootView;
             var renderTarget = graphicsContext?.Swapchain?.RenderTarget;
 
-            if (mImGui is not null || window is null || graphicsContext is null || inputContext is null || renderTarget is null)
+            if (mImGui is not null || view is null || graphicsContext is null || inputContext is null || renderTarget is null)
             {
                 return;
             }
@@ -310,7 +310,7 @@ namespace MachineLearning
             commandList.Begin();
             using (commandList.Context(GPUQueueType.Transfer))
             {
-                mImGui = new ImGuiController(graphicsContext, inputContext, window, renderTarget, SynchronizationFrames);
+                mImGui = new ImGuiController(graphicsContext, inputContext, view, renderTarget, SynchronizationFrames);
                 mImGui.LoadFontAtlas(commandList);
             }
 

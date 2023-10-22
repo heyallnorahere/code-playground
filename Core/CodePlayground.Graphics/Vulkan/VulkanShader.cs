@@ -339,6 +339,8 @@ namespace CodePlayground.Graphics.Vulkan
                     break;
                 case Basetype.Struct:
                     {
+                        var baseTypeHandle = spvc.CompilerGetTypeHandle(compiler, baseType ?? type);
+                        
                         nuint size;
                         spvc.CompilerGetDeclaredStructSize(compiler, handle, &size).Assert();
 
@@ -348,6 +350,8 @@ namespace CodePlayground.Graphics.Vulkan
                         for (uint i = 0; i < memberCount; i++)
                         {
                             var memberTypeId = spvc.TypeGetMemberType(handle, i);
+                            var memberTypeHandle = spvc.CompilerGetTypeHandle(compiler, memberTypeId);
+                            var memberBaseTypeId = spvc.TypeGetBaseTypeId(memberTypeHandle);
                             ProcessType(compiler, memberTypeId, null);
 
                             var memberName = spvc.CompilerGetMemberName(compiler, baseType ?? type, i);
@@ -415,8 +419,43 @@ namespace CodePlayground.Graphics.Vulkan
         private bool mDisposed;
     }
 
+    public struct VulkanVertexAttributeLayout
+    {
+        public int TotalSize;
+        public VertexInputAttributeDescription[] Attributes;
+    }
+
     public sealed class VulkanReflectionView : IReflectionView
     {
+        private static readonly IReadOnlyDictionary<ShaderTypeClass, IReadOnlyDictionary<int, Format>> sAttributeFormats;
+        static VulkanReflectionView()
+        {
+            sAttributeFormats = new Dictionary<ShaderTypeClass, IReadOnlyDictionary<int, Format>>
+            {
+                [ShaderTypeClass.Float] = new Dictionary<int, Format>
+                {
+                    [1] = Format.R32Sfloat,
+                    [2] = Format.R32G32Sfloat,
+                    [3] = Format.R32G32B32Sfloat,
+                    [4] = Format.R32G32B32A32Sfloat
+                },
+                [ShaderTypeClass.SInt] = new Dictionary<int, Format>
+                {
+                    [1] = Format.R32Sint,
+                    [2] = Format.R32G32Sint,
+                    [3] = Format.R32G32B32Sint,
+                    [4] = Format.R32G32B32A32Sint
+                },
+                [ShaderTypeClass.UInt] = new Dictionary<int, Format>
+                {
+                    [1] = Format.R32Uint,
+                    [2] = Format.R32G32Uint,
+                    [3] = Format.R32G32B32Uint,
+                    [4] = Format.R32G32B32A32Uint
+                }
+            };
+        }
+
         public VulkanReflectionView(IReadOnlyDictionary<ShaderStage, IShader> shaders)
         {
             mReflectionData = new Dictionary<ShaderStage, ShaderReflectionResult>();
@@ -424,14 +463,18 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 mReflectionData.Add(stage, shaders[stage].ReflectionData);
             }
+
+            mRanges = ProcessPushConstantBuffers(out mTotalPushConstantSize, out mPushConstantStages);
         }
 
-        public void ProcessPushConstantBuffers(out int size, out ShaderStageFlags stages)
+        private Dictionary<string, PushConstantRange> ProcessPushConstantBuffers(out int totalSize, out ShaderStageFlags stages)
         {
-            size = 0;
+            using var processPushConstantsEvent = OptickMacros.Event();
+
+            totalSize = 0;
             stages = ShaderStageFlags.None;
 
-            var processedBuffers = new HashSet<string>();
+            var ranges = new Dictionary<string, PushConstantRange>();
             foreach (var stage in mReflectionData.Keys)
             {
                 var data = mReflectionData[stage];
@@ -440,20 +483,33 @@ namespace CodePlayground.Graphics.Vulkan
                     continue;
                 }
 
-                stages |= VulkanPipeline.ConvertStage(stage);
+                var stageFlag = VulkanPipeline.ConvertStage(stage);
+                stages |= stageFlag;
+
                 foreach (var pushConstantBuffer in data.PushConstantBuffers)
                 {
-                    if (processedBuffers.Contains(pushConstantBuffer.Name))
+                    string name = pushConstantBuffer.Name;
+                    if (ranges.TryGetValue(name, out PushConstantRange range))
                     {
-                        continue;
+                        range.StageFlags |= stageFlag;
+                        ranges[name] = range;
                     }
+                    else
+                    {
+                        var typeData = data.Types[pushConstantBuffer.Type];
+                        ranges.Add(name, new PushConstantRange
+                        {
+                            StageFlags = stageFlag,
+                            Offset = (uint)totalSize,
+                            Size = (uint)typeData.Size
+                        });
 
-                    var typeData = data.Types[pushConstantBuffer.Type];
-                    size += typeData.Size;
-
-                    processedBuffers.Add(pushConstantBuffer.Name);
+                        totalSize += typeData.Size;
+                    }
                 }
             }
+
+            return ranges;
         }
 
         public int GetDescriptorSetBindingCount(int set)
@@ -517,10 +573,10 @@ namespace CodePlayground.Graphics.Vulkan
             return FindResource(resource, out _, out _, out _);
         }
 
-        private int GetBufferTypeID(ShaderStage stage, int set, int binding)
+        private int GetBufferTypeID(ShaderStage stage, int set, int binding, out bool pushConstant)
         {
             var reflectionData = mReflectionData[stage];
-            int typeId = set < 0 ? reflectionData.PushConstantBuffers[binding].Type : reflectionData.Resources[set][binding].Type;
+            int typeId = (pushConstant = set < 0) ? reflectionData.PushConstantBuffers[binding].Type : reflectionData.Resources[set][binding].Type;
 
             var typeData = reflectionData.Types[typeId];
             return typeData.Class != ShaderTypeClass.Struct ? -1 : typeId;
@@ -538,7 +594,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public int GetBufferSize(ShaderStage stage, int set, int binding)
         {
-            int typeId = GetBufferTypeID(stage, set, binding);
+            int typeId = GetBufferTypeID(stage, set, binding, out _);
             if (typeId < 0)
             {
                 return -1;
@@ -560,20 +616,171 @@ namespace CodePlayground.Graphics.Vulkan
 
         public int GetBufferOffset(ShaderStage stage, int set, int binding, string expression)
         {
-            int typeId = GetBufferTypeID(stage, set, binding);
+            int typeId = GetBufferTypeID(stage, set, binding, out bool pushConstant);
             if (typeId < 0)
             {
                 return -1;
             }
 
-            return GetTypeOffset(stage, typeId, expression);
+            int baseOffset = 0;
+            if (pushConstant)
+            {
+                string name = mReflectionData[stage].PushConstantBuffers[binding].Name;
+                baseOffset = (int)mRanges[name].Offset;
+            }
+
+            return baseOffset + GetTypeOffset(stage, typeId, expression);
         }
 
-        private int GetTypeOffset(ShaderStage stage, int type, string expression)
+        public static Format GetAttributeFormat(ReflectedShaderType attributeType)
+        {
+            using var getFormatEvent = OptickMacros.Event();
+            if (attributeType.Columns != 1 || (attributeType.ArrayDimensions?.Any() ?? false))
+            {
+                throw new InvalidOperationException("Every vertex attribute must be a single vector!");
+            }
+
+            if (attributeType.Size != 4)
+            {
+                throw new InvalidOperationException("Vector columns must be 32-bit integers or floats!");
+            }
+
+            if (!sAttributeFormats.ContainsKey(attributeType.Class))
+            {
+                throw new InvalidOperationException($"Unsupported vector type: {attributeType.Class}");
+            }
+
+            var formats = sAttributeFormats[attributeType.Class];
+            if (!formats.ContainsKey(attributeType.Rows))
+            {
+                throw new InvalidOperationException($"Invalid vector size: {attributeType.Rows}");
+            }
+
+            return formats[attributeType.Rows];
+        }
+
+        object IReflectionView.CreateVertexAttributeLayout() => CreateVertexAttributeLayout();
+        public VulkanVertexAttributeLayout CreateVertexAttributeLayout()
+        {
+            using var createLayoutEvent = OptickMacros.Event();
+            var vertexReflectionData = mReflectionData[ShaderStage.Vertex];
+
+            var inputs = vertexReflectionData.StageIO.Where(field => field.Direction == StageIODirection.In).ToList();
+            inputs.Sort((a, b) => a.Location.CompareTo(b.Location));
+
+            int vertexSize = 0;
+            var attributes = new VertexInputAttributeDescription[inputs.Count];
+
+            for (int i = 0; i < inputs.Count; i++)
+            {
+                var input = inputs[i];
+                var type = vertexReflectionData.Types[input.Type];
+
+                attributes[i] = VulkanUtilities.Init<VertexInputAttributeDescription>() with
+                {
+                    Location = (uint)input.Location,
+                    Binding = 0,
+                    Format = GetAttributeFormat(type),
+                    Offset = (uint)vertexSize
+                };
+
+                vertexSize += type.TotalSize;
+            }
+
+            return new VulkanVertexAttributeLayout
+            {
+                TotalSize = vertexSize,
+                Attributes = attributes
+            };
+        }
+
+        internal static int[] ParseFieldExpression(string expression, out string fieldName)
         {
             const char beginIndexCharacter = '[';
             const char endIndexCharacter = ']';
 
+            int beginIndexOperator = expression.IndexOf(beginIndexCharacter);
+            fieldName = beginIndexOperator < 0 ? expression : expression[0..beginIndexOperator];
+
+            if (string.IsNullOrEmpty(fieldName) || beginIndexOperator < 0)
+            {
+                return Array.Empty<int>();
+            }
+
+            var indexStrings = new List<string>();
+            for (int i = beginIndexOperator; i < expression.Length; i++)
+            {
+                char character = expression[i];
+                if (character == beginIndexCharacter)
+                {
+                    indexStrings.Add(beginIndexCharacter.ToString());
+                }
+                else
+                {
+                    var currentString = indexStrings[^1];
+                    if (currentString[^1] == endIndexCharacter)
+                    {
+                        throw new InvalidOperationException("Malformed index operator!");
+                    }
+
+                    indexStrings[^1] = currentString + character;
+                }
+            }
+
+            var indices = new int[indexStrings.Count];
+            for (int i = 0; i < indexStrings.Count; i++)
+            {
+                var indexString = indexStrings[i];
+                if (indexString[^1] != endIndexCharacter)
+                {
+                    throw new InvalidOperationException("Malformed index operator!");
+                }
+
+                indices[i] = int.Parse(indexString[1..^1]);
+            }
+
+            return indices;
+        }
+
+        internal static int GetIndexedOffset(IReadOnlyList<int> indices, ReflectedShaderField field, ReflectedShaderType fieldType)
+        {
+            if (fieldType.ArrayDimensions is null || !fieldType.ArrayDimensions.Any())
+            {
+                throw new InvalidOperationException("Cannot index a non-array field!");
+            }
+
+            int stride = field.Stride;
+            if (stride <= 0)
+            {
+                throw new InvalidOperationException("SPIRV-Cross did not provide a stride value!");
+            }
+
+            int offset = 0;
+            for (int i = 0; i < indices.Count; i++)
+            {
+                int index = indices[i];
+                int dimensionIndex = fieldType.ArrayDimensions.Count - (i + 1);
+                int dimensionStride = stride;
+
+                int dimensionSize = fieldType.ArrayDimensions[dimensionIndex];
+                if (index < 0 || (dimensionSize > 0 && index >= fieldType.ArrayDimensions[dimensionIndex]))
+                {
+                    throw new IndexOutOfRangeException();
+                }
+
+                for (int j = 0; j < dimensionIndex; j++)
+                {
+                    dimensionStride *= fieldType.ArrayDimensions[j];
+                }
+
+                offset += index * dimensionStride;
+            }
+
+            return offset;
+        }
+
+        private int GetTypeOffset(ShaderStage stage, int type, string expression)
+        {
             var reflectionData = mReflectionData[stage];
             var typeData = reflectionData.Types[type];
             var fields = typeData.Fields!;
@@ -585,9 +792,7 @@ namespace CodePlayground.Graphics.Vulkan
 
             int memberOperator = expression.IndexOf('.');
             string fieldExpression = memberOperator < 0 ? expression : expression[0..memberOperator];
-
-            int beginIndexOperator = fieldExpression.IndexOf(beginIndexCharacter);
-            string fieldName = beginIndexOperator < 0 ? fieldExpression : fieldExpression[0..beginIndexOperator];
+            var indices = ParseFieldExpression(fieldExpression, out string fieldName);
 
             if (string.IsNullOrEmpty(fieldName))
             {
@@ -602,78 +807,109 @@ namespace CodePlayground.Graphics.Vulkan
             var field = fields[fieldName];
             int offset = field.Offset;
 
-            if (beginIndexOperator >= 0)
+            if (indices.Length > 0)
             {
                 var fieldType = reflectionData.Types[field.Type];
-                if (fieldType.ArrayDimensions is null || !fieldType.ArrayDimensions.Any())
-                {
-                    throw new InvalidOperationException("Cannot index a non-array field!");
-                }
-
-                int stride = field.Stride;
-                if (stride <= 0)
-                {
-                    throw new InvalidOperationException("SPIRV-Cross did not provide a stride value!");
-                }
-
-                var indexStrings = new List<string>();
-                for (int i = beginIndexOperator; i < fieldExpression.Length; i++)
-                {
-                    char character = fieldExpression[i];
-                    if (character == beginIndexCharacter)
-                    {
-                        indexStrings.Add(beginIndexCharacter.ToString());
-                    }
-                    else
-                    {
-                        var currentString = indexStrings[^1];
-                        if (currentString[^1] == endIndexCharacter)
-                        {
-                            throw new InvalidOperationException("Malformed index operator!");
-                        }
-
-                        indexStrings[^1] = currentString + character;
-                    }
-                }
-
-                for (int i = 0; i < indexStrings.Count; i++)
-                {
-                    var indexString = indexStrings[i];
-                    if (indexString[^1] != endIndexCharacter)
-                    {
-                        throw new InvalidOperationException("Malformed index operator!");
-                    }
-
-                    int index = int.Parse(indexString[1..^1]);
-                    int dimensionIndex = fieldType.ArrayDimensions.Count - (i + 1);
-                    int dimensionStride = stride;
-
-                    int dimensionSize = fieldType.ArrayDimensions[dimensionIndex];
-                    if (index < 0 || (dimensionSize > 0 && index >= fieldType.ArrayDimensions[dimensionIndex]))
-                    {
-                        throw new IndexOutOfRangeException();
-                    }
-
-                    for (int j = 0; j < dimensionIndex; j++)
-                    {
-                        dimensionStride *= fieldType.ArrayDimensions[j];
-                    }
-
-                    offset += index * dimensionStride;
-                }
+                offset += GetIndexedOffset(indices, field, fieldType);
             }
 
-            if (memberOperator >= 0)
+            if (memberOperator > 0)
             {
-                offset += GetTypeOffset(stage, field.Type, expression[(memberOperator + 1)..]);
+                int childOffset = GetTypeOffset(stage, field.Type, expression[(memberOperator + 1)..]);
+                if (childOffset < 0)
+                {
+                    offset = -1;
+                }
+                else
+                {
+                    offset += childOffset;
+                }
             }
 
             return offset;
         }
 
+        IReflectionNode? IReflectionView.GetResourceNode(string resource) => GetResourceNode(resource);
+        public VulkanReflectionNode? GetResourceNode(string resource)
+        {
+            if (!FindResource(resource, out ShaderStage stage, out int set, out int binding))
+            {
+                return null;
+            }
+
+            int type = GetBufferTypeID(stage, set, binding, out bool pushConstant);
+            int baseOffset = 0;
+
+            if (pushConstant)
+            {
+                string name = mReflectionData[stage].PushConstantBuffers[binding].Name;
+                baseOffset = (int)mRanges[name].Offset;
+            }
+
+            return type < 0 ? null : new VulkanReflectionNode(this, resource, stage, type, baseOffset);
+        }
+
+        public IReadOnlyDictionary<string, PushConstantRange> PushConstantRanges => mRanges;
+        public ShaderStageFlags PushConstantStages => mPushConstantStages;
+        public int TotalPushConstantSize => mTotalPushConstantSize;
         public IReadOnlyDictionary<ShaderStage, ShaderReflectionResult> ReflectionData => mReflectionData;
 
+        private readonly Dictionary<string, PushConstantRange> mRanges;
+        private readonly ShaderStageFlags mPushConstantStages;
+        private readonly int mTotalPushConstantSize;
         private readonly Dictionary<ShaderStage, ShaderReflectionResult> mReflectionData;
+    }
+
+    public sealed class VulkanReflectionNode : IReflectionNode
+    {
+        internal VulkanReflectionNode(VulkanReflectionView view, string resourceName, ShaderStage stage, int type, int offset)
+        {
+            mView = view;
+            mResourceName = resourceName;
+            mStage = stage;
+
+            mType = type;
+            mOffset = offset;
+        }
+
+        public string ResourceName => mResourceName;
+        public int Offset => mOffset;
+        public ReflectedShaderType TypeData => mView.ReflectionData[mStage].Types[mType];
+
+        IReflectionNode? IReflectionNode.Find(string name) => Find(name);
+        public VulkanReflectionNode? Find(string name)
+        {
+            try
+            {
+                var indices = VulkanReflectionView.ParseFieldExpression(name, out string fieldName);
+                var fields = TypeData.Fields;
+
+                if (fields is null || !fields.TryGetValue(fieldName, out ReflectedShaderField field))
+                {
+                    return null;
+                }
+
+                int offset = mOffset + field.Offset;
+                if (indices.Length > 0)
+                {
+                    var fieldType = mView.ReflectionData[mStage].Types[field.Type];
+                    offset += VulkanReflectionView.GetIndexedOffset(indices, field, fieldType);
+                }
+
+                return new VulkanReflectionNode(mView, mResourceName, mStage, field.Type, offset);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private readonly VulkanReflectionView mView;
+        private readonly string mResourceName;
+        private readonly ShaderStage mStage;
+
+        private readonly int mType;
+        private readonly int mOffset;
     }
 
     internal sealed unsafe class VulkanShaderCompiler : IShaderCompiler

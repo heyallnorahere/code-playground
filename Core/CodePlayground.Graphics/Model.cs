@@ -1,9 +1,7 @@
 ﻿using Optick.NET;
 using Silk.NET.Assimp;
-using Silk.NET.SDL;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -31,6 +29,8 @@ namespace CodePlayground.Graphics
         public Vector3 Position { get; set; }
         public Vector3 Normal { get; set; }
         public Vector2 UV { get; set; }
+        public Vector3 Tangent { get; set; }
+        public bool HasTangent { get; set; }
         public List<BoneData> Bones { get; set; }
     }
 
@@ -69,14 +69,42 @@ namespace CodePlayground.Graphics
     public sealed class Model : IDisposable
     {
         private static readonly Assimp sAPI;
-        static Model()
+        private static readonly LogStreamCallback sLogStreamCallback;
+
+        private static unsafe void AssimpLogStreamCallback(byte* message, byte* user)
+        {
+            var msg = Marshal.PtrToStringAnsi((nint)message);
+            if (string.IsNullOrEmpty(msg))
+            {
+                return;
+            }
+
+            if (msg.EndsWith('\n'))
+            {
+                msg = msg[..^1];
+            }
+
+            if (msg.EndsWith('\r'))
+            {
+                msg = msg[..^1];
+            }
+
+            Console.WriteLine($"Assimp: {msg}");
+        }
+
+        static unsafe Model()
         {
             sAPI = Assimp.GetApi();
+            sAPI.AttachLogStream(new LogStream
+            {
+                Callback = sLogStreamCallback = AssimpLogStreamCallback,
+                User = null
+            });
         }
 
         private static PostProcessSteps GetImportFlags(IModelImportContext importContext)
         {
-            var flags = PostProcessSteps.Triangulate | PostProcessSteps.GenerateNormals | PostProcessSteps.GenerateUVCoords | PostProcessSteps.JoinIdenticalVertices | PostProcessSteps.LimitBoneWeights;
+            var flags = PostProcessSteps.Triangulate | PostProcessSteps.GenerateNormals | PostProcessSteps.GenerateUVCoords | PostProcessSteps.CalculateTangentSpace | PostProcessSteps.LimitBoneWeights;
 
             var graphicsContext = importContext.GraphicsContext;
             if (graphicsContext.FlipUVs)
@@ -118,6 +146,13 @@ namespace CodePlayground.Graphics
             {
                 return null;
             }
+
+            /*
+            // why do i need this for generated normals? i have no clue
+            if (sAPI.ApplyPostProcessing(scene, (uint)) is null)
+            {
+                throw new InvalidOperationException("Failed to generate tangents!");
+            }*/
 
             return new Model(scene, path, loadedFromFile, importContext);
         }
@@ -363,15 +398,18 @@ namespace CodePlayground.Graphics
             {
                 var position = mesh->MVertices[i];
                 var normal = mesh->MNormals[i];
+                var tangent = mesh->MTangents is null ? Vector3.Zero : mesh->MTangents[i];
 
                 var textureCoords = mesh->MTextureCoords[0];
-                var uv = textureCoords is null ? new Vector3(0f) : textureCoords[i];
+                var uv = textureCoords is null ? Vector3.Zero : textureCoords[i];
 
                 mVertices.Add(new ModelVertex
                 {
                     Position = position,
                     Normal = normal,
                     UV = new Vector2(uv.X, uv.Y),
+                    Tangent = tangent,
+                    HasTangent = mesh->MTangents is not null,
                     Bones = new List<BoneData>()
                 });
             }
@@ -429,7 +467,7 @@ namespace CodePlayground.Graphics
             {
                 var assimpTextureType = textureType switch
                 {
-                    MaterialTexture.Normal => TextureType.Normals,
+                    MaterialTexture.Normal => TextureType.Height,
                     _ => Enum.Parse<TextureType>(textureType.ToString())
                 };
 

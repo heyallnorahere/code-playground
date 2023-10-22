@@ -626,6 +626,7 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 Size = info.Size,
                 Usage = info.Usage,
+                ImageType = info.ImageType,
                 MipLevels = info.MipLevels,
                 Format = info.Format
             });
@@ -725,7 +726,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private IFramebuffer CreateFramebuffer(FramebufferInfo info, VulkanRenderPass renderPass)
         {
-            var views = new List<ImageView>();
+            var attachments = new List<VulkanFramebufferAttachmentInfo>();
             foreach (var attachment in info.Attachments)
             {
                 if (attachment.Image is not VulkanImage image)
@@ -733,7 +734,13 @@ namespace CodePlayground.Graphics.Vulkan
                     throw new ArgumentException("Attachments must be Vulkan images!");
                 }
 
-                views.Add(image.View);
+                attachments.Add(new VulkanFramebufferAttachmentInfo
+                {
+                    Image = image.Image,
+                    ImageFormat = image.VulkanFormat,
+                    AspectFlags = image.AspectMask,
+                    Layers = image.ArrayLayers
+                });
             }
 
             return new VulkanFramebuffer(mDevice!, new VulkanFramebufferInfo
@@ -741,7 +748,7 @@ namespace CodePlayground.Graphics.Vulkan
                 Width = info.Width,
                 Height = info.Height,
                 RenderPass = renderPass,
-                Attachments = views
+                Attachments = attachments
             });
         }
 

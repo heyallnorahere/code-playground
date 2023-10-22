@@ -24,6 +24,7 @@
     <PackageReference Include="Silk.NET.SPIRV.Cross" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="$(SilkNETVersion)" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.NV" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Windowing" Version="$(SilkNETVersion)" />
 

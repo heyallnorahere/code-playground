@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace CodePlayground.Graphics
@@ -9,7 +10,6 @@ namespace CodePlayground.Graphics
         Diffuse,
         Specular,
         Ambient,
-        Height,
         Normal
     }
 
@@ -31,6 +31,7 @@ namespace CodePlayground.Graphics
 
     public sealed class Material : IDisposable
     {
+        public static IPipelineSpecification CreateDefaultPipelineSpec() => new MaterialPipelineSpecification();
         public Material(string name, ITexture whiteTexture, IGraphicsContext context)
         {
             PipelineSpecification = new MaterialPipelineSpecification();
@@ -80,7 +81,7 @@ namespace CodePlayground.Graphics
         public unsafe void Set<T>(string name, T data) where T : unmanaged
         {
             var buffer = new byte[sizeof(T)];
-            Marshal.Copy((nint)(void*)&data, buffer, 0, sizeof(T));
+            MemoryMarshal.Write(buffer, ref data);
             mFields[name] = buffer;
         }
 
@@ -107,7 +108,16 @@ namespace CodePlayground.Graphics
             pipeline.Bind(uniformBuffer, bufferName, 0);
             uniformBuffer.Map(mapped =>
             {
-                foreach (var fieldName in mFields.Keys)
+                var textureFlags = new Dictionary<string, bool>();
+                var textureTypes = Enum.GetValues<MaterialTexture>();
+
+                foreach (var textureType in textureTypes)
+                {
+                    textureFlags[$"Has{textureType}Map"] = mTextures.ContainsKey(textureType);
+                }
+
+                var keyList = new HashSet<string>(mFields.Keys.Concat(textureFlags.Keys));
+                foreach (var fieldName in keyList)
                 {
                     int gpuOffset = reflectionView.GetBufferOffset(bufferName, fieldName);
                     if (gpuOffset < 0)
@@ -115,10 +125,16 @@ namespace CodePlayground.Graphics
                         continue;
                     }
 
-                    var fieldData = mFields[fieldName];
-                    for (int i = 0; i < fieldData.Length; i++)
+                    if (mFields.TryGetValue(fieldName, out byte[]? fieldData))
                     {
-                        mapped[gpuOffset + i] = fieldData[i];
+                        for (int i = 0; i < fieldData.Length; i++)
+                        {
+                            mapped[gpuOffset + i] = fieldData[i];
+                        }
+                    }
+                    else
+                    {
+                        mapped[gpuOffset] = (byte)(textureFlags[fieldName] ? 1 : 0); // im sorry
                     }
                 }
             });

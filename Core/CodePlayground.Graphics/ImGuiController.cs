@@ -410,35 +410,38 @@ namespace CodePlayground.Graphics
             int vertexOffset = 0;
             int indexOffset = 0;
 
-            for (int i = 0; i < drawData.CmdListsCount; i++)
+            using (OptickMacros.Category("Copy to staging buffers", Category.IO))
             {
-                var cmdList = drawData.CmdListsRange[i];
-
-                var vertices = new ImGuiVertex[cmdList.VtxBuffer.Size];
-                var indices = new uint[cmdList.IdxBuffer.Size];
-
-                for (int j = 0; j < vertices.Length; j++)
+                for (int i = 0; i < drawData.CmdListsCount; i++)
                 {
-                    var vertex = cmdList.VtxBuffer[j];
-                    vertices[j] = new ImGuiVertex
+                    var cmdList = drawData.CmdListsRange[i];
+
+                    var vertices = new ImGuiVertex[cmdList.VtxBuffer.Size];
+                    var indices = new uint[cmdList.IdxBuffer.Size];
+
+                    for (int j = 0; j < vertices.Length; j++)
                     {
-                        Position = vertex.pos,
-                        UV = vertex.uv,
-                        Color = ImGui.ColorConvertU32ToFloat4(vertex.col)
-                    };
+                        var vertex = cmdList.VtxBuffer[j];
+                        vertices[j] = new ImGuiVertex
+                        {
+                            Position = vertex.pos,
+                            UV = vertex.uv,
+                            Color = ImGui.ColorConvertU32ToFloat4(vertex.col)
+                        };
+                    }
+
+                    for (int j = 0; j < indices.Length; j++)
+                    {
+                        uint index = cmdList.IdxBuffer[j];
+                        indices[j] = index + (uint)vertexOffset;
+                    }
+
+                    frameData.Buffers[DeviceBufferUsage.Vertex].StagingBuffer.CopyFromCPU(vertices, vertexOffset * sizeof(ImGuiVertex));
+                    frameData.Buffers[DeviceBufferUsage.Index].StagingBuffer.CopyFromCPU(indices, indexOffset * sizeof(uint));
+
+                    vertexOffset += vertices.Length;
+                    indexOffset += indices.Length;
                 }
-
-                for (int j = 0; j < indices.Length; j++)
-                {
-                    uint index = cmdList.IdxBuffer[j];
-                    indices[j] = index + (uint)vertexOffset;
-                }
-
-                frameData.Buffers[DeviceBufferUsage.Vertex].StagingBuffer.CopyFromCPU(vertices, vertexOffset * sizeof(ImGuiVertex));
-                frameData.Buffers[DeviceBufferUsage.Index].StagingBuffer.CopyFromCPU(indices, indexOffset * sizeof(uint));
-
-                vertexOffset += vertices.Length;
-                indexOffset += indices.Length;
             }
 
             var device = mGraphicsContext.Device;

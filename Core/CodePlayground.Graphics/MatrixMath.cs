@@ -133,6 +133,8 @@ namespace CodePlayground.Graphics
             return true;
         }
 
+        #region Angles
+
         public static Vector3 EulerAngles(Quaternion quat)
         {
             using var conversionEvent = OptickMacros.Event();
@@ -217,6 +219,7 @@ namespace CodePlayground.Graphics
             return MathF.Atan2(opposite, adjacent);
         }
 
+        #endregion
         #region Perspective
 
         // https://github.com/g-truc/glm/blob/efec5db081e3aad807d0731e172ac597f6a39447/glm/ext/matrix_clip_space.inl#L265
@@ -313,6 +316,111 @@ namespace CodePlayground.Graphics
         }
 
         public LookAtFunction LookAt => mLeftHanded ? LookAt_LH : LookAt_RH;
+
+        #endregion
+        #region Matrix transformations
+        // see https://github.com/g-truc/glm/blob/47585fde0c49fa77a2bf2fb1d2ead06999fd4b6e/glm/ext/matrix_transform.inl
+
+        public static Matrix4x4 Translate(Matrix4x4 matrix, Vector3 translation)
+        {
+            var result = matrix; // copy
+            for (int i = 0; i < 4; i++)
+            {
+                for (int j = 0; j < 3; j++)
+                {
+                    result[i, 3] += matrix[i, j] * translation[j];
+                }
+            }
+
+            return result;
+        }
+
+        public static Matrix4x4 Rotate(Matrix4x4 matrix, float angle, Vector3 axis)
+        {
+            float a = angle;
+            float c = MathF.Cos(a);
+            float s = MathF.Sin(a);
+
+            var rotationAxis = Vector3.Normalize(axis);
+            var temp = (1f - c) * rotationAxis;
+
+            var rotate = new Matrix4x4();
+            rotate[0, 0] = c + temp[0] * rotationAxis[0];
+            rotate[1, 0] = temp[0] * rotationAxis[1] + s * rotationAxis[2];
+            rotate[2, 0] = temp[0] * rotationAxis[2] - s * rotationAxis[1];
+
+            rotate[0, 1] = temp[1] * rotationAxis[0] - s * rotationAxis[2];
+            rotate[1, 1] = c + temp[1] * rotationAxis[1];
+            rotate[2, 1] = temp[1] * rotationAxis[2] + s * rotationAxis[0];
+
+            rotate[0, 2] = temp[2] * rotationAxis[0] + s * rotationAxis[1];
+            rotate[1, 2] = temp[2] * rotationAxis[1] - s * rotationAxis[0];
+            rotate[2, 2] = c + temp[2] * rotationAxis[2];
+
+            var result = new Matrix4x4();
+            for (int i = 0; i < 4; i++)
+            {
+                for (int j = 0; j < 3; j++)
+                {
+                    float cell = 0f;
+                    for (int k = 0; k < 3; k++)
+                    {
+                        cell += matrix[i, k] * rotate[k, j];
+                    }
+
+                    result[i, j] = cell;
+                }
+
+                result[i, 3] = matrix[i, 3];
+            }
+
+            return result;
+        }
+
+        public static Matrix4x4 Rotate(Quaternion quaternion)
+        {
+            var result = Matrix4x4.Identity;
+
+            float qxx = quaternion.X * quaternion.X;
+            float qyy = quaternion.Y * quaternion.Y;
+            float qzz = quaternion.Z * quaternion.Z;
+
+            float qxz = quaternion.X * quaternion.Z;
+            float qxy = quaternion.X * quaternion.Y;
+            float qyz = quaternion.Y * quaternion.Z;
+
+            float qwx = quaternion.W * quaternion.X;
+            float qwy = quaternion.W * quaternion.Y;
+            float qwz = quaternion.W * quaternion.Z;
+
+            result[0, 0] = 1f - 2f * (qyy + qzz);
+            result[1, 0] = 2f * (qxy + qwz);
+            result[2, 0] = 2f * (qxz - qwy);
+
+            result[0, 1] = 2f * (qxy - qwz);
+            result[1, 1] = 1f - 2f * (qxx + qzz);
+            result[2, 1] = 2f * (qyz + qwx);
+
+            result[0, 2] = 2f * (qxz + qwy);
+            result[1, 2] = 2f * (qyz - qwx);
+            result[2, 2] = 1f - 2f * (qxx + qyy);
+
+            return result;
+        }
+
+        public static Matrix4x4 Scale(Matrix4x4 matrix, Vector3 scale)
+        {
+            var result = matrix; // copy
+            for (int i = 0; i < 3; i++)
+            {
+                for (int j = 0; j < 4; j++)
+                {
+                    result[j, i] *= scale[i];
+                }
+            }
+
+            return result;
+        }
 
         #endregion
 

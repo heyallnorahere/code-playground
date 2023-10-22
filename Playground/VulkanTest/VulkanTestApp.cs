@@ -454,15 +454,15 @@ namespace VulkanTest
         {
             var graphicsContext = GraphicsContext;
             var inputContext = InputContext;
-            var window = RootWindow;
+            var view = RootView;
             var swapchain = graphicsContext?.Swapchain;
 
-            if (graphicsContext is null || inputContext is null || window is null || mImGuiController is not null || swapchain is null)
+            if (graphicsContext is null || inputContext is null || view is null || mImGuiController is not null || swapchain is null)
             {
                 return;
             }
 
-            mImGuiController = new ImGuiController(graphicsContext, inputContext, window, swapchain.RenderTarget, swapchain.FrameCount);
+            mImGuiController = new ImGuiController(graphicsContext, inputContext, view, swapchain.RenderTarget, swapchain.FrameCount);
             ImGui.StyleColorsDark();
 
             var device = graphicsContext.Device;

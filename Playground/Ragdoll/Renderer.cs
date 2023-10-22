@@ -5,20 +5,20 @@ using System.Numerics;
 
 namespace Ragdoll
 {
-    internal struct RendererRenderInfo
+    public struct RendererRenderInfo
     {
         public IRenderTarget RenderTarget { get; set; }
         public IFramebuffer Framebuffer { get; set; }
     }
 
-    internal struct RendererFrameInfo
+    public struct RendererFrameInfo
     {
         public ICommandList CommandList { get; set; }
         public int CurrentFrame { get; set; }
         public RendererRenderInfo? RenderInfo { get; set; }
     }
 
-    internal sealed class Renderer : IDisposable
+    public sealed class Renderer : IDisposable
     {
         public const int FrameCount = GraphicsApplication.SynchronizationFrames;
 
@@ -123,13 +123,14 @@ namespace Ragdoll
 
         public void RenderMesh(IDeviceBuffer vertices, IDeviceBuffer indices, IPipeline pipeline, int indexOffset, int indexCount, DeviceBufferIndexType indexType, BufferMapCallback? pushConstantCallback = null)
         {
+            using var renderEvent = OptickMacros.GPUEvent("Render mesh");
+            using var cpuEvent = OptickMacros.Event();
+            OptickMacros.Tag("Indices", indexCount);
+            
             if (mFrameInfo.RenderInfo is null)
             {
                 throw new InvalidOperationException("Cannot render right now!");
             }
-
-            using var renderEvent = OptickMacros.GPUEvent("Render mesh");
-            OptickMacros.Tag("Indices", indexCount);
 
             vertices.BindVertices(mFrameInfo.CommandList, 0);
             indices.BindIndices(mFrameInfo.CommandList, indexType);

@@ -63,6 +63,12 @@ namespace CodePlayground.Graphics
         Storage = 0x20,
     }
 
+    public enum DeviceImageType
+    {
+        Type2D,
+        TypeCube
+    }
+
     public enum DeviceImageFormat
     {
         RGBA8_SRGB,
@@ -184,6 +190,7 @@ namespace CodePlayground.Graphics
     public struct DeviceImageInfo
     {
         public Size Size { get; set; }
+        public DeviceImageType ImageType { get; set; }
         public DeviceImageUsageFlags Usage { get; set; }
         public DeviceImageFormat Format { get; set; }
         public int MipLevels { get; set; }
@@ -260,6 +267,7 @@ namespace CodePlayground.Graphics
         public PipelineType Type { get; set; }
         public int FrameCount { get; set; }
         public IPipelineSpecification? Specification { get; set; }
+        public object? VertexAttributeLayout { get; set; }
     }
 
     public interface IGraphicsContext : IDisposable
@@ -329,6 +337,7 @@ namespace CodePlayground.Graphics
         public void End();
 
         public void ExecutionBarrier();
+        public void Checkpoint(string identifier);
 
         public void AddSemaphore(IDisposable semaphore, SemaphoreUsage usage);
         public void PushStagingObject(IDisposable stagingObject);
@@ -418,6 +427,7 @@ namespace CodePlayground.Graphics
     public interface IDeviceImage : IDisposable
     {
         public DeviceImageUsageFlags Usage { get; }
+        public DeviceImageType Type { get; }
         public Size Size { get; }
         public int MipLevels { get; }
         public DeviceImageFormat ImageFormat { get; }
@@ -432,6 +442,7 @@ namespace CodePlayground.Graphics
         public void CopyFromBuffer(ICommandList commandList, IDeviceBuffer source, IDeviceImageLayout currentLayout);
         public void CopyToBuffer(ICommandList commandList, IDeviceBuffer destination, IDeviceImageLayout currentLayout);
         public void TransitionLayout(ICommandList commandList, IDeviceImageLayout srcLayout, IDeviceImageLayout dstLayout);
+        public void CopyCubeFace(ICommandList commandList, int face, IDeviceImage source, IDeviceImageLayout currentLayout, IDeviceImageLayout sourceLayout);
 
         public ITexture CreateTexture(bool ownsImage, ISamplerSettings? samplerSettings = null);
     }
@@ -472,7 +483,18 @@ namespace CodePlayground.Graphics
     {
         public bool ResourceExists(string resource);
         public int GetBufferSize(string resource);
+        public object CreateVertexAttributeLayout();
+
         public int GetBufferOffset(string resource, string expression);
+        public IReflectionNode? GetResourceNode(string resource);
+    }
+
+    public interface IReflectionNode
+    {
+        public string ResourceName { get; }
+        public int Offset { get; }
+
+        public IReflectionNode? Find(string name);
     }
 
     public interface IPipeline : IDisposable

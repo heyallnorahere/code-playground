@@ -1,12 +1,15 @@
 using CodePlayground;
 using CodePlayground.Graphics;
+using CodePlayground.Graphics.Vulkan;
 using Optick.NET;
 using Ragdoll.Layers;
+using Silk.NET.Vulkan.Extensions.NV;
 using System.Numerics;
 
 namespace Ragdoll
 {
     [ApplicationTitle("Ragdoll")]
+    [RequestedVulkanExtension(NVDeviceDiagnosticCheckpoints.ExtensionName, VulkanExtensionLevel.Device, VulkanExtensionType.Extension, Required = false)]
     internal sealed class App : GraphicsApplication
     {
         public static int Main(string[] args) => RunApplication<App>(args);
@@ -45,7 +48,7 @@ namespace Ragdoll
 
             // enable profiling
             InitializeOptick();
-            var loadEvent = OptickMacros.Event();
+            using var loadEvent = OptickMacros.Event();
 
             mRenderer = new Renderer(context);
             mModelRegistry = new ModelRegistry(context);
@@ -61,19 +64,19 @@ namespace Ragdoll
 
             var graphicsContext = GraphicsContext;
             var inputContext = InputContext;
-            var window = RootWindow;
+            var view = RootView;
             var renderTarget = graphicsContext?.Swapchain?.RenderTarget;
 
             if (graphicsContext is null ||
                 inputContext is null ||
-                window is null ||
+                view is null ||
                 renderTarget is null ||
                 mLayerStack.HasLayer<ImGuiLayer>())
             {
                 return;
             }
 
-            mLayerStack.PushLayer<ImGuiLayer>(LayerType.Overlay, graphicsContext, inputContext, window, renderTarget);
+            mLayerStack.PushLayer<ImGuiLayer>(LayerType.Overlay, graphicsContext, inputContext, view, renderTarget);
         }
 
         private void OnClose()

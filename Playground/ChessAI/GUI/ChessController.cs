@@ -31,13 +31,13 @@ namespace ChessAI.GUI
     {
         public const float TileWidth = 1f / Board.Width;
 
-        public ChessController(IInputContext inputContext, IWindow window, IGraphicsContext graphicsContext, Network network)
+        public ChessController(IInputContext inputContext, IView view, IGraphicsContext graphicsContext, Network network)
         {
             using var constructorEvent = OptickMacros.Event();
             mDisposed = false;
 
             mContext = graphicsContext;
-            mWindow = window;
+            mView = view;
 
             mFEN = string.Empty;
             mColor = PlayerColor.White;
@@ -308,7 +308,7 @@ namespace ChessAI.GUI
             {
                 if (!ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow | ImGuiHoveredFlags.AllowWhenBlockedByPopup) && !ImGui.IsAnyItemHovered())
                 {
-                    var size = mWindow.FramebufferSize;
+                    var size = mView.FramebufferSize;
                     int min = int.Min(size.X, size.Y);
                     int max = int.Max(size.X, size.Y);
 
@@ -457,7 +457,7 @@ namespace ChessAI.GUI
                 }
             }
 
-            var size = mWindow.FramebufferSize;
+            var size = mView.FramebufferSize;
             int min = int.Min(size.X, size.Y);
             int max = int.Max(size.X, size.Y);
             float aspectRatio = (float)max / min;
@@ -607,7 +607,7 @@ namespace ChessAI.GUI
         }
 
         private readonly IGraphicsContext mContext;
-        private readonly IWindow mWindow;
+        private readonly IView mView;
 
         private Vector2 mMousePosition;
         private bool mMouseDown, mMouseUp;

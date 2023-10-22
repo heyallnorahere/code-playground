@@ -181,10 +181,10 @@ namespace CodePlayground.Graphics.Vulkan
                 throw new ArgumentException("Must pass Vulkan objects!");
             }
 
-            BeginRender((VulkanCommandBuffer)commandList, (VulkanFramebuffer)framebuffer, clearColor, true);
+            BeginRender((VulkanCommandBuffer)commandList, (VulkanFramebuffer)framebuffer, clearColor);
         }
 
-        public unsafe void BeginRender(VulkanCommandBuffer commandBuffer, VulkanFramebuffer framebuffer, Vector4 clearColor, bool flipViewport = true)
+        public unsafe void BeginRender(VulkanCommandBuffer commandBuffer, VulkanFramebuffer framebuffer, Vector4 clearColor)
         {
             using var beginRenderEvent = OptickMacros.Event();
             using var renderPassEvent = OptickMacros.GPUEvent("Begin render pass");
@@ -248,6 +248,8 @@ namespace CodePlayground.Graphics.Vulkan
 
             using (OptickMacros.GPUEvent("Set scissor and viewport"))
             {
+                bool flipViewport = framebuffer.Flip;
+
                 api.CmdSetScissor(buffer, 0, 1, scissor);
                 api.CmdSetViewport(buffer, 0, 1, VulkanUtilities.Init<Viewport>() with
                 {

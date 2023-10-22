@@ -345,6 +345,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public VulkanPhysicalDevice PhysicalDevice => mPhysicalDevice;
         public Device Device => mDevice;
+        public IEnumerable<int> QueueFamilies => mQueues.Keys;
+
         IGraphicsDeviceInfo IGraphicsDevice.DeviceInfo => mPhysicalDevice;
 
         private readonly VulkanPhysicalDevice mPhysicalDevice;

@@ -353,12 +353,12 @@ namespace ChessAI
         {
             using var initEvent = OptickMacros.Event();
 
-            var window = RootWindow;
+            var view = RootView;
             var inputContext = InputContext;
             var graphicsContext = GraphicsContext;
             var swapchain = graphicsContext?.Swapchain;
 
-            if (window is null ||
+            if (view is null ||
                 inputContext is null ||
                 graphicsContext is null ||
                 swapchain is null ||
@@ -373,7 +373,7 @@ namespace ChessAI
             commandList.Begin();
             using (commandList.Context(GPUQueueType.Transfer))
             {
-                mImGui = new ImGuiController(graphicsContext, inputContext, window, swapchain.RenderTarget, swapchain.FrameCount);
+                mImGui = new ImGuiController(graphicsContext, inputContext, view, swapchain.RenderTarget, swapchain.FrameCount);
                 mImGui.LoadFontAtlas(commandList);
             }
 
@@ -386,11 +386,11 @@ namespace ChessAI
         {
             using var initEvent = OptickMacros.Event();
 
-            var window = RootWindow;
+            var view = RootView;
             var inputContext = InputContext;
             var graphicsContext = GraphicsContext;
 
-            if (window is null ||
+            if (view is null ||
                 inputContext is null ||
                 graphicsContext is null ||
                 mNetwork is null ||
@@ -399,7 +399,7 @@ namespace ChessAI
                 return;
             }
 
-            mChessController = new ChessController(inputContext, window, graphicsContext, mNetwork);
+            mChessController = new ChessController(inputContext, view, graphicsContext, mNetwork);
         }
 
         private void OnClose()
