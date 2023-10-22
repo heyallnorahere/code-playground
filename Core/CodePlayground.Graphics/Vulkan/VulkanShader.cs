@@ -352,7 +352,7 @@ namespace CodePlayground.Graphics.Vulkan
                             var memberTypeId = spvc.TypeGetMemberType(handle, i);
                             var memberTypeHandle = spvc.CompilerGetTypeHandle(compiler, memberTypeId);
                             var memberBaseTypeId = spvc.TypeGetBaseTypeId(memberTypeHandle);
-                            ProcessType(compiler, memberTypeId, null);
+                            ProcessType(compiler, memberTypeId, memberBaseTypeId);
 
                             var memberName = spvc.CompilerGetMemberName(compiler, baseType ?? type, i);
                             var key = Marshal.PtrToStringAnsi((nint)memberName);
