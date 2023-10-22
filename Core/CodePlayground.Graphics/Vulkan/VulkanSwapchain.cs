@@ -80,14 +80,14 @@ namespace CodePlayground.Graphics.Vulkan
             return presentModes;
         }
 
-        internal VulkanSwapchain(SurfaceKHR surface, VulkanContext context, Instance instance, IWindow window)
+        internal VulkanSwapchain(SurfaceKHR surface, VulkanContext context, Instance instance, IView view)
         {
             using var constructorEvent = OptickMacros.Event();
 
             mDevice = context.Device;
             mAllocator = context.Allocator;
             mInstance = instance;
-            mWindow = window;
+            mView = view;
 
             var api = VulkanContext.API;
             mSwapchainExtension = api.GetDeviceExtension<KhrSwapchain>(instance, mDevice.Device);
@@ -102,7 +102,7 @@ namespace CodePlayground.Graphics.Vulkan
             mCurrentImage = 0;
             mCurrentSyncFrame = 0;
 
-            var framebufferSize = window.FramebufferSize;
+            var framebufferSize = view.FramebufferSize;
             var extent = new Extent2D
             {
                 Width = (uint)framebufferSize.X,
@@ -112,7 +112,7 @@ namespace CodePlayground.Graphics.Vulkan
             mSurface = surface;
             Create(extent);
 
-            window.FramebufferResize += Resize;
+            view.FramebufferResize += Resize;
         }
 
         ~VulkanSwapchain()
@@ -140,7 +140,7 @@ namespace CodePlayground.Graphics.Vulkan
             using var disposeEvent = OptickMacros.Event();
             if (disposing)
             {
-                mWindow.FramebufferResize -= Resize;
+                mView.FramebufferResize -= Resize;
             }
 
             var api = VulkanContext.API;
@@ -584,10 +584,14 @@ namespace CodePlayground.Graphics.Vulkan
                         PImageIndices = currentImage
                     };
 
-                    OptickImports.GpuFlip((nint)mSwapchain.Handle);
-                    using var vulkanPresentEvent = OptickMacros.Category("vkQueuePresentKHR", Category.Wait);
+                    if (OptickMacros.IsOptickEnabled)
+                    {
+                        OptickImports.GpuFlip((nint)mSwapchain.Handle);
+                    }
 
+                    using var vulkanPresentEvent = OptickMacros.Category("vkQueuePresentKHR", Category.Wait);
                     var result = mSwapchainExtension.QueuePresent(mPresentQueue.Queue, &presentInfo);
+                    
                     if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr || mNewSize is not null)
                     {
                         Invalidate();
@@ -640,7 +644,7 @@ namespace CodePlayground.Graphics.Vulkan
         private readonly VulkanDevice mDevice;
         private readonly VulkanMemoryAllocator mAllocator;
         private readonly Instance mInstance;
-        private readonly IWindow mWindow;
+        private readonly IView mView;
 
         private readonly SurfaceKHR mSurface;
         private SwapchainKHR mSwapchain;

@@ -229,7 +229,7 @@ namespace CodePlayground.Graphics.Vulkan
                 mQueues.Add(queueFamily, queue);
             }
 
-            if (queueTypes.TryGetValue(CommandQueueFlags.Transfer, out int graphicsFamily))
+            if (OptickMacros.IsOptickEnabled && queueTypes.TryGetValue(CommandQueueFlags.Transfer, out int graphicsFamily))
             {
                 var graphicsQueue = mQueues[graphicsFamily].Queue.Handle;
                 InitializeOptick(graphicsQueue, (uint)graphicsFamily);

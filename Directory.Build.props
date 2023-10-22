@@ -5,16 +5,14 @@
 
         <!-- package versions -->
         <BepuPhysicsVersion>2.5.0-beta.13</BepuPhysicsVersion>
-        <GLFWVersion>3.3.3.1</GLFWVersion>
+        <GLFWVersion>3.3.9.1</GLFWVersion>
         <ImGuiNETVersion>1.89.5.2</ImGuiNETVersion>
         <MicrosoftNETCorePlatformsVersion>8.0.0-preview.2.23128.3</MicrosoftNETCorePlatformsVersion>
         <NewtonsoftJsonVersion>13.0.3</NewtonsoftJsonVersion>
-        <OptickNETVersion>1.0.5</OptickNETVersion>
-        <SDLVersion>2.24.3.2</SDLVersion>
-        <shadercnetVersion>0.1.0</shadercnetVersion>
-        <SilkNETVersion>2.17.1-build3849.0</SilkNETVersion>
+        <OptickNETVersion>1.0.6</OptickNETVersion>
+        <SDLVersion>2.28.4</SDLVersion>
+        <SilkNETVersion>2.18.0</SilkNETVersion>
         <SixLaborsImageSharpVersion>3.0.1</SixLaborsImageSharpVersion>
-        <SpirzzaInteropSpirvCrossVersion>0.0.1</SpirzzaInteropSpirvCrossVersion>
         <SQLiteNETVersion>1.8.116</SQLiteNETVersion>
         <ZstdNetVersion>1.4.5</ZstdNetVersion>
     </PropertyGroup>

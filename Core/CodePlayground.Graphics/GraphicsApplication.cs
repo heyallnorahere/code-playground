@@ -36,7 +36,6 @@ namespace CodePlayground.Graphics
     {
         OpenGL,
         Vulkan,
-        Metal,
         Other
     }
 
@@ -82,11 +81,15 @@ namespace CodePlayground.Graphics
 
         private static AppGraphicsAPI ChooseGraphicsAPI()
         {
+            /*
 #if IOS
             return AppGraphicsAPI.Metal;
 #else
+            */
             return AppGraphicsAPI.Vulkan;
+            /*
 #endif
+            */
         }
 
         public GraphicsApplication()
@@ -98,7 +101,7 @@ namespace CodePlayground.Graphics
             mAPI = ChooseGraphicsAPI();
             mInitialSize = new Vector2D<int>(800, 600);
 
-            mWindow = null;
+            mView = null;
             mInputContext = null;
             mArgs = Array.Empty<string>();
         }
@@ -113,12 +116,12 @@ namespace CodePlayground.Graphics
 
         public override bool Quit(int exitCode)
         {
-            if (mWindow?.IsClosing ?? false)
+            if (mView?.IsClosing ?? false)
             {
                 return false;
             }
 
-            mWindow?.Close();
+            mView?.Close();
             mExitCode = exitCode;
 
             return true;
@@ -143,7 +146,7 @@ namespace CodePlayground.Graphics
             }
             else
             {
-                mOptions = WindowOptions.Default with
+                mOptions = (mAPI != AppGraphicsAPI.OpenGL ? WindowOptions.DefaultVulkan : WindowOptions.Default) with
                 {
                     Size = mInitialSize,
                     Title = Title,
@@ -160,15 +163,25 @@ namespace CodePlayground.Graphics
                     SdlWindowing.RegisterPlatform();
                 }
 
-                mWindow = Window.Create(mOptions.Value);
-                RegisterWindowEvents();
+                var windowOptions = mOptions.Value;
+                if (Window.IsViewOnly)
+                {
+                    var viewOptions = new ViewOptions(windowOptions);
+                    mView = Window.GetView(viewOptions);
+                }
+                else
+                {
+                    mView = Window.Create(mOptions.Value);
+                }
+
+                RegisterViewEvents();
 
                 mIsRunning = true;
-                mWindow.Run();
+                mView.Run();
                 mIsRunning = false;
 
-                mWindow.Dispose();
-                mWindow = null;
+                mView.Dispose();
+                mView = null;
             }
 
             return mExitCode;
@@ -179,26 +192,26 @@ namespace CodePlayground.Graphics
             if (disposing)
             {
                 mGraphicsContext?.Dispose();
-                mWindow?.Dispose();
+                mView?.Dispose();
             }
 
             base.Dispose(disposing);
         }
 
-        private void RegisterWindowEvents()
+        private void RegisterViewEvents()
         {
-            if (mWindow is null)
+            if (mView is null)
             {
                 return;
             }
 
-            mWindow.Resize += size => WindowResize?.Invoke(size);
-            mWindow.FramebufferResize += size => FramebufferResize?.Invoke(size);
-            mWindow.Closing += () => Closing?.Invoke();
-            mWindow.FocusChanged += focused => FocusChanged?.Invoke(focused);
-            mWindow.Load += () => Load?.Invoke();
-            mWindow.Update += OnUpdate;
-            mWindow.Render += OnRender;
+            mView.Resize += size => WindowResize?.Invoke(size);
+            mView.FramebufferResize += size => FramebufferResize?.Invoke(size);
+            mView.Closing += () => Closing?.Invoke();
+            mView.FocusChanged += focused => FocusChanged?.Invoke(focused);
+            mView.Load += () => Load?.Invoke();
+            mView.Update += OnUpdate;
+            mView.Render += OnRender;
         }
 
         public event Action<Vector2D<int>>? WindowResize;
@@ -216,7 +229,7 @@ namespace CodePlayground.Graphics
         {
             try
             {
-                mInputContext = mWindow?.CreateInput();
+                mInputContext = mView?.CreateInput();
                 if (mInputContext is not null)
                 {
                     InputReady?.Invoke();
@@ -264,8 +277,8 @@ namespace CodePlayground.Graphics
                 }
                 else
                 {
-                    var windowSize = mWindow!.FramebufferSize;
-                    if (windowSize.X != 0 && windowSize.Y != 0)
+                    var viewSize = mView!.FramebufferSize;
+                    if (viewSize.X != 0 && viewSize.Y != 0)
                     {
                         var device = mGraphicsContext.Device;
                         var swapchain = mGraphicsContext.Swapchain;
@@ -316,7 +329,7 @@ namespace CodePlayground.Graphics
         protected virtual void OnContextCreation(IGraphicsContext context) { }
         public T CreateGraphicsContext<T>(params object[] args) where T : IGraphicsContext
         {
-            if (!ShouldRunHeadless && (mWindow is null || mOptions is null))
+            if (!ShouldRunHeadless && (mView is null || mOptions is null))
             {
                 throw new InvalidOperationException("The window has not been created!");
             }
@@ -333,31 +346,31 @@ namespace CodePlayground.Graphics
             }
 
             OnContextCreation(context);
-            context.Initialize(mWindow, this);
+            context.Initialize(mView, this);
 
             mGraphicsContext = context;
             return context;
         }
 
-        public IWindow? RootWindow => mWindow;
+        public IView? RootView => mView;
         public IInputContext? InputContext => mInputContext;
         public IGraphicsContext? GraphicsContext => mGraphicsContext;
 
         public string[] CommandLineArguments => mArgs;
         public virtual bool ShouldRunHeadless => false;
 
-        internal IVkSurface? VulkanSurfaceFactory => mWindow?.VkSurface;
+        internal IVkSurface? VulkanSurfaceFactory => mView?.VkSurface;
 
         private int mExitCode;
         private bool mIsRunning;
         internal AppGraphicsAPI mAPI;
         internal Vector2D<int> mInitialSize;
 
-        private IWindow? mWindow;
+        private IView? mView;
         private WindowOptions? mOptions;
         private IInputContext? mInputContext;
         private IGraphicsContext? mGraphicsContext;
         private string[] mArgs;
-        private Event? mFrameEvent;
+        private IDisposable? mFrameEvent;
     }
 }

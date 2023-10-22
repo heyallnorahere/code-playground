@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <PropertyGroup Condition="!$([MSBuild]::IsOSPlatform(Linux))">
-    <TargetFrameworks>$(TargetFrameworks);net7.0-ios</TargetFrameworks>
+    <TargetFrameworks>net7.0-ios;$(TargetFrameworks)</TargetFrameworks>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,21 +16,34 @@
 
   <ItemGroup>
     <PackageReference Include="ImGui.NET" Version="$(ImGuiNETVersion)" />
-    <PackageReference Include="shaderc.net" Version="$(shadercnetVersion)" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="$(SixLaborsImageSharpVersion)" />
+
     <PackageReference Include="Silk.NET.Assimp" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Input" Version="$(SilkNETVersion)" />
+    <PackageReference Include="Silk.NET.Shaderc" Version="$(SilkNETVersion)" />
+    <PackageReference Include="Silk.NET.SPIRV.Cross" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Windowing" Version="$(SilkNETVersion)" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="$(SixLaborsImageSharpVersion)" />
-    <PackageReference Include="Spirzza.Interop.SpirvCross" Version="$(SpirzzaInteropSpirvCrossVersion)" />
+
+    <PackageReference Include="Ultz.Native.GLFW" Version="$(GLFWVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
 
     <PackageReference Include="Ultz.Native.SDL" Version="$(SDLVersion)">
       <IncludeAssets>all</IncludeAssets>
     </PackageReference>
 
     <PackageReference Include="Silk.NET.MoltenVK.Native" Version="$(SilkNETVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="Silk.NET.Shaderc.Native" Version="$(SilkNETVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="Silk.NET.SPIRV.Cross.Native" Version="$(SilkNETVersion)">
       <IncludeAssets>all</IncludeAssets>
     </PackageReference>
   </ItemGroup>

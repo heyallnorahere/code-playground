@@ -1,6 +1,7 @@
 ﻿using Optick.NET;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Reflection;
 
@@ -19,7 +20,7 @@ namespace CodePlayground
         }
 
         public static T CreateDynamicInstance<T>(params object?[] args) => (T)CreateDynamicInstance(typeof(T), args);
-        public static object CreateDynamicInstance(Type type, params object?[] args)
+        public static object CreateDynamicInstance([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type type, params object?[] args)
         {
             using var createEvent = OptickMacros.Event();
 
@@ -132,7 +133,7 @@ namespace CodePlayground
             }
         }
 
-        private static IReadOnlyDictionary<string, MethodInfo> FindHandlerMethods(Type type)
+        private static IReadOnlyDictionary<string, MethodInfo> FindHandlerMethods([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.NonPublicMethods)] Type type)
         {
             var methods = type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             var handlers = new Dictionary<string, MethodInfo>();

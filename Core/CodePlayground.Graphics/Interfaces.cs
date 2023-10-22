@@ -275,7 +275,7 @@ namespace CodePlayground.Graphics
         public MatrixType MatrixType { get; }
 
         public bool IsApplicable(WindowOptions options);
-        public void Initialize(IWindow? window, GraphicsApplication application);
+        public void Initialize(IView? window, GraphicsApplication application);
 
         public IShaderCompiler CreateCompiler();
         public IRenderer CreateRenderer();

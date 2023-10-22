@@ -1,14 +1,17 @@
 using Optick.NET;
 using Silk.NET.Core;
 using Silk.NET.Core.Attributes;
+using Silk.NET.Core.Contexts;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
-using Spirzza.Interop.SpirvCross;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+
+using VulkanResult = Silk.NET.Vulkan.Result;
+using SpvResult = Silk.NET.SPIRV.Cross.Result;
 
 namespace CodePlayground.Graphics.Vulkan
 {
@@ -91,9 +94,9 @@ namespace CodePlayground.Graphics.Vulkan
             return Vk.MakeVersion(major, minor, patch);
         }
 
-        public static void Assert(this Result result, Action<Result>? onFail = null)
+        public static void Assert(this VulkanResult result, Action<VulkanResult>? onFail = null)
         {
-            if (result != Result.Success)
+            if (result != VulkanResult.Success)
             {
                 if (onFail is null)
                 {
@@ -106,9 +109,9 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        public static void Assert(this spvc_result result, Action<spvc_result>? onFail = null)
+        public static void Assert(this SpvResult result, Action<SpvResult>? onFail = null)
         {
-            if (result != spvc_result.SPVC_SUCCESS)
+            if (result != SpvResult.Success)
             {
                 if (onFail is null)
                 {
@@ -178,11 +181,15 @@ namespace CodePlayground.Graphics.Vulkan
         {
             using var getExtensionEvent = OptickMacros.Event();
 
+#if __IOS__
+            var extension = (T)Activator.CreateInstance(typeof(T), new LamdaNativeContext(name => api.GetDeviceProcAddr(device, name)))!;
+#else
             string extensionName = GetExtensionName<T>();
             if (!api.TryGetDeviceExtension(instance, device, out T extension))
             {
                 throw new ArgumentException($"Device extension {extensionName} not loaded!");
             }
+#endif
 
             return extension;
         }

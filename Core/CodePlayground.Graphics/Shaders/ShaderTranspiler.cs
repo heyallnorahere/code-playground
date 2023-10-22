@@ -2,6 +2,7 @@ using CodePlayground.Graphics.Shaders.Transpilers;
 using Optick.NET;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace CodePlayground.Graphics.Shaders
@@ -27,7 +28,7 @@ namespace CodePlayground.Graphics.Shaders
         }
 
         protected abstract StageOutput TranspileStage(Type type, MethodInfo entrypoint, ShaderStage stage);
-        public IReadOnlyDictionary<ShaderStage, StageOutput> Transpile(Type type)
+        public IReadOnlyDictionary<ShaderStage, StageOutput> Transpile([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] Type type)
         {
             using var transpileEvent = OptickMacros.Event();
 

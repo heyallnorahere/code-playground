@@ -210,7 +210,7 @@ namespace CodePlayground.Graphics.Vulkan
             return options.API.Equals(GraphicsAPI.DefaultVulkan);
         }
 
-        public unsafe void Initialize(IWindow? window, GraphicsApplication application)
+        public unsafe void Initialize(IView? view, GraphicsApplication application)
         {
             if (mInitialized)
             {
@@ -232,9 +232,9 @@ namespace CodePlayground.Graphics.Vulkan
             SurfaceKHR? windowSurface = null;
 
             var physicalDevice = ChoosePhysicalDevice();
-            if (window is not null)
+            if (view is not null)
             {
-                windowSurface = CreateWindowSurface(physicalDevice, window, out int presentQueue);
+                windowSurface = CreateWindowSurface(physicalDevice, view, out int presentQueue);
                 additionalQueueFamilies.Add(presentQueue);
             }
 
@@ -260,7 +260,7 @@ namespace CodePlayground.Graphics.Vulkan
 
             if (windowSurface is not null)
             {
-                mSwapchain = new VulkanSwapchain(windowSurface.Value, this, mInstance!.Value, window!);
+                mSwapchain = new VulkanSwapchain(windowSurface.Value, this, mInstance!.Value, view!);
             }
 
             mInitialized = true;
@@ -367,12 +367,17 @@ namespace CodePlayground.Graphics.Vulkan
                         uint extensionCount = 0;
                         API.EnumerateDeviceExtensionProperties(device.Device, (byte*)null, &extensionCount, null).Assert();
 
+                        var properties = API.GetPhysicalDeviceProperties(device.Device);
+                        var deviceName = Marshal.PtrToStringAnsi((nint)properties.DeviceName);
+                        Console.WriteLine($"Device {deviceName} extension count before second enum: {extensionCount}");
+
                         var extensions = new ExtensionProperties[extensionCount];
                         fixed (ExtensionProperties* ptr = extensions)
                         {
                             API.EnumerateDeviceExtensionProperties(device.Device, (byte*)null, &extensionCount, ptr);
                         }
 
+                        Console.WriteLine($"Device {deviceName} extension count after second enum: {extensionCount}");
                         return extensions.Select(ext => Marshal.PtrToStringAnsi((nint)ext.ExtensionName)!);
                     }
                 case VulkanExtensionType.Layer:
@@ -589,10 +594,10 @@ namespace CodePlayground.Graphics.Vulkan
             throw new ArgumentException("Failed to find a valid Vulkan device!");
         }
 
-        private unsafe SurfaceKHR CreateWindowSurface(VulkanPhysicalDevice physicalDevice, IWindow window, out int presentQueue)
+        private unsafe SurfaceKHR CreateWindowSurface(VulkanPhysicalDevice physicalDevice, IView view, out int presentQueue)
         {
             var instance = mInstance!.Value;
-            SurfaceKHR surface = window.VkSurface!.Create<AllocationCallbacks>(instance.ToHandle(), null).ToSurface();
+            SurfaceKHR surface = view.VkSurface!.Create<AllocationCallbacks>(instance.ToHandle(), null).ToSurface();
 
             var extension = API.GetInstanceExtension<KhrSurface>(instance);
             presentQueue = VulkanSwapchain.FindPresentQueueFamily(extension, physicalDevice, surface);

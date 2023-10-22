@@ -11,4 +11,54 @@
     <SupportedOSPlatformVersion>13.0</SupportedOSPlatformVersion>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Silk.NET.MoltenVK.Native" Version="$(SilkNETVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="Silk.NET.Windowing" Version="$(SilkNETVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="Silk.NET.Windowing.Sdl" Version="$(SilkNETVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="Silk.NET.SDL" Version="$(SilkNETVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="Silk.NET.Vulkan" Version="$(SilkNETVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="$(SilkNETVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="$(SilkNETVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="Ultz.Native.SDL" Version="$(SDLVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="Silk.NET.Shaderc" Version="$(SilkNETVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="Silk.NET.SPIRV.Cross" Version="$(SilkNETVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="Silk.NET.Shaderc.Native" Version="$(SilkNETVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="Silk.NET.SPIRV.Cross.Native" Version="$(SilkNETVersion)">
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
 </Project>

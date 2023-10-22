@@ -193,7 +193,7 @@ namespace CodePlayground
 
             if (mOptickApp is not null)
             {
-                OptickImports.Shutdown();
+                OptickMacros.Shutdown();
             }
 
             mOptickApp = null;

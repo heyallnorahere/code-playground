@@ -121,7 +121,7 @@ namespace CodePlayground.Graphics
             sImGuiInitialized = false;
         }
 
-        public ImGuiController(IGraphicsContext graphicsContext, IInputContext inputContext, IWindow window, IRenderTarget renderTarget, int frameCount)
+        public ImGuiController(IGraphicsContext graphicsContext, IInputContext inputContext, IView view, IRenderTarget renderTarget, int frameCount)
         {
             using var createdEvent = OptickMacros.Event();
             if (sImGuiInitialized)
@@ -155,7 +155,7 @@ namespace CodePlayground.Graphics
 
             mGraphicsContext = graphicsContext;
             mInputContext = inputContext;
-            mWindow = window;
+            mView = view;
             mRenderTarget = renderTarget;
 
             mFrameData = new ImGuiFrameData[frameCount];
@@ -185,11 +185,11 @@ namespace CodePlayground.Graphics
             mMouseButtonValues = new Dictionary<int, bool>();
             RegisterInputCallbacks();
 
-            var windowSize = mWindow.Size;
-            mWindowWidth = windowSize.X;
-            mWindowHeight = windowSize.Y;
+            var viewSize = mView.Size;
+            mViewWidth = viewSize.X;
+            mViewHeight = viewSize.Y;
 
-            mWindow.Resize += OnResize;
+            mView.Resize += OnResize;
         }
 
         ~ImGuiController()
@@ -234,7 +234,7 @@ namespace CodePlayground.Graphics
                 mFontAtlas?.Dispose();
                 mProjectionBuffer.Dispose();
 
-                mWindow.Resize -= OnResize;
+                mView.Resize -= OnResize;
             }
 
             foreach (var handle in mCallbackHandles)
@@ -265,8 +265,8 @@ namespace CodePlayground.Graphics
 
         private void OnResize(Vector2D<int> newSize)
         {
-            mWindowWidth = newSize.X;
-            mWindowHeight = newSize.Y;
+            mViewWidth = newSize.X;
+            mViewHeight = newSize.Y;
         }
 
         private IPipeline LoadPipeline()
@@ -508,10 +508,10 @@ namespace CodePlayground.Graphics
             var io = ImGui.GetIO();
 
             io.DeltaTime = (float)delta;
-            io.DisplaySize = new Vector2(mWindowWidth, mWindowHeight);
-            if (mWindowWidth > 0 || mWindowHeight > 0)
+            io.DisplaySize = new Vector2(mViewWidth, mViewHeight);
+            if (mViewWidth > 0 || mViewHeight > 0)
             {
-                io.DisplayFramebufferScale = mFramebufferScale = new Vector2(mWindow.FramebufferSize.X / mWindowWidth, mWindow.FramebufferSize.Y / mWindowHeight);
+                io.DisplayFramebufferScale = mFramebufferScale = new Vector2(mView.FramebufferSize.X / mViewWidth, mView.FramebufferSize.Y / mViewHeight);
             }
         }
 
@@ -520,7 +520,7 @@ namespace CodePlayground.Graphics
             using var updateEvent = OptickMacros.Event();
 
             var math = new MatrixMath(mGraphicsContext);
-            var projection = math.Orthographic(0f, mWindowWidth, mWindowHeight, 0f, -1f, 1f);
+            var projection = math.Orthographic(0f, mViewWidth, mViewHeight, 0f, -1f, 1f);
 
             mProjectionBuffer.CopyFromCPU(Matrix4x4.Transpose(projection));
         }
@@ -618,7 +618,7 @@ namespace CodePlayground.Graphics
 
         private readonly IGraphicsContext mGraphicsContext;
         private readonly IInputContext mInputContext;
-        private readonly IWindow mWindow;
+        private readonly IView mView;
         private readonly IRenderTarget mRenderTarget;
 
         private ImGuiFrameData[] mFrameData;
@@ -628,7 +628,7 @@ namespace CodePlayground.Graphics
 
         private readonly List<GCHandle> mCallbackHandles;
         private bool mDisposed, mFrameStarted;
-        private int mWindowWidth, mWindowHeight;
+        private int mViewWidth, mViewHeight;
         private Vector2 mFramebufferScale;
 
         private readonly List<ImGuiKeyEvent> mKeyEvents;

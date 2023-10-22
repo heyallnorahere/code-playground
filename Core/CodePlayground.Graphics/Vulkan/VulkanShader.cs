@@ -1,40 +1,46 @@
 ﻿using Optick.NET;
-using shaderc;
+using Silk.NET.Shaderc;
+using Silk.NET.SPIRV;
+using Silk.NET.SPIRV.Cross;
 using Silk.NET.Vulkan;
-using Spirzza.Interop.SpirvCross;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 
-using static Spirzza.Interop.SpirvCross.SpirvCross;
+using SpvCompiler = Silk.NET.SPIRV.Cross.Compiler;
+using ShadercCompiler = Silk.NET.Shaderc.Compiler;
+using SourceLanguage = Silk.NET.Shaderc.SourceLanguage;
+using System.Text;
 
 namespace CodePlayground.Graphics.Vulkan
 {
     public sealed class VulkanShader : IShader
     {
-        private static readonly IReadOnlyDictionary<spvc_resource_type, ShaderResourceTypeFlags> sResourceTypeMap;
-        private static readonly IReadOnlyDictionary<spvc_resource_type, StageIODirection> sResourceTypeIODirections;
+        private static readonly IReadOnlyDictionary<ResourceType, ShaderResourceTypeFlags> sResourceTypeMap;
+        private static readonly IReadOnlyDictionary<ResourceType, StageIODirection> sResourceTypeIODirections;
         private static ulong sCurrentID;
 
+        private static readonly Cross spvc;
         static VulkanShader()
         {
-            sResourceTypeMap = new Dictionary<spvc_resource_type, ShaderResourceTypeFlags>
+            sResourceTypeMap = new Dictionary<ResourceType, ShaderResourceTypeFlags>
             {
-                [spvc_resource_type.SPVC_RESOURCE_TYPE_SAMPLED_IMAGE] = ShaderResourceTypeFlags.Image | ShaderResourceTypeFlags.Sampler,
-                [spvc_resource_type.SPVC_RESOURCE_TYPE_SEPARATE_IMAGE] = ShaderResourceTypeFlags.Image,
-                [spvc_resource_type.SPVC_RESOURCE_TYPE_SEPARATE_SAMPLERS] = ShaderResourceTypeFlags.Sampler,
-                [spvc_resource_type.SPVC_RESOURCE_TYPE_UNIFORM_BUFFER] = ShaderResourceTypeFlags.UniformBuffer,
-                [spvc_resource_type.SPVC_RESOURCE_TYPE_STORAGE_BUFFER] = ShaderResourceTypeFlags.StorageBuffer,
-                [spvc_resource_type.SPVC_RESOURCE_TYPE_STORAGE_IMAGE] = ShaderResourceTypeFlags.StorageImage
+                [ResourceType.SampledImage] = ShaderResourceTypeFlags.Image | ShaderResourceTypeFlags.Sampler,
+                [ResourceType.SeparateImage] = ShaderResourceTypeFlags.Image,
+                [ResourceType.SeparateSamplers] = ShaderResourceTypeFlags.Sampler,
+                [ResourceType.UniformBuffer] = ShaderResourceTypeFlags.UniformBuffer,
+                [ResourceType.StorageBuffer] = ShaderResourceTypeFlags.StorageBuffer,
+                [ResourceType.StorageImage] = ShaderResourceTypeFlags.StorageImage
             };
 
-            sResourceTypeIODirections = new Dictionary<spvc_resource_type, StageIODirection>
+            sResourceTypeIODirections = new Dictionary<ResourceType, StageIODirection>
             {
-                [spvc_resource_type.SPVC_RESOURCE_TYPE_STAGE_INPUT] = StageIODirection.In,
-                [spvc_resource_type.SPVC_RESOURCE_TYPE_STAGE_OUTPUT] = StageIODirection.Out
+                [ResourceType.StageInput] = StageIODirection.In,
+                [ResourceType.StageOutput] = StageIODirection.Out
             };
 
+            spvc = Cross.GetApi();
             sCurrentID = 0;
         }
 
@@ -110,29 +116,28 @@ namespace CodePlayground.Graphics.Vulkan
                 Types = new Dictionary<int, ReflectedShaderType>()
             };
 
-            spvc_context* context;
-            spvc_parsed_ir* ir;
-            spvc_compiler* compiler;
-            spvc_resources* resources;
+            Context* context = null;
+            ParsedIr* ir = null;
+            SpvCompiler* compiler = null;
+            Resources* resources = null;
 
             using (OptickMacros.Event("Shader SPIRV reflection"))
             {
-                spvc_context_create(&context).Assert();
-
+                spvc.ContextCreate(ref context).Assert();
                 fixed (byte* spirv = mSPIRV)
                 {
-                    spvc_context_parse_spirv(context, (SpvId*)spirv, (nuint)(mSPIRV.Length / sizeof(SpvId)), &ir).Assert();
+                    spvc.ContextParseSpirv(context, (uint*)spirv, (nuint)(mSPIRV.Length / sizeof(uint)), &ir).Assert();
                 }
 
-                spvc_context_create_compiler(context, spvc_backend.SPVC_BACKEND_GLSL, ir, spvc_capture_mode.SPVC_CAPTURE_MODE_COPY, &compiler).Assert();
-                spvc_compiler_create_shader_resources(compiler, &resources).Assert();
+                spvc.ContextCreateCompiler(context, Backend.Glsl, ir, CaptureMode.Copy, ref compiler).Assert();
+                spvc.CompilerCreateShaderResources(compiler, ref resources).Assert();
             }
 
             using (OptickMacros.Event("Shader push constant buffer reflection"))
             {
-                spvc_reflected_resource* resourceList;
+                ReflectedResource* resourceList;
                 nuint resourceCount;
-                spvc_resources_get_resource_list_for_type(resources, spvc_resource_type.SPVC_RESOURCE_TYPE_PUSH_CONSTANT, &resourceList, &resourceCount).Assert();
+                spvc.ResourcesGetResourceListForType(resources, ResourceType.PushConstant, &resourceList, &resourceCount).Assert();
 
                 ProcessPushConstantBuffers(compiler, resourceList, resourceCount);
             }
@@ -141,9 +146,9 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 foreach (var resourceType in sResourceTypeMap.Keys)
                 {
-                    spvc_reflected_resource* resourceList;
+                    ReflectedResource* resourceList;
                     nuint resourceCount;
-                    spvc_resources_get_resource_list_for_type(resources, resourceType, &resourceList, &resourceCount).Assert();
+                    spvc.ResourcesGetResourceListForType(resources, resourceType, &resourceList, &resourceCount).Assert();
 
                     var typeFlags = sResourceTypeMap[resourceType];
                     ProcessResources(compiler, typeFlags, resourceList, resourceCount);
@@ -154,33 +159,33 @@ namespace CodePlayground.Graphics.Vulkan
             {
                 foreach (var resourceType in sResourceTypeIODirections.Keys)
                 {
-                    spvc_reflected_resource* resourceList;
+                    ReflectedResource* resourceList;
                     nuint resourceCount;
-                    spvc_resources_get_resource_list_for_type(resources, resourceType, &resourceList, &resourceCount).Assert();
+                    spvc.ResourcesGetResourceListForType(resources, resourceType, &resourceList, &resourceCount).Assert();
 
                     var direction = sResourceTypeIODirections[resourceType];
                     ProcessStageIOFields(compiler, direction, resourceList, resourceCount);
                 }
             }
 
-            spvc_context_destroy(context);
+            spvc.ContextDestroy(context);
         }
 
-        private unsafe void ProcessStageIOFields(spvc_compiler* compiler, StageIODirection direction, spvc_reflected_resource* resources, nuint count)
+        private unsafe void ProcessStageIOFields(SpvCompiler* compiler, StageIODirection direction, ReflectedResource* resources, nuint count)
         {
             using var processEvent = OptickMacros.Event();
             for (nuint i = 0; i < count; i++)
             {
                 var resource = resources[i];
-                var id = resource.id.Value;
+                var id = resource.Id;
 
-                var type = resource.type_id.Value;
-                ProcessType(compiler, type, resource.base_type_id.Value);
+                var type = resource.TypeId;
+                ProcessType(compiler, type, resource.BaseTypeId);
 
-                var location = (int)spvc_compiler_get_decoration(compiler, id, SpvDecoration.SpvDecorationLocation);
+                var location = (int)spvc.CompilerGetDecoration(compiler, id, Decoration.Location);
                 mReflectionData.StageIO.Add(new ReflectedStageIOField
                 {
-                    Name = Marshal.PtrToStringAnsi((nint)resource.name) ?? string.Empty,
+                    Name = Marshal.PtrToStringAnsi((nint)resource.Name) ?? string.Empty,
                     Type = (int)type,
                     Direction = direction,
                     Location = location
@@ -188,36 +193,32 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        private unsafe void ProcessResources(spvc_compiler* compiler, ShaderResourceTypeFlags typeFlags, spvc_reflected_resource* resources, nuint count)
+        private unsafe void ProcessResources(SpvCompiler* compiler, ShaderResourceTypeFlags typeFlags, ReflectedResource* resources, nuint count)
         {
             using var processEvent = OptickMacros.Event();
             for (nuint i = 0; i < count; i++)
             {
                 var resource = resources[i];
-                var id = resource.id.Value;
+                var id = resource.Id;
 
-                var set = (int)spvc_compiler_get_decoration(compiler, id, SpvDecoration.SpvDecorationDescriptorSet);
-                var binding = (int)spvc_compiler_get_decoration(compiler, id, SpvDecoration.SpvDecorationBinding);
+                var set = (int)spvc.CompilerGetDecoration(compiler, id, Decoration.DescriptorSet);
+                var binding = (int)spvc.CompilerGetDecoration(compiler, id, Decoration.Binding);
 
-                if (!mReflectionData.Resources.ContainsKey(set))
-                {
-                    mReflectionData.Resources.Add(set, new Dictionary<int, ReflectedShaderResource>());
-                }
+                mReflectionData.Resources.TryAdd(set, new Dictionary<int, ReflectedShaderResource>());
 
                 var bindings = mReflectionData.Resources[set];
-                if (bindings.ContainsKey(binding))
+                if (bindings.TryGetValue(binding, out ReflectedShaderResource existingResource))
                 {
-                    var existingResource = bindings[binding];
                     existingResource.ResourceType |= typeFlags;
                     bindings[binding] = existingResource;
 
                     continue;
                 }
 
-                var type = resource.type_id.Value;
-                ProcessType(compiler, type, resource.base_type_id.Value);
+                var type = resource.TypeId;
+                ProcessType(compiler, type, resource.BaseTypeId);
 
-                var name = spvc_compiler_get_name(compiler, id);
+                var name = spvc.CompilerGetName(compiler, id);
                 bindings.Add(binding, new ReflectedShaderResource
                 {
                     Name = Marshal.PtrToStringAnsi((nint)name) ?? string.Empty,
@@ -227,17 +228,17 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        private unsafe void ProcessPushConstantBuffers(spvc_compiler* compiler, spvc_reflected_resource* resources, nuint count)
+        private unsafe void ProcessPushConstantBuffers(SpvCompiler* compiler, ReflectedResource* resources, nuint count)
         {
             using var processEvent = OptickMacros.Event();
             for (nuint i = 0; i < count; i++)
             {
                 var resource = resources[i];
-                var type = resource.type_id.Value;
-                ProcessType(compiler, type, resource.base_type_id.Value);
+                var type = resource.TypeId;
+                ProcessType(compiler, type, resource.BaseTypeId);
 
-                var id = resource.id.Value;
-                var name = spvc_compiler_get_name(compiler, id);
+                var id = resource.Id;
+                var name = spvc.CompilerGetName(compiler, id);
 
                 mReflectionData.PushConstantBuffers.Add(new ReflectedPushConstantBuffer
                 {
@@ -247,7 +248,7 @@ namespace CodePlayground.Graphics.Vulkan
             }
         }
 
-        private unsafe void ProcessType(spvc_compiler* compiler, uint type, uint? baseType)
+        private unsafe void ProcessType(SpvCompiler* compiler, uint type, uint? baseType)
         {
             using var processEvent = OptickMacros.Event();
             OptickMacros.Tag("Processed type", type);
@@ -261,95 +262,95 @@ namespace CodePlayground.Graphics.Vulkan
             // placeholder so that we don't infinitely recurse
             mReflectionData.Types.Add(typeId, new ReflectedShaderType());
 
-            var handle = spvc_compiler_get_type_handle(compiler, type);
+            var handle = spvc.CompilerGetTypeHandle(compiler, type);
 
-            var typeName = spvc_compiler_get_name(compiler, baseType ?? type);
+            var typeName = spvc.CompilerGetName(compiler, baseType ?? type);
             var typeDesc = new ReflectedShaderType
             {
                 Name = Marshal.PtrToStringAnsi((nint)typeName) ?? string.Empty,
                 ArrayDimensions = null,
                 Fields = null,
-                Rows = (int)spvc_type_get_vector_size(handle),
-                Columns = (int)spvc_type_get_columns(handle)
+                Rows = (int)spvc.TypeGetVectorSize(handle),
+                Columns = (int)spvc.TypeGetColumns(handle)
             };
 
-            var dimensions = spvc_type_get_num_array_dimensions(handle);
+            var dimensions = spvc.TypeGetNumArrayDimensions(handle);
             if (dimensions > 0)
             {
                 var arrayDimensions = new int[dimensions];
                 for (uint i = 0; i < dimensions; i++)
                 {
-                    arrayDimensions[i] = (int)spvc_type_get_array_dimension(handle, i).Value;
+                    arrayDimensions[i] = (int)spvc.TypeGetArrayDimension(handle, i);
                 }
 
                 typeDesc.ArrayDimensions = arrayDimensions;
             }
 
-            var basetype = spvc_type_get_basetype(handle);
+            var basetype = spvc.TypeGetBasetype(handle);
             switch (basetype)
             {
-                case spvc_basetype.SPVC_BASETYPE_BOOLEAN:
+                case Basetype.Boolean:
                     typeDesc.Class = ShaderTypeClass.Bool;
                     typeDesc.Size = 1;
                     break;
-                case spvc_basetype.SPVC_BASETYPE_INT8:
+                case Basetype.Int8:
                     typeDesc.Class = ShaderTypeClass.SInt;
                     typeDesc.Size = 1;
                     break;
-                case spvc_basetype.SPVC_BASETYPE_UINT8:
+                case Basetype.Uint8:
                     typeDesc.Class = ShaderTypeClass.UInt;
                     typeDesc.Size = 1;
                     break;
-                case spvc_basetype.SPVC_BASETYPE_INT16:
+                case Basetype.Int16:
                     typeDesc.Class = ShaderTypeClass.SInt;
                     typeDesc.Size = 2;
                     break;
-                case spvc_basetype.SPVC_BASETYPE_UINT16:
+                case Basetype.Uint16:
                     typeDesc.Class = ShaderTypeClass.UInt;
                     typeDesc.Size = 2;
                     break;
-                case spvc_basetype.SPVC_BASETYPE_INT32:
+                case Basetype.Int32:
                     typeDesc.Class = ShaderTypeClass.SInt;
                     typeDesc.Size = 4;
                     break;
-                case spvc_basetype.SPVC_BASETYPE_UINT32:
+                case Basetype.Uint32:
                     typeDesc.Class = ShaderTypeClass.UInt;
                     typeDesc.Size = 4;
                     break;
-                case spvc_basetype.SPVC_BASETYPE_INT64:
+                case Basetype.Int64:
                     typeDesc.Class = ShaderTypeClass.SInt;
                     typeDesc.Size = 8;
                     break;
-                case spvc_basetype.SPVC_BASETYPE_UINT64:
+                case Basetype.Uint64:
                     typeDesc.Class = ShaderTypeClass.UInt;
                     typeDesc.Size = 8;
                     break;
-                case spvc_basetype.SPVC_BASETYPE_FP16:
+                case Basetype.FP16:
                     typeDesc.Class = ShaderTypeClass.Float;
                     typeDesc.Size = 2;
                     break;
-                case spvc_basetype.SPVC_BASETYPE_FP32:
+                case Basetype.FP32:
                     typeDesc.Class = ShaderTypeClass.Float;
                     typeDesc.Size = 4;
                     break;
-                case spvc_basetype.SPVC_BASETYPE_FP64:
+                case Basetype.FP64:
                     typeDesc.Class = ShaderTypeClass.Float;
                     typeDesc.Size = 8;
                     break;
-                case spvc_basetype.SPVC_BASETYPE_STRUCT:
+                case Basetype.Struct:
                     {
                         nuint size;
-                        spvc_compiler_get_declared_struct_size(compiler, handle, &size).Assert();
+                        spvc.CompilerGetDeclaredStructSize(compiler, handle, &size).Assert();
 
-                        var memberCount = spvc_type_get_num_member_types(handle);
+                        var memberCount = spvc.TypeGetNumMemberTypes(handle);
                         var fields = new Dictionary<string, ReflectedShaderField>();
 
                         for (uint i = 0; i < memberCount; i++)
                         {
-                            var memberTypeId = spvc_type_get_member_type(handle, i);
-                            ProcessType(compiler, memberTypeId.Value, null);
+                            var memberTypeId = spvc.TypeGetMemberType(handle, i);
+                            ProcessType(compiler, memberTypeId, null);
 
-                            var memberName = spvc_compiler_get_member_name(compiler, baseType ?? type, i);
+                            var memberName = spvc.CompilerGetMemberName(compiler, baseType ?? type, i);
                             var key = Marshal.PtrToStringAnsi((nint)memberName);
                             if (string.IsNullOrEmpty(key))
                             {
@@ -357,14 +358,14 @@ namespace CodePlayground.Graphics.Vulkan
                             }
 
                             uint offset;
-                            spvc_compiler_type_struct_member_offset(compiler, handle, i, &offset).Assert();
+                            spvc.CompilerTypeStructMemberOffset(compiler, handle, i, &offset).Assert();
 
                             uint stride;
-                            bool hasStride = spvc_compiler_type_struct_member_array_stride(compiler, handle, i, &stride) == spvc_result.SPVC_SUCCESS;
+                            bool hasStride = spvc.CompilerTypeStructMemberArrayStride(compiler, handle, i, &stride) == Silk.NET.SPIRV.Cross.Result.Success;
 
                             fields.Add(key, new ReflectedShaderField
                             {
-                                Type = (int)memberTypeId.Value,
+                                Type = (int)memberTypeId,
                                 Offset = (int)offset,
                                 Stride = hasStride ? (int)stride : -1
                             });
@@ -375,15 +376,15 @@ namespace CodePlayground.Graphics.Vulkan
                         typeDesc.Fields = fields;
                     }
                     break;
-                case spvc_basetype.SPVC_BASETYPE_IMAGE:
+                case Basetype.Image:
                     typeDesc.Class = ShaderTypeClass.Image;
                     typeDesc.Size = -1;
                     break;
-                case spvc_basetype.SPVC_BASETYPE_SAMPLED_IMAGE:
+                case Basetype.SampledImage:
                     typeDesc.Class = ShaderTypeClass.CombinedImageSampler;
                     typeDesc.Size = -1;
                     break;
-                case spvc_basetype.SPVC_BASETYPE_SAMPLER:
+                case Basetype.Sampler:
                     typeDesc.Class = ShaderTypeClass.Sampler;
                     typeDesc.Size = -1;
                     break;
@@ -675,21 +676,36 @@ namespace CodePlayground.Graphics.Vulkan
         private readonly Dictionary<ShaderStage, ShaderReflectionResult> mReflectionData;
     }
 
-    internal sealed class VulkanShaderCompiler : IShaderCompiler
+    internal sealed unsafe class VulkanShaderCompiler : IShaderCompiler
     {
+        private static readonly Shaderc shaderc;
+        static VulkanShaderCompiler()
+        {
+            shaderc = Shaderc.GetApi();
+        }
+
         public VulkanShaderCompiler(Version vulkanVersion)
         {
             mDisposed = false;
-            mCompiler = new Compiler(new Options(false));
+            mLock = new object();
 
-            var options = mCompiler.Options;
+            mCompiler = shaderc.CompilerInitialize();
+            mOptions = shaderc.CompileOptionsInitialize();
+
             uint version = VulkanUtilities.MakeVersion(vulkanVersion);
+            shaderc.CompileOptionsSetTargetEnv(mOptions, TargetEnv.Vulkan, version);
+            shaderc.CompileOptionsSetGenerateDebugInfo(mOptions);
+            shaderc.CompileOptionsSetTargetSpirv(mOptions, SpirvVersion.Shaderc10);
+            shaderc.CompileOptionsSetOptimizationLevel(mOptions, OptimizationLevel.Performance);
+        }
 
-            options.SetTargetEnvironment(TargetEnvironment.Vulkan, (EnvironmentVersion)version);
-            options.EnableDebugInfo();
-
-            options.TargetSpirVVersion = new SpirVVersion(1, 0);
-            options.Optimization = OptimizationLevel.Performance;
+        ~VulkanShaderCompiler()
+        {
+            if (!mDisposed)
+            {
+                Dispose(false);
+                mDisposed = true;
+            }
         }
 
         public void Dispose()
@@ -699,21 +715,27 @@ namespace CodePlayground.Graphics.Vulkan
                 return;
             }
 
-            mCompiler.Dispose();
+            Dispose(true);
             mDisposed = true;
+        }
+
+        private void Dispose(bool disposing)
+        {
+            shaderc.CompilerRelease(mCompiler);
+            shaderc.CompileOptionsRelease(mOptions);
         }
 
         public byte[] Compile(string source, string path, ShaderLanguage language, ShaderStage stage, string entrypoint)
         {
             using var compileEvent = OptickMacros.Event();
-            lock (mCompiler)
+            lock (mLock)
             {
-                mCompiler.Options.SourceLanguage = language switch
+                shaderc.CompileOptionsSetSourceLanguage(mOptions, language switch
                 {
                     ShaderLanguage.GLSL => SourceLanguage.Glsl,
                     ShaderLanguage.HLSL => SourceLanguage.Hlsl,
                     _ => throw new ArgumentException("Invalid shader language!")
-                };
+                });
 
                 var kind = stage switch
                 {
@@ -724,22 +746,43 @@ namespace CodePlayground.Graphics.Vulkan
                     _ => throw new ArgumentException("Unsupported shader stage!")
                 };
 
-                using var result = mCompiler.Compile(source, path, kind, entry_point: entrypoint);
-                if (result.Status != Status.Success)
+                var encoding = Encoding.ASCII;
+                var sourceBytes = encoding.GetBytes(source);
+                var pathBytes = encoding.GetBytes(path);
+                var entrypointBytes = encoding.GetBytes(entrypoint);
+
+                CompilationResult* result;
+                fixed (byte* sourcePtr = sourceBytes)
                 {
-                    throw new InvalidOperationException($"Failed to compile shader ({result.Status}): {result.ErrorMessage}");
+                    fixed (byte* pathPtr = pathBytes)
+                    {
+                        fixed (byte* entrypointPtr = entrypointBytes)
+                        {
+                            result = shaderc.CompileIntoSpv(mCompiler, sourcePtr, (nuint)sourceBytes.Length, kind, pathPtr, entrypointPtr, mOptions);
+                        }
+                    }
                 }
 
-                var spirv = new byte[result.CodeLength];
-                Marshal.Copy(result.CodePointer, spirv, 0, spirv.Length);
+                var status = shaderc.ResultGetCompilationStatus(result);
+                if (status != CompilationStatus.Success)
+                {
+                    var message = (nint)shaderc.ResultGetErrorMessage(result);
+                    throw new InvalidOperationException($"Failed to compile shader ({status}): {Marshal.PtrToStringAnsi(message)}");
+                }
 
+                var spirv = new byte[shaderc.ResultGetLength(result)];
+                Marshal.Copy((nint)shaderc.ResultGetBytes(result), spirv, 0, spirv.Length);
+
+                shaderc.ResultRelease(result);
                 return spirv;
             }
         }
 
         public ShaderLanguage PreferredLanguage => ShaderLanguage.GLSL;
 
-        private readonly Compiler mCompiler;
+        private readonly ShadercCompiler* mCompiler;
+        private readonly CompileOptions* mOptions;
+        private readonly object mLock;
         private bool mDisposed;
     }
 }
