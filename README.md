@@ -25,7 +25,6 @@ This project uses packages from GitHub package registries. As such, it's require
 <configuration>
     <packageSources>
         <add key="github" value="https://nuget.pkg.github.com/yodasoda1219/index.json" />
-        <add key="silk-experimental" value="https://dotnet.github.io/Silk.NET/nuget/experimental/index.json" />
     </packageSources>
     <packageSourceCredentials>
         <github>
