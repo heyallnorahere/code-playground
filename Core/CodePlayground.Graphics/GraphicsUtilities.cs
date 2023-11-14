@@ -281,6 +281,18 @@ namespace CodePlayground.Graphics
             image.TransitionLayout(commandList, source, destinationLayout);
         }
 
+        public static void CopyToBuffer(this IDeviceImage image, ICommandList commandList, ImageSelection source, IDeviceBuffer destination, DeviceImageLayoutName currentLayout)
+        {
+            var layout = image.GetLayout(currentLayout);
+            image.CopyToBuffer(commandList, source, destination, layout);
+        }
+
+        public static void CopyFromBuffer(this IDeviceImage image, ICommandList commandList, IDeviceBuffer source, ImageSelection destination, DeviceImageLayoutName currentLayout)
+        {
+            var layout = image.GetLayout(currentLayout);
+            image.CopyFromBuffer(commandList, source, destination, layout);
+        }
+
         public static void CopyToBuffer(this IDeviceImage image, ICommandList commandList, IDeviceBuffer destination, DeviceImageLayoutName currentLayout)
         {
             var layout = image.GetLayout(currentLayout);

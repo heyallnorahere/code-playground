@@ -563,7 +563,22 @@ namespace CodePlayground.Graphics.Vulkan
             CopyFromBuffer((VulkanCommandBuffer)commandList, (VulkanBuffer)source, (VulkanImageLayout)currentLayout, 0, ArrayLayers);
         }
 
+        void IDeviceImage.CopyFromBuffer(ICommandList commandList, IDeviceBuffer source, ImageSelection destination, IDeviceImageLayout currentLayout)
+        {
+            if (commandList is not VulkanCommandBuffer || source is not VulkanBuffer || currentLayout is not VulkanImageLayout)
+            {
+                throw new ArgumentException("Must pass Vulkan objects!");
+            }
+
+            CopyFromBuffer((VulkanCommandBuffer)commandList, (VulkanBuffer)source, destination, (VulkanImageLayout)currentLayout, 0, ArrayLayers);
+        }
+
         public void CopyFromBuffer(VulkanCommandBuffer commandBuffer, VulkanBuffer source, VulkanImageLayout currentLayout, int arrayLayer, int layerCount)
+        {
+            CopyFromBuffer(commandBuffer, source, ImageSelection.Default, currentLayout, arrayLayer, layerCount);
+        }
+
+        public void CopyFromBuffer(VulkanCommandBuffer commandBuffer, VulkanBuffer source, ImageSelection destination, VulkanImageLayout currentLayout, int arrayLayer, int layerCount)
         {
             using var copyEvent = OptickMacros.Event();
             using var gpuCopyEvent = OptickMacros.GPUEvent("Buffer-to-image copy");
@@ -583,11 +598,16 @@ namespace CodePlayground.Graphics.Vulkan
                     BaseArrayLayer = 0,
                     LayerCount = 1
                 },
-                ImageOffset = VulkanUtilities.Init<Offset3D>(),
+                ImageOffset = new Offset3D
+                {
+                    X = destination.X,
+                    Y = destination.Y,
+                    Z = 0
+                },
                 ImageExtent = new Extent3D
                 {
-                    Width = (uint)Size.Width,
-                    Height = (uint)Size.Height,
+                    Width = (uint)(destination.Width < 0 ? Size.Width : destination.Width),
+                    Height = (uint)(destination.Height < 0 ? Size.Height : destination.Height),
                     Depth = 1
                 }
             };
@@ -674,7 +694,22 @@ namespace CodePlayground.Graphics.Vulkan
             CopyToBuffer((VulkanCommandBuffer)commandList, (VulkanBuffer)destination, (VulkanImageLayout)currentLayout, 0, ArrayLayers);
         }
 
+        void IDeviceImage.CopyToBuffer(ICommandList commandList, ImageSelection source, IDeviceBuffer destination, IDeviceImageLayout currentLayout)
+        {
+            if (commandList is not VulkanCommandBuffer || destination is not VulkanBuffer || currentLayout is not VulkanImageLayout)
+            {
+                throw new ArgumentException("Must pass Vulkan objects!");
+            }
+
+            CopyToBuffer((VulkanCommandBuffer)commandList, source, (VulkanBuffer)destination, (VulkanImageLayout)currentLayout, 0, ArrayLayers);
+        }
+
         public void CopyToBuffer(VulkanCommandBuffer commandBuffer, VulkanBuffer destination, VulkanImageLayout currentLayout, int arrayLayer, int layerCount)
+        {
+            CopyToBuffer(commandBuffer, ImageSelection.Default, destination, currentLayout, arrayLayer, layerCount);
+        }
+
+        public void CopyToBuffer(VulkanCommandBuffer commandBuffer, ImageSelection source, VulkanBuffer destination, VulkanImageLayout currentLayout, int arrayLayer, int layerCount)
         {
             using var copyEvent = OptickMacros.Event();
             using var gpuCopyEvent = OptickMacros.GPUEvent("Image-to-buffer copy");
@@ -694,11 +729,16 @@ namespace CodePlayground.Graphics.Vulkan
                     BaseArrayLayer = (uint)arrayLayer,
                     LayerCount = (uint)layerCount
                 },
-                ImageOffset = VulkanUtilities.Init<Offset3D>(),
+                ImageOffset = new Offset3D
+                {
+                    X = source.X,
+                    Y = source.Y,
+                    Z = 0
+                },
                 ImageExtent = new Extent3D
                 {
-                    Width = (uint)Size.Width,
-                    Height = (uint)Size.Height,
+                    Width = (uint)(source.Width < 0 ? Size.Width : source.Width),
+                    Height = (uint)(source.Height < 0 ? Size.Height : source.Height),
                     Depth = 1
                 }
             };

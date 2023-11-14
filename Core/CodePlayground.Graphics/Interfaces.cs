@@ -270,6 +270,20 @@ namespace CodePlayground.Graphics
         public object? VertexAttributeLayout { get; set; }
     }
 
+    public struct ImageSelection
+    {
+        public static ImageSelection Default => new ImageSelection
+        {
+            X = 0,
+            Y = 0,
+            Width = -1,
+            Height = -1
+        };
+
+        public int X, Y;
+        public int Width, Height;
+    }
+
     public interface IGraphicsContext : IDisposable
     {
         public IGraphicsDeviceScorer DeviceScorer { set; }
@@ -440,7 +454,9 @@ namespace CodePlayground.Graphics
 
         // command list commands
         public void CopyFromBuffer(ICommandList commandList, IDeviceBuffer source, IDeviceImageLayout currentLayout);
+        public void CopyFromBuffer(ICommandList commandList, IDeviceBuffer source, ImageSelection destination, IDeviceImageLayout currentLayout);
         public void CopyToBuffer(ICommandList commandList, IDeviceBuffer destination, IDeviceImageLayout currentLayout);
+        public void CopyToBuffer(ICommandList commandList, ImageSelection source, IDeviceBuffer destination, IDeviceImageLayout currentLayout);
         public void TransitionLayout(ICommandList commandList, IDeviceImageLayout srcLayout, IDeviceImageLayout dstLayout);
         public void CopyCubeFace(ICommandList commandList, int face, IDeviceImage source, IDeviceImageLayout currentLayout, IDeviceImageLayout sourceLayout);
 
