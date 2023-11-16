@@ -1,4 +1,3 @@
-using CodePlayground;
 using Optick.NET;
 using System;
 using System.Collections;
@@ -6,16 +5,8 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 
-namespace Ragdoll
+namespace CodePlayground
 {
-    internal struct EntityData
-    {
-        public ulong Previous { get; set; }
-        public ulong Next { get; set; }
-        public int ComponentOffset { get; set; }
-        public Dictionary<Type, int> ComponentIndices { get; set; }
-    }
-
     public sealed class Registry : IEnumerable<ulong>
     {
         public const ulong Null = 0;
@@ -63,8 +54,9 @@ namespace Ragdoll
         {
             mCurrentID = Null;
             mLockCount = 0;
-            mEntities = new Dictionary<ulong, EntityData>();
-            mComponents = new List<object>();
+            mEntities = new Dictionary<ulong, ulong>();
+            mComponents = new Dictionary<int, Dictionary<ulong, object>>();
+            mComponentTypeIDs = new Dictionary<Type, int>();
         }
 
         public IDisposable Lock() => new RegistryLock(this);
@@ -80,43 +72,13 @@ namespace Ragdoll
 
         public ulong New()
         {
+            using var newEvent = OptickMacros.Event();
+            
             VerifyUnlocked();
             ulong id = ++mCurrentID;
 
-            // expensive operation - though tbf so is creating an entity
-            var ids = mEntities.Keys.ToList();
-            ids.Sort();
-
-            ulong previous = ids.LastOrDefault(Null);
-            if (previous != Null)
-            {
-                var previousData = mEntities[previous];
-                previousData.Next = id;
-                mEntities[previous] = previousData;
-            }
-
-            mEntities.Add(id, new EntityData
-            {
-                Previous = previous,
-                Next = Null,
-                ComponentOffset = mComponents.Count,
-                ComponentIndices = new Dictionary<Type, int>()
-            });
-
+            mEntities.Add(id, 0);
             return id;
-        }
-
-        private int GetComponentOffset(ulong id)
-        {
-            if (id != Null)
-            {
-                var data = mEntities[id];
-                return data.ComponentOffset;
-            }
-            else
-            {
-                return mComponents.Count;
-            }
         }
 
         public bool Exists(ulong id) => mEntities.ContainsKey(id);
@@ -125,48 +87,38 @@ namespace Ragdoll
             using var destroyEvent = OptickMacros.Event();
 
             VerifyUnlocked();
-            if (!mEntities.TryGetValue(id, out EntityData data))
+            if (!mEntities.ContainsKey(id))
             {
-                throw new ArgumentException("Invalid entity ID!");
+                return;
             }
 
-            int offset = data.ComponentOffset;
-            int nextOffset = GetComponentOffset(data.Next);
+            foreach (var componentSet in mComponents.Values)
+            {
+                componentSet.Remove(id);
+            }
 
-            mComponents.RemoveRange(offset, nextOffset - offset);
             mEntities.Remove(id);
-
-            if (data.Previous != Null)
-            {
-                var previousData = mEntities[data.Previous];
-                previousData.Next = data.Next;
-                mEntities[data.Previous] = previousData;
-            }
-
-            if (data.Next != Null)
-            {
-                var nextData = mEntities[data.Next];
-                nextData.Previous = data.Previous;
-                mEntities[data.Next] = nextData;
-            }
         }
 
         public IEnumerable<object> View(ulong id)
         {
             using var viewEvent = OptickMacros.Event();
 
-            if (!mEntities.TryGetValue(id, out EntityData data))
+            if (!mEntities.TryGetValue(id, out ulong flags))
             {
-                throw new ArgumentException("Invalid entity ID!");
+                throw new InvalidOperationException($"No such entity: {id}");
             }
 
-            int offset = data.ComponentOffset;
-            int nextOffset = GetComponentOffset(data.Next);
-
-            var components = new object[nextOffset - offset];
-            for (int i = 0; i < components.Length; i++)
+            var components = new List<object>();
+            for (int i = 0; i < 64; i++)
             {
-                components[i] = mComponents[offset + i];
+                ulong mask = 1ul << i;
+                if ((flags & mask) != mask)
+                {
+                    continue;
+                }
+
+                components.Add(mComponents[i][id]);
             }
 
             return components;
@@ -176,23 +128,26 @@ namespace Ragdoll
         {
             using var viewEvent = OptickMacros.Event();
 
-            var entities = new List<ulong>();
-            foreach (ulong id in mEntities.Keys)
+            ulong mask = 0;
+            foreach (var type in types)
             {
-                bool valid = true;
-                foreach (var type in types)
+                if (!mComponentTypeIDs.TryGetValue(type, out int bit))
                 {
-                    if (!Has(id, type))
-                    {
-                        valid = false;
-                        break;
-                    }
+                    return Array.Empty<ulong>();
                 }
 
-                if (valid)
+                mask |= 1ul << bit;
+            }
+
+            var entities = new List<ulong>();
+            foreach ((ulong id, ulong bitflag) in mEntities)
+            {
+                if ((bitflag & mask) != mask)
                 {
-                    entities.Add(id);
+                    continue;
                 }
+
+                entities.Add(id);
             }
 
             return entities;
@@ -203,12 +158,18 @@ namespace Ragdoll
         {
             using var hasEvent = OptickMacros.Event();
 
-            if (!mEntities.TryGetValue(id, out EntityData data))
+            if (!mEntities.TryGetValue(id, out ulong flags))
             {
                 throw new ArgumentException("Invalid entity ID!");
             }
 
-            return data.ComponentIndices.ContainsKey(type);
+            if (!mComponentTypeIDs.TryGetValue(type, out int bit))
+            {
+                return false;
+            }
+
+            ulong mask = 1ul << bit;
+            return (flags & mask) == mask;
         }
 
         public bool TryGet<T>(ulong id, [NotNullWhen(true)] out T? component) where T : class
@@ -229,19 +190,19 @@ namespace Ragdoll
         {
             using var tryGetEvent = OptickMacros.Event();
 
-            if (!mEntities.TryGetValue(id, out EntityData data))
-            {
-                throw new ArgumentException("Invalid entity ID!");
-            }
-
-            if (!data.ComponentIndices.TryGetValue(type, out int index))
+            if (!mComponentTypeIDs.TryGetValue(type, out int bit))
             {
                 component = null;
                 return false;
             }
 
-            component = mComponents[data.ComponentOffset + index];
-            return true;
+            if (!mComponents.TryGetValue(bit, out Dictionary<ulong, object>? components))
+            {
+                component = null;
+                return false;
+            }
+
+            return components.TryGetValue(id, out component);
         }
 
         public T Get<T>(ulong id) where T : class => (T)Get(id, typeof(T));
@@ -261,8 +222,8 @@ namespace Ragdoll
         public object Add(ulong id, Type type, params object?[] args)
         {
             var component = Utilities.CreateDynamicInstance(type, args);
-
             Add(id, component);
+
             return component;
         }
 
@@ -271,35 +232,37 @@ namespace Ragdoll
             using var addEvent = OptickMacros.Event();
 
             VerifyUnlocked();
-            if (!mEntities.TryGetValue(id, out EntityData data))
+            if (!mEntities.TryGetValue(id, out ulong flags))
             {
                 throw new ArgumentException("Invalid entity ID!");
             }
 
-            var type = component.GetType();
-            if (type.IsValueType)
+            var componentType = component.GetType();
+            if (componentType.IsValueType)
             {
                 throw new ArgumentException("Only pass-by-reference objects can be used as components!");
             }
 
-            if (data.ComponentIndices.ContainsKey(type))
+            if (!mComponentTypeIDs.TryGetValue(componentType, out int bit))
             {
-                throw new ArgumentException($"A component of type {type} already exists on this entity!");
+                bit = mComponentTypeIDs.Count;
+                mComponentTypeIDs.Add(componentType, bit);
             }
 
-            int nextOffset = GetComponentOffset(data.Next);
-            mComponents.Insert(nextOffset, component);
-            data.ComponentIndices.Add(type, nextOffset - data.ComponentOffset);
-
-            ulong current = data.Next;
-            while (current != Null)
+            ulong mask = 1ul << bit;
+            if ((flags & mask) == mask)
             {
-                var currentData = mEntities[current];
-                currentData.ComponentOffset++;
-                mEntities[current] = currentData;
-
-                current = currentData.Next;
+                throw new ArgumentException($"A component of type {componentType} already exists on this entity!");
             }
+
+            if (!mComponents.TryGetValue(bit, out Dictionary<ulong, object>? components))
+            {
+                components = new Dictionary<ulong, object>();
+                mComponents.Add(bit, components);
+            }
+
+            components.Add(id, component);
+            mEntities[id] = flags | mask;
         }
 
         public void Remove(ulong id, Type type)
@@ -307,39 +270,17 @@ namespace Ragdoll
             using var removeEvent = OptickMacros.Event();
 
             VerifyUnlocked();
-            if (!mEntities.TryGetValue(id, out EntityData data))
+            if (!mComponentTypeIDs.TryGetValue(type, out int bit))
             {
-                throw new ArgumentException("Invalid entity ID!");
-            }
-
-            if (!data.ComponentIndices.TryGetValue(type, out int index))
-            {
-                // not that big of a deal - just return
                 return;
             }
 
-            int offset = data.ComponentOffset;
-            mComponents.RemoveAt(offset + index);
-            data.ComponentIndices.Remove(type);
-
-            foreach (var componentType in data.ComponentIndices.Keys)
+            if (!mComponents.TryGetValue(bit, out Dictionary<ulong, object>? components))
             {
-                int componentIndex = data.ComponentIndices[componentType];
-                if (componentIndex > index)
-                {
-                    data.ComponentIndices[componentType] = componentIndex - 1;
-                }
+                return;
             }
 
-            ulong current = data.Next;
-            while (current != Null)
-            {
-                var currentData = mEntities[current];
-                currentData.ComponentOffset--;
-                mEntities[current] = currentData;
-
-                current = currentData.Next;
-            }
+            components.Remove(id);
         }
 
         public void Clear()
@@ -356,7 +297,8 @@ namespace Ragdoll
 
         private ulong mCurrentID;
         private int mLockCount;
-        private readonly Dictionary<ulong, EntityData> mEntities;
-        private readonly List<object> mComponents;
+        private readonly Dictionary<ulong, ulong> mEntities;
+        private readonly Dictionary<int, Dictionary<ulong, object>> mComponents;
+        private readonly Dictionary<Type, int> mComponentTypeIDs;
     }
 }
