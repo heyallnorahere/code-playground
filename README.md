@@ -30,7 +30,7 @@ This project uses packages from GitHub package registries. As such, it's require
         <github>
             <add key="Username" value="YOUR_USERNAME" />
             <add key="ClearTextPassword" value="YOUR_ACCESS_TOKEN" />
-            <!-- token must have the "read:packages" permission -->
+            <!-- token must be a "GitHub Tokens (classic)" token, and must have the "read:packages" permission -->
         </github>
     </packageSourceCredentials>
 </configuration>
@@ -51,7 +51,7 @@ cmake --build build -j 8 --config $CONFIG # required for multi-config generators
 
 # and $CONFIG is the application configuration (Debug or Release)
 cd $ROOT_DIR
-dotnet build -c $CONFIG
+dotnet build -c $CONFIG Solutions/code-playground.sln
 ```
 
 ## Running
