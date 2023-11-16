@@ -480,6 +480,7 @@ namespace CodePlayground.Graphics.Vulkan
                         PpEnabledExtensionNames = extensionPtr,
                         EnabledLayerCount = (uint)layers.Count,
                         PpEnabledLayerNames = layerPtr,
+                        Flags = InstanceCreateFlags.EnumeratePortabilityBitKhr
                     };
 
                     var instance = new Instance();

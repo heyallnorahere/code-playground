@@ -73,6 +73,7 @@ namespace CodePlayground.Graphics
     [RequestedVulkanExtension(KhrSurface.ExtensionName, VulkanExtensionLevel.Instance, VulkanExtensionType.Extension, Required = true)]
     [RequestedVulkanExtension(KhrSwapchain.ExtensionName, VulkanExtensionLevel.Device, VulkanExtensionType.Extension, Required = true)]
     [RequestedVulkanExtension("VK_KHR_portability_subset", VulkanExtensionLevel.Device, VulkanExtensionType.Extension, Required = false)]
+    [RequestedVulkanExtension("VK_KHR_portability_enumeration", VulkanExtensionLevel.Instance, VulkanExtensionType.Extension, Required = false)]
     [RequestedVulkanExtension("VK_LAYER_KHRONOS_validation", VulkanExtensionLevel.Instance, VulkanExtensionType.Layer, Required = false)]
     public abstract class GraphicsApplication : Application
     {
