@@ -280,7 +280,14 @@ namespace CodePlayground
                 return;
             }
 
+            ulong mask = 1ul << bit;
+            if (!mEntities.TryGetValue(id, out ulong flags) || (flags & mask) != mask)
+            {
+                return;
+            }
+
             components.Remove(id);
+            mEntities[id] = flags & ~mask;
         }
 
         public void Clear()
