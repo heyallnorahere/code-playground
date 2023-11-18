@@ -108,12 +108,6 @@ namespace CodePlayground.Graphics
         }
 
         public override bool IsRunning => mIsRunning;
-        protected override string[] CopiedBinaries => new string[]
-        {
-            "glfw3.dll",
-            "libglfw.so.3",
-            "libglfw.3.dylib"
-        };
 
         public override bool Quit(int exitCode)
         {

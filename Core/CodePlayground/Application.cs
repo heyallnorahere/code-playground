@@ -69,18 +69,6 @@ namespace CodePlayground
                 instance.ApplyAttributes();
                 sInstance = instance;
 
-                var copiedBinaries = instance.CopiedBinaries;
-                if (copiedBinaries.Length > 0)
-                {
-                    var assemblyDir = applicationType.Assembly.GetAssemblyDirectory();
-                    if (string.IsNullOrEmpty(assemblyDir))
-                    {
-                        throw new ArgumentException("Failed to retrieve the directory of the application assembly!");
-                    }
-
-                    CopyBinaries(assemblyDir, copiedBinaries);
-                }
-
                 Console.WriteLine($"Running application {instance.Title} version {instance.Version}");
                 exitCode = instance.Run(args);
                 
@@ -89,47 +77,6 @@ namespace CodePlayground
 
             sInstance = null;
             return exitCode;
-        }
-
-        // i dont like this, but im not going to copy dlls to satisfy microsofts arbitrary dll loading scheme
-        private static void CopyBinaries(string assemblyDirectory, string[] copiedBinaries)
-        {
-            string runtimeDirectory = Path.Join(assemblyDirectory, "runtimes");
-            if (!Directory.Exists(runtimeDirectory) || !RuntimeIdentifierTree.Load())
-            {
-                return;
-            }
-
-            string runtimeIdentifier = RuntimeInformation.RuntimeIdentifier;
-            string[] subdirectories = Directory.GetDirectories(runtimeDirectory);
-            foreach (string subdirectory in subdirectories)
-            {
-                string binaryDirectory = Path.Join(subdirectory, "native");
-                if (!Directory.Exists(binaryDirectory))
-                {
-                    continue;
-                }
-
-                var subdirRuntimeIdentifier = Path.GetFileName(subdirectory.TrimEnd('/', '\\'));
-                if (string.IsNullOrEmpty(subdirRuntimeIdentifier))
-                {
-                    continue;
-                }
-
-                if (RuntimeIdentifierTree.Inherits(runtimeIdentifier, subdirRuntimeIdentifier))
-                {
-                    foreach (string filename in copiedBinaries)
-                    {
-                        string sourcePath = Path.Join(binaryDirectory, filename);
-                        string destinationPath = Path.Join(assemblyDirectory, filename);
-
-                        if (File.Exists(sourcePath))
-                        {
-                            File.Copy(sourcePath, destinationPath, true);
-                        }
-                    }
-                }
-            }
         }
 
         public Application()
@@ -204,7 +151,6 @@ namespace CodePlayground
         public string Title { get; internal set; }
         public Version Version { get; internal set; }
         public abstract bool IsRunning { get; }
-        protected virtual string[] CopiedBinaries => Array.Empty<string>();
 
         protected abstract int Run(string[] args);
         public abstract bool Quit(int exitCode);
