@@ -9,7 +9,7 @@
         <ImGuiNETVersion>1.89.5.2</ImGuiNETVersion>
         <MicrosoftNETCorePlatformsVersion>8.0.0-preview.2.23128.3</MicrosoftNETCorePlatformsVersion>
         <NewtonsoftJsonVersion>13.0.3</NewtonsoftJsonVersion>
-        <OptickNETVersion>1.0.7</OptickNETVersion>
+        <OptickNETVersion>1.0.8</OptickNETVersion>
         <SDLVersion>2.28.4</SDLVersion>
         <SilkNETVersion>2.18.0</SilkNETVersion>
         <SixLaborsImageSharpVersion>3.0.1</SixLaborsImageSharpVersion>
