@@ -473,6 +473,10 @@ namespace CodePlayground.Graphics.Vulkan
                         ApiVersion = VulkanUtilities.MakeVersion(apiVersion)
                     };
 
+                    bool portabilitySubset = RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ||
+                                             RuntimeInformation.IsOSPlatform(OSPlatform.Create("ios")) ||
+                                             RuntimeInformation.IsOSPlatform(OSPlatform.Create("maccatalyst"));
+                    
                     var createInfo = VulkanUtilities.Init<InstanceCreateInfo>() with
                     {
                         PApplicationInfo = &appInfo,
@@ -480,7 +484,7 @@ namespace CodePlayground.Graphics.Vulkan
                         PpEnabledExtensionNames = extensionPtr,
                         EnabledLayerCount = (uint)layers.Count,
                         PpEnabledLayerNames = layerPtr,
-                        Flags = InstanceCreateFlags.EnumeratePortabilityBitKhr
+                        Flags = portabilitySubset ? InstanceCreateFlags.EnumeratePortabilityBitKhr : InstanceCreateFlags.None
                     };
 
                     var instance = new Instance();
