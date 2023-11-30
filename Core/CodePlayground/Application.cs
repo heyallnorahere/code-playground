@@ -115,7 +115,6 @@ namespace CodePlayground
             // nothing
         }
 
-        [Conditional("DEBUG")]
         protected void InitializeOptick()
         {
             StateCallback callback = OnStateChanged;
