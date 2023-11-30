@@ -115,10 +115,11 @@ namespace CodePlayground
             // nothing
         }
 
-        protected void InitializeOptick()
+        protected void InitializeOptick(bool debug = false)
         {
             StateCallback callback = OnStateChanged;
             OptickImports.SetStateChangedCallback(callback);
+            OptickMacros.IsDebug = debug;
 
             mOptickCallbackHandle?.Free();
             mOptickCallbackHandle = GCHandle.Alloc(callback);
