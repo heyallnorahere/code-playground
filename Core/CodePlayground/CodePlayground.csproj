@@ -18,6 +18,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NETCore.Platforms" Version="$(MicrosoftNETCorePlatformsVersion)" />
     <PackageReference Include="Newtonsoft.Json" Version="$(NewtonsoftJsonVersion)" />
+    <PackageReference Include="Varena" Version="$(VarenaVersion)" />
 
     <InternalsVisibleTo Include="CodePlayground.Runtime" />
   </ItemGroup>

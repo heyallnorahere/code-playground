@@ -3,13 +3,166 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
+using System.Runtime.CompilerServices;
+using Varena;
 
 namespace CodePlayground
 {
-    public sealed class Registry : IEnumerable<ulong>
+    public delegate void RegistryHandleModifyCallback<T>(ref T data);
+    public interface IRegistryHandle
+    {
+        public unsafe void* Address { get; }
+        public object Value { get; }
+        public bool HasValue { get; }
+        public Type DataType { get; }
+
+        public bool Modify<T>(RegistryHandleModifyCallback<T> callback);
+        public void Modify(Action<object> callback);
+    }
+
+    public unsafe readonly struct RegistryHandle<T> : IRegistryHandle where T : unmanaged
+    {
+        internal RegistryHandle(T* pointer)
+        {
+            mPointer = pointer;
+        }
+
+        public bool Modify<U>(RegistryHandleModifyCallback<U> callback)
+        {
+            using var modifyEvent = OptickMacros.Event(category: Category.Scene);
+
+            if (*mPointer is not U argument)
+            {
+                return false;
+            }
+
+            callback.Invoke(ref argument);
+            *mPointer = (T)(object)argument!;
+
+            return true;
+        }
+
+        void IRegistryHandle.Modify(Action<object> callback)
+        {
+            using var modifyEvent = OptickMacros.Event(category: Category.Scene);
+
+            ref T reference = ref Unsafe.AsRef<T>(mPointer);
+            object data = reference;
+
+            callback.Invoke(data);
+            reference = (T)data;
+        }
+
+        public readonly ref T Value => ref *mPointer;
+        public readonly bool HasValue => mPointer is not null;
+
+        object IRegistryHandle.Value => Value;
+        void* IRegistryHandle.Address => mPointer;
+        Type IRegistryHandle.DataType => typeof(T);
+
+        private readonly T* mPointer;
+    }
+
+    internal interface IRegistryComponentSystem : IDisposable
+    {
+        public IRegistryHandle Add(ulong entity, object data);
+        public IRegistryHandle Get(ulong entity);
+        public bool TryGet(ulong entity, out IRegistryHandle? handle);
+        public bool Remove(ulong entity);
+    }
+
+    internal sealed class RegistryComponentSystem<T> : IRegistryComponentSystem where T : unmanaged
+    {
+        public RegistryComponentSystem()
+        {
+            var manager = Application.ArenaManager;
+
+            mArray = manager.CreateArray<T>(typeof(T).Name, Registry.AllocationSize);
+            mComponents = new Dictionary<ulong, nint>();
+            mFreeIndices = new Queue<nint>();
+        }
+
+        public void Dispose() => mArray.Dispose();
+
+        IRegistryHandle IRegistryComponentSystem.Add(ulong entity, object data) => Add(entity, (T)data);
+        public unsafe RegistryHandle<T> Add(ulong entity, T data)
+        {
+            using var addEvent = OptickMacros.Event(category: Category.Scene);
+
+            if (!mFreeIndices.TryDequeue(out nint address))
+            {
+                mArray.Append(data);
+                address = (nint)Unsafe.AsPointer(ref mArray[^1]);
+            }
+            else
+            {
+                ref var reference = ref Unsafe.AsRef<T>((void*)address);
+                reference = data;
+            }
+
+            mComponents.Add(entity, address);
+            return new RegistryHandle<T>((T*)address);
+        }
+
+        IRegistryHandle IRegistryComponentSystem.Get(ulong entity) => Get(entity);
+        public unsafe RegistryHandle<T> Get(ulong entity)
+        {
+            using var getEvent = OptickMacros.Event(category: Category.Scene);
+
+            nint pointer = mComponents[entity];
+            return new RegistryHandle<T>((T*)pointer);
+        }
+
+        bool IRegistryComponentSystem.TryGet(ulong entity, out IRegistryHandle? handle)
+        {
+            if (!TryGet(entity, out RegistryHandle<T> typedHandle))
+            {
+                handle = null;
+                return false;
+            }
+
+            handle = typedHandle;
+            return true;
+        }
+
+        public unsafe bool TryGet(ulong entity, out RegistryHandle<T> handle)
+        {
+            using var tryGetEvent = OptickMacros.Event(category: Category.Scene);
+
+            if (!mComponents.TryGetValue(entity, out nint address))
+            {
+                handle = default;
+                return false;
+            }
+
+            handle = new RegistryHandle<T>((T*)address);
+            return true;
+        }
+
+        public bool Remove(ulong entity)
+        {
+            using var removeEvent = OptickMacros.Event(category: Category.Scene);
+
+            if (!mComponents.TryGetValue(entity, out nint address))
+            {
+                return false;
+            }
+
+            mComponents.Remove(entity);
+            mFreeIndices.Enqueue(address);
+
+            return true;
+        }
+
+        private readonly VirtualArray<T> mArray;
+        private readonly Dictionary<ulong, nint> mComponents;
+        private readonly Queue<nint> mFreeIndices;
+    }
+
+    public sealed class Registry : IEnumerable<ulong>, IDisposable
     {
         public const ulong Null = 0;
+        public const uint AllocationSize = 1 << 15; // 32 kilobytes
 
         private sealed class RegistryLock : IDisposable
         {
@@ -55,7 +208,7 @@ namespace CodePlayground
             mCurrentID = Null;
             mLockCount = 0;
             mEntities = new Dictionary<ulong, ulong>();
-            mComponents = new Dictionary<int, Dictionary<ulong, object>>();
+            mSystems = new Dictionary<int, IRegistryComponentSystem>();
             mComponentTypeIDs = new Dictionary<Type, int>();
         }
 
@@ -92,7 +245,7 @@ namespace CodePlayground
                 return;
             }
 
-            foreach (var componentSet in mComponents.Values)
+            foreach (var componentSet in mSystems.Values)
             {
                 componentSet.Remove(id);
             }
@@ -100,7 +253,7 @@ namespace CodePlayground
             mEntities.Remove(id);
         }
 
-        public IEnumerable<object> View(ulong id)
+        public IEnumerable<IRegistryHandle> View(ulong id)
         {
             using var viewEvent = OptickMacros.Event();
 
@@ -109,7 +262,7 @@ namespace CodePlayground
                 throw new InvalidOperationException($"No such entity: {id}");
             }
 
-            var components = new List<object>();
+            var components = new List<IRegistryHandle>();
             for (int i = 0; i < 64; i++)
             {
                 ulong mask = 1ul << i;
@@ -118,7 +271,7 @@ namespace CodePlayground
                     continue;
                 }
 
-                components.Add(mComponents[i][id]);
+                components.Add(mSystems[i].Get(id));
             }
 
             return components;
@@ -153,7 +306,7 @@ namespace CodePlayground
             return entities;
         }
 
-        public bool Has<T>(ulong id) where T : class => Has(id, typeof(T));
+        public bool Has<T>(ulong id) where T : unmanaged => Has(id, typeof(T));
         public bool Has(ulong id, Type type)
         {
             using var hasEvent = OptickMacros.Event();
@@ -172,21 +325,21 @@ namespace CodePlayground
             return (flags & mask) == mask;
         }
 
-        public bool TryGet<T>(ulong id, [NotNullWhen(true)] out T? component) where T : class
+        public bool TryGet<T>(ulong id, [NotNullWhen(true)] out RegistryHandle<T> handle) where T : unmanaged
         {
             using var tryGetEvent = OptickMacros.Event();
 
-            if (TryGet(id, typeof(T), out object? componentObject))
+            if (TryGet(id, typeof(T), out IRegistryHandle? genericHandle))
             {
-                component = (T)componentObject;
+                handle = (RegistryHandle<T>)genericHandle;
                 return true;
             }
 
-            component = default;
+            handle = default;
             return false;
         }
 
-        public bool TryGet(ulong id, Type type, [NotNullWhen(true)] out object? component)
+        public bool TryGet(ulong id, Type type, [NotNullWhen(true)] out IRegistryHandle? component)
         {
             using var tryGetEvent = OptickMacros.Event();
 
@@ -196,21 +349,21 @@ namespace CodePlayground
                 return false;
             }
 
-            if (!mComponents.TryGetValue(bit, out Dictionary<ulong, object>? components))
+            if (!mSystems.TryGetValue(bit, out IRegistryComponentSystem? system))
             {
                 component = null;
                 return false;
             }
 
-            return components.TryGetValue(id, out component);
+            return system.TryGet(id, out component);
         }
 
-        public T Get<T>(ulong id) where T : class => (T)Get(id, typeof(T));
-        public object Get(ulong id, Type type)
+        public RegistryHandle<T> Get<T>(ulong id) where T : unmanaged => (RegistryHandle<T>)Get(id, typeof(T));
+        public IRegistryHandle Get(ulong id, Type type)
         {
             using var getEvent = OptickMacros.Event();
 
-            if (TryGet(id, type, out object? component))
+            if (TryGet(id, type, out IRegistryHandle? component))
             {
                 return component;
             }
@@ -218,16 +371,14 @@ namespace CodePlayground
             throw new ArgumentException($"No component of type {type} exists on this entity!");
         }
 
-        public T Add<T>(ulong id, params object?[] args) where T : class => (T)Add(id, typeof(T), args);
-        public object Add(ulong id, Type type, params object?[] args)
+        public RegistryHandle<T> Add<T>(ulong id, params object?[] args) where T : unmanaged => (RegistryHandle<T>)Add(id, typeof(T), args);
+        public IRegistryHandle Add(ulong id, Type type, params object?[] args)
         {
             var component = Utilities.CreateDynamicInstance(type, args);
-            Add(id, component);
-
-            return component;
+            return Add(id, component);
         }
 
-        public void Add(ulong id, object component)
+        public IRegistryHandle Add(ulong id, object component)
         {
             using var addEvent = OptickMacros.Event();
 
@@ -238,9 +389,9 @@ namespace CodePlayground
             }
 
             var componentType = component.GetType();
-            if (componentType.IsValueType)
+            if (!componentType.IsValueType)
             {
-                throw new ArgumentException("Only pass-by-reference objects can be used as components!");
+                throw new ArgumentException("Only value-type objects can be used as components!");
             }
 
             if (!mComponentTypeIDs.TryGetValue(componentType, out int bit))
@@ -255,14 +406,16 @@ namespace CodePlayground
                 throw new ArgumentException($"A component of type {componentType} already exists on this entity!");
             }
 
-            if (!mComponents.TryGetValue(bit, out Dictionary<ulong, object>? components))
+            if (!mSystems.TryGetValue(bit, out IRegistryComponentSystem? system))
             {
-                components = new Dictionary<ulong, object>();
-                mComponents.Add(bit, components);
+                var type = typeof(RegistryComponentSystem<>).MakeGenericType(componentType);
+
+                system = (IRegistryComponentSystem)Utilities.CreateDynamicInstance(type);
+                mSystems.Add(bit, system);
             }
 
-            components.Add(id, component);
             mEntities[id] = flags | mask;
+            return system.Add(id, component);
         }
 
         public void Remove(ulong id, Type type)
@@ -275,7 +428,7 @@ namespace CodePlayground
                 return;
             }
 
-            if (!mComponents.TryGetValue(bit, out Dictionary<ulong, object>? components))
+            if (!mSystems.TryGetValue(bit, out IRegistryComponentSystem? system))
             {
                 return;
             }
@@ -286,26 +439,39 @@ namespace CodePlayground
                 return;
             }
 
-            components.Remove(id);
+            system.Remove(id);
             mEntities[id] = flags & ~mask;
         }
 
+        public void Dispose() => Clear();
         public void Clear()
         {
+            foreach (var system in mSystems.Values)
+            {
+                system.Dispose();
+            }
+
             mEntities.Clear();
-            mComponents.Clear();
+            mSystems.Clear();
         }
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
         public IEnumerator<ulong> GetEnumerator() => mEntities.Keys.GetEnumerator();
 
-        public bool Locked => mLockCount > 0;
         public int Count => mEntities.Count;
+
+        public bool Locked => mLockCount > 0;
+        public ulong CurrentID
+        {
+            get => mCurrentID;
+            set => mCurrentID = value;
+        }
 
         private ulong mCurrentID;
         private int mLockCount;
+
         private readonly Dictionary<ulong, ulong> mEntities;
-        private readonly Dictionary<int, Dictionary<ulong, object>> mComponents;
+        private readonly Dictionary<int, IRegistryComponentSystem> mSystems;
         private readonly Dictionary<Type, int> mComponentTypeIDs;
     }
 }

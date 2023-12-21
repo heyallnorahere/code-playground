@@ -1,22 +1,25 @@
 ﻿using Optick.NET;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using Varena;
 
 namespace CodePlayground
 {
     public abstract class Application : IDisposable
     {
+        private static Application? sInstance;
+        private static readonly VirtualArenaManager sManager;
+
         static Application()
         {
             sInstance = null;
+            sManager = new VirtualArenaManager();
         }
 
-        private static Application? sInstance;
         public static Application Instance => sInstance ?? throw new InvalidOperationException();
+        public static VirtualArenaManager ArenaManager => sManager;
 
         internal static int Main(string[] args)
         {
