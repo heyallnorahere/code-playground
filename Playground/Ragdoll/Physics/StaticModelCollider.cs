@@ -1,6 +1,6 @@
 using BepuPhysics.Collidables;
+using CodePlayground;
 using ImGuiNET;
-using Optick.NET;
 using Ragdoll.Components;
 using System;
 using System.Numerics;
@@ -12,7 +12,7 @@ namespace Ragdoll.Physics
     {
         public override void Initialize(Scene scene, ulong id)
         {
-            using var initializeEvent = OptickMacros.Event();
+            using var initializeEvent = Profiler.Event();
 
             mScene = scene;
             mEntity = id;
@@ -26,7 +26,7 @@ namespace Ragdoll.Physics
 
         public override void Cleanup()
         {
-            using var cleanupEvent = OptickMacros.Event();
+            using var cleanupEvent = Profiler.Event();
 
             if (mModel >= 0)
             {
@@ -42,7 +42,7 @@ namespace Ragdoll.Physics
 
         public override void Update()
         {
-            using var updateEvent = OptickMacros.Event();
+            using var updateEvent = Profiler.Event();
 
             mScene!.TryGetComponent(mEntity, out TransformComponent? transform);
             Invalidate(transform?.Scale);
@@ -50,7 +50,7 @@ namespace Ragdoll.Physics
 
         public unsafe override void Edit()
         {
-            using var editEvent = OptickMacros.Event();
+            using var editEvent = Profiler.Event();
             var registry = App.Instance.ModelRegistry;
 
             var style = ImGui.GetStyle();
@@ -98,7 +98,7 @@ namespace Ragdoll.Physics
         public override void Invalidate() => Invalidate(force: true);
         private void Invalidate(Vector3? scale = null, int oldModel = -2, bool force = false)
         {
-            using var invalidateEvent = OptickMacros.Event();
+            using var invalidateEvent = Profiler.Event();
             var registry = App.Instance.ModelRegistry ?? throw new InvalidOperationException();
 
             bool modelsDiffer = oldModel != mModel && oldModel >= -1;
@@ -144,7 +144,7 @@ namespace Ragdoll.Physics
 
         public bool SetModel(int modelId)
         {
-            using var setModelEvent = OptickMacros.Event();
+            using var setModelEvent = Profiler.Event();
 
             var registry = App.Instance.ModelRegistry;
             var model = registry!.Models[modelId];

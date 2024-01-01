@@ -1,5 +1,5 @@
+using CodePlayground;
 using LibChess;
-using Optick.NET;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -18,7 +18,7 @@ namespace ChessAI.Data
     {
         private static bool Parse(string text, Action<PGN> callback, bool skip)
         {
-            using var parseEvent = OptickMacros.Event();
+            using var parseEvent = Profiler.Event();
             if (skip)
             {
                 try
@@ -42,7 +42,7 @@ namespace ChessAI.Data
 
         public static async Task<int> SplitAsync(TextReader reader, Action<PGN> callback, bool skipOnError)
         {
-            using var splitEvent = OptickMacros.Event();
+            using var splitEvent = Profiler.Event();
             int skippedGames = 0;
 
             var builder = new StringBuilder();
@@ -88,7 +88,7 @@ namespace ChessAI.Data
 
         public static PGN Parse(string text)
         {
-            using var parseEvent = OptickMacros.Event();
+            using var parseEvent = Profiler.Event();
 
             var lines = text.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var moveString = string.Empty;
@@ -178,9 +178,9 @@ namespace ChessAI.Data
 
         public static void ParseMoves(string moveString, IList<PGNMove> moves)
         {
-            using var parseMovesEvent = OptickMacros.Event();
+            using var parseMovesEvent = Profiler.Event();
 
-            using var parseEvent = OptickMacros.Event();
+            using var parseEvent = Profiler.Event();
             moves.Clear();
 
             using var board = Board.Create(); // creates a board with the default position

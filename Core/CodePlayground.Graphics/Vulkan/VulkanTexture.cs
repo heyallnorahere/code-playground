@@ -1,15 +1,13 @@
 using Silk.NET.Vulkan;
 using System;
 
-using OptickMacros = Optick.NET.OptickMacros;
-
 namespace CodePlayground.Graphics.Vulkan
 {
     public sealed class VulkanTexture : BindableVulkanImage, ITexture
     {
         public VulkanTexture(VulkanImage image, bool ownsImage, ISamplerSettings? samplerSettings)
         {
-            using var constructorEvent = OptickMacros.Event();
+            using var constructorEvent = Profiler.Event();
 
             mDisposed = false;
             mDevice = image.Device;
@@ -50,7 +48,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
-            using var disposeEvent = OptickMacros.Event();
+            using var disposeEvent = Profiler.Event();
             DestroyDynamicIDs();
 
             if (disposing)
@@ -71,7 +69,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private void OnLayoutChanged(VulkanImageLayout layout)
         {
-            using var changedEvent = OptickMacros.Event();
+            using var changedEvent = Profiler.Event();
 
             mImageInfo.ImageLayout = layout.Layout;
             Rebind();
@@ -79,7 +77,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void InvalidateSampler()
         {
-            using var invalidateEvent = OptickMacros.Event();
+            using var invalidateEvent = Profiler.Event();
             if (mImageInfo.Sampler.Handle != 0)
             {
                 var api = VulkanContext.API;

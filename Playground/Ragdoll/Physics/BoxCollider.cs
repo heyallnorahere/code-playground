@@ -1,6 +1,6 @@
 using BepuPhysics.Collidables;
+using CodePlayground;
 using ImGuiNET;
-using Optick.NET;
 using Ragdoll.Components;
 using System.Numerics;
 
@@ -20,7 +20,7 @@ namespace Ragdoll.Physics
 
         public override void Edit()
         {
-            using var editEvent = OptickMacros.Event();
+            using var editEvent = Profiler.Event();
             bool invalidate = false;
 
             const float speed = 0.05f;
@@ -36,7 +36,7 @@ namespace Ragdoll.Physics
 
         public override void Cleanup()
         {
-            using var cleanupEvent = OptickMacros.Event();
+            using var cleanupEvent = Profiler.Event();
 
             var simulation = mScene!.Simulation;
             simulation.Shapes.RemoveAndDispose(mIndex, simulation.BufferPool);
@@ -44,7 +44,7 @@ namespace Ragdoll.Physics
 
         public override void Update()
         {
-            using var updateEvent = OptickMacros.Event();
+            using var updateEvent = Profiler.Event();
             if (!mScene!.TryGetComponent(mEntity, out TransformComponent? transform))
             {
                 return;
@@ -59,7 +59,7 @@ namespace Ragdoll.Physics
         public override void Invalidate() => Invalidate(true);
         private void Invalidate(bool removeOld)
         {
-            using var invalidateEvent = OptickMacros.Event();
+            using var invalidateEvent = Profiler.Event();
 
             var oldIndex = mIndex;
             var simulation = mScene!.Simulation;

@@ -1,6 +1,5 @@
 using CodePlayground.Graphics.Shaders;
 using ImGuiNET;
-using Optick.NET;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.Windowing;
@@ -123,7 +122,7 @@ namespace CodePlayground.Graphics
 
         public ImGuiController(IGraphicsContext graphicsContext, IInputContext inputContext, IView view, IRenderTarget renderTarget, int frameCount)
         {
-            using var createdEvent = OptickMacros.Event();
+            using var createdEvent = Profiler.Event();
             if (sImGuiInitialized)
             {
                 throw new InvalidOperationException("An ImGui controller already exists!");
@@ -271,7 +270,7 @@ namespace CodePlayground.Graphics
 
         private IPipeline LoadPipeline()
         {
-            using var loadEvent = OptickMacros.Event();
+            using var loadEvent = Profiler.Event();
 
             using var compiler = mGraphicsContext.CreateCompiler();
             var transpiler = ShaderTranspiler.Create(compiler.PreferredLanguage);
@@ -331,7 +330,7 @@ namespace CodePlayground.Graphics
 
         public void NewFrame(double delta)
         {
-            using var newFrameEvent = OptickMacros.Event(category: Category.IO);
+            using var newFrameEvent = Profiler.Event();
             if (mFrameStarted)
             {
                 ImGui.Render();
@@ -347,7 +346,7 @@ namespace CodePlayground.Graphics
 
         public void Render(ICommandList commandList, IRenderer renderer, int currentFrame)
         {
-            using var renderEvent = OptickMacros.Event(category: Category.Rendering);
+            using var renderEvent = Profiler.Event();
             if (!mFrameStarted)
             {
                 return;
@@ -366,7 +365,7 @@ namespace CodePlayground.Graphics
                 return;
             }
 
-            using var renderEvent = OptickMacros.Event(category: Category.Rendering);
+            using var renderEvent = Profiler.Event();
 
             int totalVertices = drawData.TotalVtxCount;
             int totalIndices = drawData.TotalIdxCount;
@@ -410,7 +409,7 @@ namespace CodePlayground.Graphics
             int vertexOffset = 0;
             int indexOffset = 0;
 
-            using (OptickMacros.Category("Copy to staging buffers", Category.IO))
+            using (Profiler.Event("Copy to staging buffers"))
             {
                 for (int i = 0; i < drawData.CmdListsCount; i++)
                 {
@@ -461,12 +460,9 @@ namespace CodePlayground.Graphics
             transferList.AddSemaphore(frameData.Semaphore, SemaphoreUsage.Signal);
             commandList.AddSemaphore(frameData.Semaphore, SemaphoreUsage.Wait);
 
-            using (transferList.Context(GPUQueueType.Transfer))
+            foreach (var bufferData in frameData.Buffers.Values)
             {
-                foreach (var bufferData in frameData.Buffers.Values)
-                {
-                    bufferData.StagingBuffer.CopyBuffers(transferList, bufferData.RenderBuffer, bufferData.Size);
-                }
+                bufferData.StagingBuffer.CopyBuffers(transferList, bufferData.RenderBuffer, bufferData.Size);
             }
 
             transferList.End();
@@ -507,7 +503,7 @@ namespace CodePlayground.Graphics
 
         private void UpdateIO(double delta)
         {
-            using var updateIOEvent = OptickMacros.Event(category: Category.IO);
+            using var updateIOEvent = Profiler.Event();
             var io = ImGui.GetIO();
 
             io.DeltaTime = (float)delta;
@@ -520,7 +516,7 @@ namespace CodePlayground.Graphics
 
         private void UpdateProjectionBuffer()
         {
-            using var updateEvent = OptickMacros.Event();
+            using var updateEvent = Profiler.Event();
 
             var math = new MatrixMath(mGraphicsContext);
             var projection = math.Orthographic(0f, mViewWidth, mViewHeight, 0f, -1f, 1f);
@@ -530,7 +526,7 @@ namespace CodePlayground.Graphics
 
         private void UpdateInput()
         {
-            using var updateInputEvent = OptickMacros.Event(category: Category.Input);
+            using var updateInputEvent = Profiler.Event();
 
             var io = ImGui.GetIO();
             io.AddMouseWheelEvent(mWheelDelta.X, mWheelDelta.Y);

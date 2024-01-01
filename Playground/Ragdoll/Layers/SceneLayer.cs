@@ -1,6 +1,6 @@
+using CodePlayground;
 using CodePlayground.Graphics;
 using ImGuiNET;
-using Optick.NET;
 using Ragdoll.Components;
 using Ragdoll.Physics;
 using Ragdoll.Shaders;
@@ -64,7 +64,7 @@ namespace Ragdoll.Layers
 
         public void Render(bool enableVisibility = true)
         {
-            using var renderEvent = OptickMacros.Event();
+            using var renderEvent = Profiler.Event();
             if (!mVisible)
             {
                 return;
@@ -200,22 +200,11 @@ namespace Ragdoll.Layers
             mFramebufferAttachments = new FramebufferAttachmentInfo[2];
 
             mAttached = false;
-            App.Instance.OptickStateChanged += OnOptickStateChanged;
-        }
-
-        private void OnOptickStateChanged(State state)
-        {
-            if (state != State.STOP_CAPTURE || !mAttached)
-            {
-                return;
-            }
-
-            AttachOptickScreenshots();
         }
 
         private int LoadModel(string path, string name)
         {
-            using var loadModelEvent = OptickMacros.Event(category: Category.IO);
+            using var loadModelEvent = Profiler.Event();
 
             var app = App.Instance;
             var library = app.Renderer!.Library;
@@ -235,7 +224,7 @@ namespace Ragdoll.Layers
 
         private IReadOnlyList<ImGuiMenu> LoadMenus()
         {
-            using var loadMenusEvent = OptickMacros.Event();
+            using var loadMenusEvent = Profiler.Event();
 
             var methods = GetType().GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic);
             var menus = new Dictionary<string, ImGuiMenuInfo>();
@@ -309,7 +298,7 @@ namespace Ragdoll.Layers
 
         public override void OnPushed()
         {
-            using var pushedEvent = OptickMacros.Event();
+            using var pushedEvent = Profiler.Event();
 
             var app = App.Instance;
             var graphicsContext = app.GraphicsContext!;
@@ -320,20 +309,17 @@ namespace Ragdoll.Layers
             var commandList = queue.Release();
             commandList.Begin();
 
-            using (commandList.Context(GPUQueueType.Transfer))
-            {
-                mFramebufferSemaphore = graphicsContext.CreateSemaphore();
-                mFramebufferRecreated = true;
+            mFramebufferSemaphore = graphicsContext.CreateSemaphore();
+            mFramebufferRecreated = true;
 
-                var size = app.RootView!.FramebufferSize;
-                CreateFramebufferAttachments(size.X, size.Y, commandList);
-                mFramebuffer = graphicsContext.CreateFramebuffer(new FramebufferInfo
-                {
-                    Width = size.X,
-                    Height = size.Y,
-                    Attachments = mFramebufferAttachments
-                }, out mRenderTarget);
-            }
+            var size = app.RootView!.FramebufferSize;
+            CreateFramebufferAttachments(size.X, size.Y, commandList);
+            mFramebuffer = graphicsContext.CreateFramebuffer(new FramebufferInfo
+            {
+                Width = size.X,
+                Height = size.Y,
+                Attachments = mFramebufferAttachments
+            }, out mRenderTarget);
 
             commandList.AddSemaphore(mFramebufferSemaphore, SemaphoreUsage.Signal);
             commandList.End();
@@ -345,7 +331,7 @@ namespace Ragdoll.Layers
                 UpdatePhysics = false
             };
 
-            using (OptickMacros.Event("Test scene creation"))
+            using (Profiler.Event("Test scene creation"))
             {
                 int modelId = LoadModel("../../../../VulkanTest/Resources/Models/sledge-hammer.fbx", "sledge-hammer");
                 ulong entity = mScene.NewEntity("Model");
@@ -417,7 +403,7 @@ namespace Ragdoll.Layers
 
         private void CreateFramebufferAttachments(int width, int height, ICommandList commandList)
         {
-            using var createEvent = OptickMacros.Event();
+            using var createEvent = Profiler.Event();
 
             var graphicsContext = App.Instance.GraphicsContext!;
             var colorImage = graphicsContext.CreateDeviceImage(new DeviceImageInfo
@@ -462,7 +448,7 @@ namespace Ragdoll.Layers
 
         private void DestroyFramebuffer()
         {
-            using var destroyEvent = OptickMacros.Event();
+            using var destroyEvent = Profiler.Event();
 
             mFramebuffer?.Dispose();
             mViewportTexture?.Dispose();
@@ -475,7 +461,7 @@ namespace Ragdoll.Layers
 
         public override void OnPopped()
         {
-            using var poppedEvent = OptickMacros.Event();
+            using var poppedEvent = Profiler.Event();
             mAttached = false;
 
             mSceneRenderer?.Dispose();
@@ -493,7 +479,7 @@ namespace Ragdoll.Layers
 
         private void AttachOptickScreenshots()
         {
-            using var attachScreenshotsEvent = OptickMacros.Event();
+            using var attachScreenshotsEvent = Profiler.Event();
 
             // currently only need one
             CreateOptickScreenshot(mFramebufferAttachments[0].Image, "viewport.png");
@@ -501,7 +487,7 @@ namespace Ragdoll.Layers
 
         private unsafe void CreateOptickScreenshot(IDeviceImage image, string filename)
         {
-            using var createScreenshotEvent = OptickMacros.Event();
+            using var createScreenshotEvent = Profiler.Event();
 
             var context = App.Instance.GraphicsContext!;
             var device = context.Device;
@@ -517,10 +503,7 @@ namespace Ragdoll.Layers
             var stagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, bufferSize);
             commandList.PushStagingObject(stagingBuffer);
 
-            using (commandList.Context(GPUQueueType.Transfer))
-            {
-                image.CopyToBuffer(commandList, stagingBuffer, image.Layout);
-            }
+            image.CopyToBuffer(commandList, stagingBuffer, image.Layout);
 
             commandList.End();
             queue.Submit(commandList, true);
@@ -545,11 +528,6 @@ namespace Ragdoll.Layers
                     break;
                 }
             }
-
-            fixed (void* fileData = fileBuffer)
-            {
-                OptickImports.AttachFile(FileType.OPTICK_IMAGE, filename, fileData, (uint)fileBuffer.Length);
-            }
         }
 
         public override void OnUpdate(double delta)
@@ -559,7 +537,7 @@ namespace Ragdoll.Layers
                 return;
             }
 
-            using var updateEvent = OptickMacros.Event(category: Category.GameLogic);
+            using var updateEvent = Profiler.Event();
             mScene.Update(delta);
         }
 
@@ -573,7 +551,7 @@ namespace Ragdoll.Layers
 
         public override void PreRender(Renderer renderer)
         {
-            using var preRenderEvent = OptickMacros.Event(category: Category.Rendering);
+            using var preRenderEvent = Profiler.Event();
             if (mScene is null || mFramebuffer is null || mRenderTarget is null)
             {
                 return;
@@ -618,7 +596,7 @@ namespace Ragdoll.Layers
 
         private void RecreateFramebuffer(int width, int height)
         {
-            using var recreateEvent = OptickMacros.Event();
+            using var recreateEvent = Profiler.Event();
             if (width <= 0 || height <= 0)
             {
                 return;
@@ -632,23 +610,20 @@ namespace Ragdoll.Layers
             var commandList = queue.Release();
             commandList.Begin();
 
-            using (commandList.Context(GPUQueueType.Transfer))
+            DestroyFramebuffer();
+            CreateFramebufferAttachments(width, height, commandList);
+
+            mFramebuffer = graphicsContext.CreateFramebuffer(new FramebufferInfo
             {
-                DestroyFramebuffer();
-                CreateFramebufferAttachments(width, height, commandList);
+                Width = width,
+                Height = height,
+                Attachments = mFramebufferAttachments
+            }, mRenderTarget!);
 
-                mFramebuffer = graphicsContext.CreateFramebuffer(new FramebufferInfo
-                {
-                    Width = width,
-                    Height = height,
-                    Attachments = mFramebufferAttachments
-                }, mRenderTarget!);
-
-                if (!mFramebufferRecreated)
-                {
-                    mFramebufferRecreated = true;
-                    commandList.AddSemaphore(mFramebufferSemaphore!, SemaphoreUsage.Signal);
-                }
+            if (!mFramebufferRecreated)
+            {
+                mFramebufferRecreated = true;
+                commandList.AddSemaphore(mFramebufferSemaphore!, SemaphoreUsage.Signal);
             }
 
             commandList.End();
@@ -658,7 +633,7 @@ namespace Ragdoll.Layers
         [ImGuiMenu("Dockspace/Viewport", NoPadding = true)]
         private void Viewport(IEnumerable<ImGuiMenu> children)
         {
-            using var viewportEvent = OptickMacros.Event();
+            using var viewportEvent = Profiler.Event();
             var imageSize = ImGui.GetContentRegionAvail();
 
             int width = (int)imageSize.X;
@@ -682,7 +657,7 @@ namespace Ragdoll.Layers
         [ImGuiMenu("Dockspace/Scene")]
         private unsafe void SceneMenu(IEnumerable<ImGuiMenu> children)
         {
-            using var sceneMenuEvent = OptickMacros.Event();
+            using var sceneMenuEvent = Profiler.Event();
             if (mScene is null)
             {
                 ImGui.Text("No scene is associated with the scene layer");
@@ -708,7 +683,7 @@ namespace Ragdoll.Layers
             var deletedEntities = new HashSet<ulong>();
             bool entityHovered = false;
 
-            using (OptickMacros.Event("Entity list"))
+            using (Profiler.Event("Entity list"))
             {
                 foreach (ulong id in mScene.Entities)
                 {
@@ -777,7 +752,7 @@ namespace Ragdoll.Layers
         [ImGuiMenu("Dockspace/Editor")]
         private void Editor(IEnumerable<ImGuiMenu> children)
         {
-            using var editorEvent = OptickMacros.Event();
+            using var editorEvent = Profiler.Event();
             if (mSelectedEntity == Scene.Null || mScene is null)
             {
                 ImGui.Text("No entity selected");
@@ -790,7 +765,7 @@ namespace Ragdoll.Layers
                 ImGui.OpenPopup(addComponentId);
             }
 
-            using (OptickMacros.Event("Add component"))
+            using (Profiler.Event("Add component"))
             {
                 if (ImGui.BeginPopup(addComponentId))
                 {
@@ -807,18 +782,17 @@ namespace Ragdoll.Layers
             }
 
             var removedComponents = new List<Type>();
-            using (OptickMacros.Event("Component list"))
+            using (Profiler.Event("Component list"))
             {
                 var style = ImGui.GetStyle();
                 var font = ImGui.GetFont();
 
                 foreach (var component in mScene.ViewComponents(mSelectedEntity))
                 {
-                    using var componentEvent = OptickMacros.Event("Edited component");
+                    using var componentEvent = Profiler.Event("Edited component");
 
                     var type = component.GetType();
                     var fullName = type.FullName ?? type.Name;
-                    OptickMacros.Tag("Component type", fullName);
 
                     var componentTypeId = fullName.Replace('.', '-');
                     ImGui.PushID($"{componentTypeId}-header");
@@ -876,7 +850,7 @@ namespace Ragdoll.Layers
                 }
             }
 
-            using (OptickMacros.Event("Removing components"))
+            using (Profiler.Event("Removing components"))
             {
                 foreach (var type in removedComponents)
                 {
@@ -888,7 +862,7 @@ namespace Ragdoll.Layers
         [ImGuiMenu("Dockspace/Model registry")]
         private unsafe void ModelRegistryMenu(IEnumerable<ImGuiMenu> children)
         {
-            using var modelRegistryEvent = OptickMacros.Event();
+            using var modelRegistryEvent = Profiler.Event();
 
             var registry = App.Instance.ModelRegistry;
             if (registry is null)
@@ -903,7 +877,7 @@ namespace Ragdoll.Layers
 
             if (ImGui.Button("Load model"))
             {
-                using var loadModelEvent = OptickMacros.Event();
+                using var loadModelEvent = Profiler.Event();
                 if (string.IsNullOrEmpty(mModelPath))
                 {
                     mModelError = "No path provided!";
@@ -958,7 +932,7 @@ namespace Ragdoll.Layers
         [ImGuiMenu("Dockspace", Fullscreen = true, NoPadding = true, Flags = ImGuiWindowFlags.MenuBar | ImGuiWindowFlags.NoDocking)]
         private void Dockspace(IEnumerable<ImGuiMenu> children)
         {
-            using var dockspaceEvent = OptickMacros.Event();
+            using var dockspaceEvent = Profiler.Event();
 
             var io = ImGui.GetIO();
             if (io.ConfigFlags.HasFlag(ImGuiConfigFlags.DockingEnable))

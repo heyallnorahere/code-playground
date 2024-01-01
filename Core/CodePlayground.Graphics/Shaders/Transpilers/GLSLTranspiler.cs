@@ -1,4 +1,3 @@
-using Optick.NET;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -90,7 +89,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private string GetFieldName(FieldInfo field, Type shaderType)
         {
-            using var fieldNameEvent = OptickMacros.Event();
+            using var fieldNameEvent = Profiler.Event();
 
             if (mFieldNames.ContainsKey(field))
             {
@@ -116,7 +115,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private string GetFunctionName(MethodInfo method, Type shaderType)
         {
-            using var functionNameEvent = OptickMacros.Event();
+            using var functionNameEvent = Profiler.Event();
 
             if (mFunctionNames.ContainsKey(method))
             {
@@ -170,7 +169,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private string GetTypeName(Type type, Type shaderType, bool asType)
         {
-            using var typeNameEvent = OptickMacros.Event();
+            using var typeNameEvent = Profiler.Event();
 
             if (sPrimitiveTypeNames.ContainsKey(type))
             {
@@ -295,7 +294,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private string CreateParameterExpressionString(Stack<string> evaluationStack, Type shaderType, IReadOnlyList<ParameterInfo> parameters)
         {
-            using var parameterExpressionStringEvent = OptickMacros.Event();
+            using var parameterExpressionStringEvent = Profiler.Event();
 
             string expressionString = string.Empty;
             for (int i = parameters.Count - 1; i >= 0; i--)
@@ -326,8 +325,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         /// <param name="callback">Function to call for every element parsed</param>
         private void ParseSignatureStructure(Type type, ICustomAttributeProvider provider, string identifierExpression, Action<Type, string, string, int, bool> callback)
         {
-            using var parseEvent = OptickMacros.Event();
-            OptickMacros.Tag("Parsed structure", type);
+            using var parseEvent = Profiler.Event();
 
             if (type == typeof(void))
             {
@@ -387,7 +385,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         /// <param name="defineStruct">Whether or not to actually define this (e.g. buffer type)</param>
         private void ProcessType(Type type, Type shaderType, bool defineStruct = true)
         {
-            using var processTypeEvent = OptickMacros.Event();
+            using var processTypeEvent = Profiler.Event();
 
             if (mStructDependencies.ContainsKey(type) || !type.IsValueType || type.IsPrimitive || type.IsEnum)
             {
@@ -448,7 +446,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
         /// <param name="evaluationStack">The stack on which to operate</param>
         private static void PushOperatorExpression(ShaderOperatorType type, Stack<string> evaluationStack)
         {
-            using var pushEvent = OptickMacros.Event();
+            using var pushEvent = Profiler.Event();
 
             var rhs = evaluationStack.Pop();
             if (type == ShaderOperatorType.Not)
@@ -506,7 +504,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private TranslatedMethodInfo TranspileMethod(Type type, MethodInfo method, bool entrypoint)
         {
-            using var transpileEvent = OptickMacros.Event();
+            using var transpileEvent = Profiler.Event();
 
             var body = method.GetMethodBody();
             var instructions = body?.GetILAsInstructionList(method.Module);
@@ -523,7 +521,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             var inputFields = new Dictionary<string, string>();
             var outputFields = new Dictionary<string, string>();
 
-            using (OptickMacros.Event("Parse shader function signature"))
+            using (Profiler.Event("Parse shader function signature"))
             {
                 for (int i = 0; i < parameters.Length; i++)
                 {
@@ -618,7 +616,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
             builder.AppendLine($"{returnTypeString} {functionName}({parameterString}) {{");
 
             var dependencies = new List<MethodInfo>();
-            using (OptickMacros.Event("Parse shader function body"))
+            using (Profiler.Event("Parse shader function body"))
             {
                 var localVariables = body.LocalVariables;
                 for (int i = 0; i < localVariables.Count; i++)
@@ -634,7 +632,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 var jumps = new List<JumpInstruction>();
 
                 var mapCollection = new SourceMapCollection(instructions);
-                using (OptickMacros.Event("Parse shader IL"))
+                using (Profiler.Event("Parse shader IL"))
                 {
                     // slurrrrp... tasty, tasty spaghetti...
                     for (int i = 0; i < instructions.Count; i++)
@@ -1232,7 +1230,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                 }
 
                 // note(nora): ewwww
-                using (OptickMacros.Event("Parse shader IL jumps"))
+                using (Profiler.Event("Parse shader IL jumps"))
                 {
                     var nonLoopJumps = new List<JumpInstruction>();
                     foreach (var jump in jumps)
@@ -1386,7 +1384,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private bool AddScope(Scope scope)
         {
-            using var addEvent = OptickMacros.Event();
+            using var addEvent = Profiler.Event();
             if (scope.Parent is not null)
             {
                 throw new InvalidOperationException("Scope already has a parent!");
@@ -1443,7 +1441,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private static void InsertCode(int instructionOffset, string code, StringBuilder source, SourceMapCollection mapCollection, int sourceOffset = 0)
         {
-            using var insertEvent = OptickMacros.Event();
+            using var insertEvent = Profiler.Event();
 
             int insertOffset = mapCollection.SourceOffsets[instructionOffset];
             source.Insert(insertOffset + sourceOffset, code);
@@ -1499,7 +1497,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private IReadOnlyList<Type> ResolveStructOrder()
         {
-            using var resolveEvent = OptickMacros.Event();
+            using var resolveEvent = Profiler.Event();
 
             var definedStructs = mStructDependencies.Keys.ToList();
             definedStructs.Sort((lhs, rhs) =>
@@ -1557,7 +1555,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         private IReadOnlyList<MethodInfo> ResolveFunctionOrder()
         {
-            using var resolveEvent = OptickMacros.Event();
+            using var resolveEvent = Profiler.Event();
 
             var dependencyInfo = new List<EvaluationMethodInfo>();
             var dependencyInfoIndices = new Dictionary<MethodInfo, int>();
@@ -1676,7 +1674,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
 
         protected override StageOutput TranspileStage(Type type, MethodInfo entrypoint, ShaderStage stage)
         {
-            using var transpileEvent = OptickMacros.Event();
+            using var transpileEvent = Profiler.Event();
             ProcessMethod(type, entrypoint, true);
 
             var builder = new StringBuilder();

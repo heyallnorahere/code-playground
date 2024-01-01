@@ -1,6 +1,5 @@
-﻿using CodePlayground.Graphics;
-using CodePlayground.Graphics.Vulkan;
-using Optick.NET;
+﻿using CodePlayground;
+using CodePlayground.Graphics;
 using Ragdoll.Components;
 using Ragdoll.Shaders;
 using SixLabors.ImageSharp;
@@ -103,10 +102,7 @@ namespace Ragdoll
             var commandList = queue.Release();
 
             commandList.Begin();
-            using (commandList.Context(GPUQueueType.Transfer))
-            {
-                CreateShadowMaps(commandList, out mShadowMaps, out mShadowMapRenderTarget);
-            }
+            CreateShadowMaps(commandList, out mShadowMaps, out mShadowMapRenderTarget);
 
             mInitializationSemaphore = context.CreateSemaphore();
             mWaitForInitialization = true;
@@ -173,7 +169,7 @@ namespace Ragdoll
 
         private void CreateShadowMaps(ICommandList commandList, out Dictionary<LightType, ShadowMapFramebuffer[]> shadowMaps, out IRenderTarget renderTarget)
         {
-            using var createFramebuffersEvent = OptickMacros.Event();
+            using var createFramebuffersEvent = Profiler.Event();
             IRenderTarget? createdRenderTarget = null;
 
             shadowMaps = new Dictionary<LightType, ShadowMapFramebuffer[]>();
@@ -237,7 +233,7 @@ namespace Ragdoll
 
         private void CreateBuffers(out IDeviceBuffer cameraBuffer, out IDeviceBuffer lightBuffer)
         {
-            using var createBuffersEvent = OptickMacros.Event();
+            using var createBuffersEvent = Profiler.Event();
             var reflectionView = GetReflectionView<ModelShader>();
 
             int cameraBufferSize = reflectionView.GetBufferSize(nameof(ModelShader.u_CameraBuffer));
@@ -312,7 +308,7 @@ namespace Ragdoll
 
         public void RegisterModel(int model, IRenderTarget renderTarget)
         {
-            using var registerModelEvent = OptickMacros.Event();
+            using var registerModelEvent = Profiler.Event();
 
             var modelData = mModelRegistry.Models[model];
             var materials = modelData.Model.Materials;
@@ -345,8 +341,8 @@ namespace Ragdoll
 
         private void UpdateBones(Scene scene)
         {
-            using var boneUpdateEvent = OptickMacros.Event(category: Category.Animation);
-            using (OptickMacros.Event("Pre-bone update"))
+            using var boneUpdateEvent = Profiler.Event();
+            using (Profiler.Event("Pre-bone update"))
             {
                 var entityView = scene.ViewEntities(typeof(BoneControllerComponent), typeof(TransformComponent));
                 foreach (var entity in entityView)
@@ -371,7 +367,7 @@ namespace Ragdoll
 
         private static void ComputeCameraVectors(Vector3 angle, out Vector3 direction, out Vector3 up)
         {
-            using var computeCameraVectorsEvent = OptickMacros.Event();
+            using var computeCameraVectorsEvent = Profiler.Event();
 
             // +X - tilt camera up
             // +Y - rotate view to the right
@@ -402,7 +398,7 @@ namespace Ragdoll
 
         private void UpdateSceneMatrices(Scene scene, int width, int height)
         {
-            using var updateMatricesEvent = OptickMacros.Event(category: Category.Rendering);
+            using var updateMatricesEvent = Profiler.Event();
 
             var camera = Scene.Null;
             foreach (ulong entity in scene.ViewEntities(typeof(TransformComponent), typeof(CameraComponent)))
@@ -439,7 +435,7 @@ namespace Ragdoll
 
         private Dictionary<LightType, int> UpdateLightBuffer(Scene scene)
         {
-            using var updateLightBufferEvent = OptickMacros.Event();
+            using var updateLightBufferEvent = Profiler.Event();
 
             var lightCounts = new Dictionary<LightType, int>();
             mLightBuffer?.Map(data =>
@@ -537,13 +533,12 @@ namespace Ragdoll
 
         private void GeneratePointShadowMaps(Scene scene, Renderer renderer, int lightCount)
         {
-            using var generateEvent = OptickMacros.Event();
+            using var generateEvent = Profiler.Event();
 
             var commandList = renderer.FrameInfo.CommandList;
             for (int i = 0; i < lightCount; i++)
             {
-                using var lightEvent = OptickMacros.Event("Render from light POV");
-                OptickMacros.Tag("Light", i);
+                using var lightEvent = Profiler.Event("Render from light POV");
 
                 var shadowMap = mShadowMaps[LightType.Point][i];
                 renderer.BeginRender(mShadowMapRenderTarget, shadowMap.Framebuffer, Vector4.One);
@@ -559,7 +554,7 @@ namespace Ragdoll
 
         private void PrepareForRender(SceneRenderInfo renderInfo)
         {
-            using var prepareEvent = OptickMacros.Event(category: Category.Rendering);
+            using var prepareEvent = Profiler.Event();
 
             UpdateBones(renderInfo.Scene);
             UpdateSceneMatrices(renderInfo.Scene, renderInfo.Framebuffer.Width, renderInfo.Framebuffer.Height);
@@ -573,7 +568,7 @@ namespace Ragdoll
 
         private void RenderScene(Scene scene, Renderer renderer, RenderPassType passType, PushConstantCallback? pushConstantCallback = null)
         {
-            using var renderEvent = OptickMacros.Event(category: Category.Rendering);
+            using var renderEvent = Profiler.Event();
 
             var passShader = passType switch
             {
@@ -616,7 +611,7 @@ namespace Ragdoll
                                         mesh.IndexOffset, mesh.IndexCount, DeviceBufferIndexType.UInt32,
                                         mapped =>
                                         {
-                                            using var pushConstantsEvent = OptickMacros.Category("Push constants", Category.Rendering);
+                                            using var pushConstantsEvent = Profiler.Event("Push constants");
                                             pushConstantCallback?.Invoke(mapped, pushConstantBufferNode);
 
                                             var model = mMatrixMath.TranslateMatrix(transform.CreateMatrix());
@@ -630,7 +625,7 @@ namespace Ragdoll
 
         public void Render(SceneRenderInfo renderInfo)
         {
-            using var renderEvent = OptickMacros.Event(category: Category.Rendering);
+            using var renderEvent = Profiler.Event();
 
             if (mWaitForInitialization)
             {

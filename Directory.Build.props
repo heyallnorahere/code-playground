@@ -9,18 +9,20 @@
         <ImGuiNETVersion>1.89.5.2</ImGuiNETVersion>
         <MicrosoftNETCorePlatformsVersion>8.0.0-preview.2.23128.3</MicrosoftNETCorePlatformsVersion>
         <NewtonsoftJsonVersion>13.0.3</NewtonsoftJsonVersion>
+<<<<<<< HEAD
         <OptickNETVersion>1.0.9</OptickNETVersion>
+=======
+>>>>>>> 8ad2601 (replace optick with tracy (checkpoint))
         <SDLVersion>2.28.4</SDLVersion>
         <SilkNETVersion>2.18.0</SilkNETVersion>
         <SixLaborsImageSharpVersion>3.0.1</SixLaborsImageSharpVersion>
         <SQLiteNETVersion>1.8.116</SQLiteNETVersion>
+<<<<<<< HEAD
         <VarenaVersion>1.2.0</VarenaVersion>
+=======
+        <TracyCSharpVersion>0.10.0.2</TracyCSharpVersion>
+>>>>>>> 8ad2601 (replace optick with tracy (checkpoint))
         <ZstdNetVersion>1.4.5</ZstdNetVersion>
     </PropertyGroup>
-
-    <ItemGroup>
-        <PackageReference Include="Optick.NET" Version="$(OptickNETVersion)" />
-        <PackageReference Include="Optick.NET.Redist" Version="$(OptickNETVersion)" />
-    </ItemGroup>
 
 </Project>

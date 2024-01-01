@@ -1,5 +1,4 @@
-﻿using Optick.NET;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -75,7 +74,7 @@ namespace CodePlayground
                 Console.WriteLine($"Running application {instance.Title} version {instance.Version}");
                 exitCode = instance.Run(args);
                 
-                instance.ShutdownOptick();
+                Profiler.Shutdown();
             }
 
             sInstance = null;
@@ -118,6 +117,7 @@ namespace CodePlayground
             // nothing
         }
 
+<<<<<<< HEAD
         protected void InitializeOptick(bool debug = false)
         {
             StateCallback callback = OnStateChanged;
@@ -151,6 +151,8 @@ namespace CodePlayground
         }
 
         public event Action<State>? OptickStateChanged;
+=======
+>>>>>>> 8ad2601 (replace optick with tracy (checkpoint))
         public string Title { get; internal set; }
         public Version Version { get; internal set; }
         public abstract bool IsRunning { get; }
@@ -176,7 +178,5 @@ namespace CodePlayground
         }
 
         private bool mDisposed;
-        private OptickApp? mOptickApp;
-        private GCHandle? mOptickCallbackHandle;
     }
 }

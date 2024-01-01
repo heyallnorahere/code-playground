@@ -1,7 +1,7 @@
 using BepuPhysics;
 using BepuPhysics.Constraints;
+using CodePlayground;
 using ImGuiNET;
-using Optick.NET;
 using System;
 using System.Reflection;
 
@@ -51,7 +51,7 @@ namespace Ragdoll.Physics
 
         public static bool EditServoSettings(ref ServoSettings settings)
         {
-            using var editEvent = OptickMacros.Event();
+            using var editEvent = Profiler.Event();
             bool changed = false;
 
             changed |= ImGui.DragFloat("Maximum speed", ref settings.MaximumSpeed, 5f, 0f, NoMaximum);
@@ -63,7 +63,7 @@ namespace Ragdoll.Physics
 
         public static bool EditSpringSettings(ref SpringSettings settings)
         {
-            using var editEvent = OptickMacros.Event();
+            using var editEvent = Profiler.Event();
             bool changed = false;
 
             float frequency = settings.Frequency;

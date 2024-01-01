@@ -1,4 +1,3 @@
-using Optick.NET;
 using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -137,7 +136,7 @@ namespace CodePlayground.Graphics
 
         public static Vector3 EulerAngles(Quaternion quat)
         {
-            using var conversionEvent = OptickMacros.Event();
+            using var conversionEvent = Profiler.Event();
             return new Vector3
             {
                 X = Pitch(quat),
@@ -149,7 +148,7 @@ namespace CodePlayground.Graphics
         // https://github.com/g-truc/glm/blob/master/glm/detail/type_quat.inl#L208
         public static Quaternion Quaternion(Vector3 eulerAngles)
         {
-            using var conversionEvent = OptickMacros.Event();
+            using var conversionEvent = Profiler.Event();
 
             Vector3 s, c;
             s = c = Vector3.Zero;
@@ -183,7 +182,7 @@ namespace CodePlayground.Graphics
         // https://github.com/g-truc/glm/blob/5c46b9c07008ae65cb81ab79cd677ecc1934b903/glm/gtc/quaternion.inl#L28
         public static float Pitch(Quaternion quat)
         {
-            using var angleEvent = OptickMacros.Event();
+            using var angleEvent = Profiler.Event();
 
             float opposite = 2f * (quat.Y * quat.Z + quat.W * quat.X);
             float adjacent = MathF.Pow(quat.W, 2f) + MathF.Pow(quat.Z, 2f) - MathF.Pow(quat.X, 2f) - MathF.Pow(quat.Y, 2f);
@@ -198,7 +197,7 @@ namespace CodePlayground.Graphics
 
         public static float Yaw(Quaternion quat)
         {
-            using var angleEvent = OptickMacros.Event();
+            using var angleEvent = Profiler.Event();
 
             float sin = float.Clamp(-2f * (quat.X * quat.Z - quat.W * quat.Y), -1f, 1f);
             return MathF.Asin(sin);
@@ -206,7 +205,7 @@ namespace CodePlayground.Graphics
 
         public static float Roll(Quaternion quat)
         {
-            using var angleEvent = OptickMacros.Event();
+            using var angleEvent = Profiler.Event();
 
             float opposite = 2f * (quat.X * quat.Y + quat.W * quat.Z);
 		    float adjacent = MathF.Pow(quat.W, 2f) + MathF.Pow(quat.X, 2f) - MathF.Pow(quat.Y, 2f) - MathF.Pow(quat.Z, 2f);
@@ -225,7 +224,7 @@ namespace CodePlayground.Graphics
         // https://github.com/g-truc/glm/blob/efec5db081e3aad807d0731e172ac597f6a39447/glm/ext/matrix_clip_space.inl#L265
         public static Matrix4x4 Perspective_LH_Z0(float fov, float aspectRatio, float nearPlane, float farPlane)
         {
-            using var projectionMatrixEvent = OptickMacros.Event();
+            using var projectionMatrixEvent = Profiler.Event();
 
             float g = 1f / MathF.Tan(fov / 2f);
             float k = farPlane / (farPlane - nearPlane);
@@ -263,7 +262,7 @@ namespace CodePlayground.Graphics
         // https://github.com/g-truc/glm/blob/efec5db081e3aad807d0731e172ac597f6a39447/glm/ext/matrix_clip_space.inl#L16
         public static Matrix4x4 Orthographic_LH_Z0(float left, float right, float bottom, float top, float nearPlane, float farPlane)
         {
-            using var projectionMatrixEvent = OptickMacros.Event();
+            using var projectionMatrixEvent = Profiler.Event();
 
             return new Matrix4x4(2f / (right - left), 0f, 0f, -(right + left) / (right - left),
                      0f, 2f / (top - bottom), 0f, -(top + bottom) / (top - bottom),
@@ -298,7 +297,7 @@ namespace CodePlayground.Graphics
         // https://github.com/g-truc/glm/blob/efec5db081e3aad807d0731e172ac597f6a39447/glm/ext/matrix_transform.inl#L176
         public static Matrix4x4 LookAt_LH(Vector3 eye, Vector3 center, Vector3 up)
         {
-            using var lookAtEvent = OptickMacros.Event();
+            using var lookAtEvent = Profiler.Event();
 
             var direction = Vector3.Normalize(center - eye);
             var right = Vector3.Normalize(Vector3.Cross(up, direction));

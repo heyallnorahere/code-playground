@@ -1,5 +1,5 @@
+using CodePlayground;
 using CodePlayground.Graphics;
-using Optick.NET;
 using System;
 using System.Numerics;
 
@@ -24,7 +24,7 @@ namespace Ragdoll
 
         public Renderer(IGraphicsContext context)
         {
-            using var constructorEvent = OptickMacros.Event();
+            using var constructorEvent = Profiler.Event();
 
             //! does NOT own context
             mContext = context;
@@ -57,7 +57,7 @@ namespace Ragdoll
 
         private void Dispose(bool disposing)
         {
-            using var disposeEvent = OptickMacros.Event();
+            using var disposeEvent = Profiler.Event();
             if (disposing)
             {
                 mLibrary.Dispose();
@@ -66,7 +66,7 @@ namespace Ragdoll
 
         public void BeginFrame(ICommandList commandList)
         {
-            using var beginFrameEvent = OptickMacros.Event();
+            using var beginFrameEvent = Profiler.Event();
 
             if (mFrameInfo.RenderInfo is not null)
             {
@@ -89,7 +89,7 @@ namespace Ragdoll
 
         public void BeginRender(IRenderTarget renderTarget, IFramebuffer framebuffer, Vector4 clearColor)
         {
-            using var beginRenderEvent = OptickMacros.Event();
+            using var beginRenderEvent = Profiler.Event();
 
             VerifyFrame();
             if (mFrameInfo.RenderInfo is not null)
@@ -107,7 +107,7 @@ namespace Ragdoll
 
         public void EndRender()
         {
-            using var endRenderEvent = OptickMacros.Event();
+            using var endRenderEvent = Profiler.Event();
 
             VerifyFrame();
             if (mFrameInfo.RenderInfo is null)
@@ -123,9 +123,8 @@ namespace Ragdoll
 
         public void RenderMesh(IDeviceBuffer vertices, IDeviceBuffer indices, IPipeline pipeline, int indexOffset, int indexCount, DeviceBufferIndexType indexType, BufferMapCallback? pushConstantCallback = null)
         {
-            using var renderEvent = OptickMacros.GPUEvent("Render mesh");
-            using var cpuEvent = OptickMacros.Event();
-            OptickMacros.Tag("Indices", indexCount);
+            using var renderEvent = Profiler.GPUEvent(mFrameInfo.CommandList, "Render mesh");
+            using var cpuEvent = Profiler.Event();
             
             if (mFrameInfo.RenderInfo is null)
             {

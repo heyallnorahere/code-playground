@@ -1,4 +1,3 @@
-using Optick.NET;
 using System;
 using System.Numerics;
 
@@ -25,7 +24,7 @@ namespace CodePlayground.Graphics.Animation
 
         public void Update(Action<Matrix4x4[]> callback)
         {
-            using var updateEvent = OptickMacros.Event();
+            using var updateEvent = Profiler.Event();
 
             int boneCount = mSkeleton.BoneCount;
             var results = new Matrix4x4[boneCount];

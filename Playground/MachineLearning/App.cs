@@ -1,11 +1,9 @@
 using CodePlayground;
 using CodePlayground.Graphics;
 using ImGuiNET;
-using Optick.NET;
 using SixLabors.ImageSharp;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Numerics;
@@ -180,7 +178,6 @@ namespace MachineLearning
                 swapchain.VSync = true;
             }
 
-            InitializeOptick();
             InitializeImGui();
 
             mLibrary = new ShaderLibrary(context, Assembly.GetExecutingAssembly());
@@ -266,22 +263,19 @@ namespace MachineLearning
             var commandList = queue.Release();
 
             commandList.Begin();
-            using (commandList.Context(GPUQueueType.Transfer))
+            var image = mDisplayedTexture.Image;
+            var layout = image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
+
+            image.TransitionLayout(commandList, image.Layout, layout);
+            image.Layout = layout;
+
+            if (mDiagnosticData is not null)
             {
-                var image = mDisplayedTexture.Image;
-                var layout = image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
-
-                image.TransitionLayout(commandList, image.Layout, layout);
-                image.Layout = layout;
-
-                if (mDiagnosticData is not null)
+                for (int i = 0; i < mDiagnosticData.Length; i++)
                 {
-                    for (int i = 0; i < mDiagnosticData.Length; i++)
-                    {
-                        image = mDiagnosticData[i].Texture.Image;
-                        image.TransitionLayout(commandList, image.Layout, layout);
-                        image.Layout = layout;
-                    }
+                    image = mDiagnosticData[i].Texture.Image;
+                    image.TransitionLayout(commandList, image.Layout, layout);
+                    image.Layout = layout;
                 }
             }
 
@@ -308,11 +302,8 @@ namespace MachineLearning
             var commandList = queue.Release();
 
             commandList.Begin();
-            using (commandList.Context(GPUQueueType.Transfer))
-            {
-                mImGui = new ImGuiController(graphicsContext, inputContext, view, renderTarget, SynchronizationFrames);
-                mImGui.LoadFontAtlas(commandList);
-            }
+            mImGui = new ImGuiController(graphicsContext, inputContext, view, renderTarget, SynchronizationFrames);
+            mImGui.LoadFontAtlas(commandList);
 
             SignalSemaphore(commandList);
 
@@ -381,11 +372,8 @@ namespace MachineLearning
             commandList.Begin();
 
             using var data = NetworkDispatcher.CreateBuffers(mNetwork!, inputs.Length);
-            using (commandList.Context(GPUQueueType.Compute))
-            {
-                NetworkDispatcher.TransitionImages(commandList, data);
-                NetworkDispatcher.ForwardPropagation(commandList, data, inputs);
-            }
+            NetworkDispatcher.TransitionImages(commandList, data);
+            NetworkDispatcher.ForwardPropagation(commandList, data, inputs);
 
             commandList.End();
             queue.Submit(commandList);
@@ -520,11 +508,8 @@ namespace MachineLearning
                 var commandList = queue.Release();
 
                 commandList.Begin();
-                using (commandList.Context(GPUQueueType.Transfer))
-                {
-                    var image = mDisplayedTexture!.Image;
-                    image.CopyFromBuffer(commandList, buffer, image.Layout);
-                }
+                var image = mDisplayedTexture!.Image;
+                image.CopyFromBuffer(commandList, buffer, image.Layout);
 
                 SignalSemaphore(commandList);
                 commandList.PushStagingObject(buffer);
@@ -591,15 +576,12 @@ namespace MachineLearning
                 var commandList = queue.Release();
 
                 commandList.Begin();
-                using (commandList.Context(GPUQueueType.Compute))
-                {
-                    var data = NetworkDispatcher.CreateBuffers(mNetwork!, inputs.Length);
-                    NetworkDispatcher.TransitionImages(commandList, data);
-                    NetworkDispatcher.ForwardPropagation(commandList, data, inputs);
+                var data = NetworkDispatcher.CreateBuffers(mNetwork!, inputs.Length);
+                NetworkDispatcher.TransitionImages(commandList, data);
+                NetworkDispatcher.ForwardPropagation(commandList, data, inputs);
 
-                    mBufferData?.Dispose();
-                    mBufferData = data;
-                }
+                mBufferData?.Dispose();
+                mBufferData = data;
 
                 mComputeFence.Reset();
                 mReadBuffer = true;
@@ -715,51 +697,48 @@ namespace MachineLearning
                         SignalSemaphore(commandList);
 
                         commandList.Begin();
-                        using (commandList.Context(GPUQueueType.Transfer))
+                        int width = mDataset!.Width;
+                        int height = mDataset!.Height;
+
+                        for (int i = 0; i < mDiagnosticData.Length; i++)
                         {
-                            int width = mDataset!.Width;
-                            int height = mDataset!.Height;
-
-                            for (int i = 0; i < mDiagnosticData.Length; i++)
+                            var diagnosticData = mDiagnosticData[i];
+                            var data = i < interpretedData.Length ? interpretedData[^(i + 1)] : new InterpretedPassDetails
                             {
-                                var diagnosticData = mDiagnosticData[i];
-                                var data = i < interpretedData.Length ? interpretedData[^(i + 1)] : new InterpretedPassDetails
+                                Inputs = new float[width * height],
+                                Outputs = new float[diagnosticData.Outputs.Length],
+                                ExpectedOutputs = new float[diagnosticData.ExpectedOutputs.Length]
+                            };
+
+                            data.Outputs.CopyTo(diagnosticData.Outputs, 0);
+                            data.ExpectedOutputs.CopyTo(diagnosticData.ExpectedOutputs, 0);
+
+                            const int channels = 4;
+                            var inputData = data.Inputs;
+                            var imageData = new byte[inputData.Length * channels];
+
+                            for (int y = 0; y < height; y++)
+                            {
+                                for (int x = 0; x < width; x++)
                                 {
-                                    Inputs = new float[width * height],
-                                    Outputs = new float[diagnosticData.Outputs.Length],
-                                    ExpectedOutputs = new float[diagnosticData.ExpectedOutputs.Length]
-                                };
+                                    int pixel = y * width + x;
+                                    int pixelOffset = pixel * channels;
 
-                                data.Outputs.CopyTo(diagnosticData.Outputs, 0);
-                                data.ExpectedOutputs.CopyTo(diagnosticData.ExpectedOutputs, 0);
-
-                                const int channels = 4;
-                                var inputData = data.Inputs;
-                                var imageData = new byte[inputData.Length * channels];
-
-                                for (int y = 0; y < height; y++)
-                                {
-                                    for (int x = 0; x < width; x++)
+                                    for (int j = 0; j < channels; j++)
                                     {
-                                        int pixel = y * width + x;
-                                        int pixelOffset = pixel * channels;
-
-                                        for (int j = 0; j < channels; j++)
-                                        {
-                                            imageData[pixelOffset + j] = j < 3 ? (byte)(inputData[pixel] * byte.MaxValue) : byte.MaxValue;
-                                        }
+                                        imageData[pixelOffset + j] = j < 3 ? (byte)(inputData[pixel] * byte.MaxValue) : byte.MaxValue;
                                     }
                                 }
-
-                                var stagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, imageData.Length);
-                                var image = mDiagnosticData[i].Texture.Image;
-
-                                commandList.PushStagingObject(stagingBuffer);
-                                stagingBuffer.CopyFromCPU(imageData);
-                                image.TransitionLayout(commandList, image.Layout, DeviceImageLayoutName.CopyDestination);
-                                image.CopyFromBuffer(commandList, stagingBuffer, DeviceImageLayoutName.CopyDestination);
-                                image.TransitionLayout(commandList, DeviceImageLayoutName.CopyDestination, image.Layout);
                             }
+
+                            var stagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, imageData.Length);
+                            var image = mDiagnosticData[i].Texture.Image;
+
+                            commandList.PushStagingObject(stagingBuffer);
+                            stagingBuffer.CopyFromCPU(imageData);
+                            image.TransitionLayout(commandList, image.Layout, DeviceImageLayoutName.CopyDestination);
+                            image.CopyFromBuffer(commandList, stagingBuffer, DeviceImageLayoutName.CopyDestination);
+                            image.TransitionLayout(commandList, DeviceImageLayoutName.CopyDestination, image.Layout);
                         }
 
                         commandList.End();

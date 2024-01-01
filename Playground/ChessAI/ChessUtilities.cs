@@ -1,6 +1,6 @@
 using ChessAI.Data;
+using CodePlayground;
 using LibChess;
-using Optick.NET;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,7 +11,7 @@ namespace ChessAI
     {
         public static PieceType ParseType(char character, bool algebraic)
         {
-            using var parseEvent = OptickMacros.Event();
+            using var parseEvent = Profiler.Event();
 
             char lower = char.ToLower(character);
             if (!algebraic && lower == 'p')
@@ -32,7 +32,7 @@ namespace ChessAI
 
         public static Move ParseMove(this Engine engine, string move, out PieceType? promotion, PlayerColor? currentTurn = null)
         {
-            using var parseEvent = OptickMacros.Event();
+            using var parseEvent = Profiler.Event();
 
             var turn = currentTurn ?? engine.Board!.CurrentTurn;
             promotion = null;

@@ -1,4 +1,3 @@
-using Optick.NET;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
@@ -77,7 +76,7 @@ namespace CodePlayground
 
         private IReadOnlyDictionary<OperandType, ResolveOperandCallback> LoadResolveOperandCallbacks()
         {
-            using var loadEvent = OptickMacros.Event();
+            using var loadEvent = Profiler.Event();
 
             var type = GetType();
             var methods = type.GetMethods(BindingFlags.NonPublic | BindingFlags.Instance);
@@ -105,7 +104,7 @@ namespace CodePlayground
 
         public void Parse(byte[] il, Module module)
         {
-            using var parseEvent = OptickMacros.Event();
+            using var parseEvent = Profiler.Event();
 
             mPosition = 0;
             while (mPosition < il.Length)
@@ -138,7 +137,7 @@ namespace CodePlayground
         #region Resolve functions
         private unsafe T ResolveUnmanaged<T>(byte[] il) where T : unmanaged
         {
-            using var resolveEvent = OptickMacros.Event();
+            using var resolveEvent = Profiler.Event();
             fixed (byte* data = il)
             {
                 nint address = (nint)data + mPosition;
@@ -211,7 +210,7 @@ namespace CodePlayground
         [ResolveOperandCallback(OperandType.InlineSwitch)]
         private object? ResolveSwitch(byte[] il, Module module)
         {
-            using var resolveEvent = OptickMacros.Event();
+            using var resolveEvent = Profiler.Event();
             int count = ResolveUnmanaged<int>(il);
 
             var caseAddresses = new int[count];

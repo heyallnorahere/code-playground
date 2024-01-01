@@ -6,9 +6,6 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using VMASharp;
 
-using GPUQueueType = Optick.NET.GPUQueueType;
-using OptickMacros = Optick.NET.OptickMacros;
-
 namespace CodePlayground.Graphics.Vulkan
 {
     internal struct BoundPipelineData
@@ -38,7 +35,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         void IBindableVulkanResource.Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
         {
-            using var bindEvent = OptickMacros.Event();
+            using var bindEvent = Profiler.Event();
 
             AddBindingIndex(set, binding, index, pipeline, dynamicId);
             BindSets(sets, (uint)binding, (uint)index);
@@ -46,7 +43,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private void AddBindingIndex(int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
         {
-            using var addBindingIndexEvent = OptickMacros.Event();
+            using var addBindingIndexEvent = Profiler.Event();
 
             ulong id = pipeline.ID;
             if (!mBoundPipelines.TryGetValue(id, out BoundPipelineData pipelineData))
@@ -86,7 +83,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         void IBindableVulkanResource.Unbind(int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
         {
-            using var unbindEvent = OptickMacros.Event();
+            using var unbindEvent = Profiler.Event();
 
             ulong id = pipeline.ID;
             if (!mBoundPipelines.TryGetValue(id, out BoundPipelineData pipelineData))
@@ -140,7 +137,7 @@ namespace CodePlayground.Graphics.Vulkan
         protected abstract void BindSets(DescriptorSet[] sets, uint binding, uint arrayElement);
         protected void Rebind()
         {
-            using var rebindEvent = OptickMacros.Event();
+            using var rebindEvent = Profiler.Event();
             foreach (var pipelineId in mBoundPipelines.Keys)
             {
                 var pipelineData = mBoundPipelines[pipelineId];
@@ -168,7 +165,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         protected void DestroyDynamicIDs()
         {
-            using var destroyEvent = OptickMacros.Event();
+            using var destroyEvent = Profiler.Event();
             foreach (var pipelineData in mBoundPipelines.Values)
             {
                 foreach (nint id in pipelineData.DynamicIDs)
@@ -251,7 +248,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public VulkanImage(VulkanDevice device, VulkanMemoryAllocator allocator, VulkanImageCreateInfo info)
         {
-            using var constructorEvent = OptickMacros.Event();
+            using var constructorEvent = Profiler.Event();
 
             Usage = info.Usage;
             Type = info.ImageType;
@@ -359,7 +356,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
-            using var disposeEvent = OptickMacros.Event();
+            using var disposeEvent = Profiler.Event();
             DestroyDynamicIDs();
 
             var api = VulkanContext.API;
@@ -371,7 +368,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void CreateImage()
         {
-            using var createEvent = OptickMacros.Event();
+            using var createEvent = Profiler.Event();
 
             var flags = ImageCreateFlags.None;
             if (Type == DeviceImageType.TypeCube)
@@ -417,7 +414,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void CreateView()
         {
-            using var createEvent = OptickMacros.Event();
+            using var createEvent = Profiler.Event();
             var createInfo = VulkanUtilities.Init<ImageViewCreateInfo>() with
             {
                 Flags = ImageViewCreateFlags.None,
@@ -456,7 +453,7 @@ namespace CodePlayground.Graphics.Vulkan
         [MemberNotNull(nameof(mAllocation))]
         private void AllocateMemory()
         {
-            using var allocateEvent = OptickMacros.Event();
+            using var allocateEvent = Profiler.Event();
             mAllocation = mAllocator.AllocateMemoryForImage(mImage, new AllocationCreateInfo
             {
                 Usage = MemoryUsage.GPU_Only
@@ -468,7 +465,7 @@ namespace CodePlayground.Graphics.Vulkan
         IDeviceImageLayout IDeviceImage.GetLayout(DeviceImageLayoutName name) => GetLayout(name);
         public static VulkanImageLayout GetLayout(DeviceImageLayoutName name)
         {
-            using var getLayoutEvent = OptickMacros.Event();
+            using var getLayoutEvent = Profiler.Event();
             var layout = name switch
             {
                 DeviceImageLayoutName.Undefined => new VulkanImageLayout
@@ -522,7 +519,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void Load<T>(Image<T> image) where T : unmanaged, IPixel<T>
         {
-            using var loadEvent = OptickMacros.Event();
+            using var loadEvent = Profiler.Event();
 
             var data = new T[Size.Width * Size.Height];
             image.CopyPixelDataTo(data);
@@ -532,7 +529,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void Load<T>(T[] data) where T : unmanaged
         {
-            using var loadEvent = OptickMacros.Event();
+            using var loadEvent = Profiler.Event();
 
             using var stagingBuffer = new VulkanBuffer(mDevice, mAllocator, DeviceBufferUsage.Staging, data.Length * sizeof(T));
             fixed (T* ptr = data)
@@ -544,10 +541,7 @@ namespace CodePlayground.Graphics.Vulkan
             var commandBuffer = queue.Release();
             commandBuffer.Begin();
 
-            using (commandBuffer.Context(GPUQueueType.Transfer))
-            {
-                CopyFromBuffer(commandBuffer, stagingBuffer, Layout, 0, ArrayLayers);
-            }
+            CopyFromBuffer(commandBuffer, stagingBuffer, Layout, 0, ArrayLayers);
 
             commandBuffer.End();
             queue.Submit(commandBuffer, wait: true);
@@ -580,8 +574,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void CopyFromBuffer(VulkanCommandBuffer commandBuffer, VulkanBuffer source, ImageSelection destination, VulkanImageLayout currentLayout, int arrayLayer, int layerCount)
         {
-            using var copyEvent = OptickMacros.Event();
-            using var gpuCopyEvent = OptickMacros.GPUEvent("Buffer-to-image copy");
+            using var copyEvent = Profiler.Event();
 
             var api = VulkanContext.API;
             var transferDst = GetLayout(DeviceImageLayoutName.CopyDestination);
@@ -711,8 +704,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void CopyToBuffer(VulkanCommandBuffer commandBuffer, ImageSelection source, VulkanBuffer destination, VulkanImageLayout currentLayout, int arrayLayer, int layerCount)
         {
-            using var copyEvent = OptickMacros.Event();
-            using var gpuCopyEvent = OptickMacros.GPUEvent("Image-to-buffer copy");
+            using var copyEvent = Profiler.Event();
 
             var api = VulkanContext.API;
             var transferDst = GetLayout(DeviceImageLayoutName.CopySource);
@@ -760,8 +752,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void TransitionLayout(VulkanCommandBuffer commandBuffer, VulkanImageLayout sourceLayout, VulkanImageLayout destinationLayout, int baseMipLevel, int levelCount, int arrayLayer, int layerCount)
         {
-            using var transitionEvent = OptickMacros.Event();
-            using var barrierEvent = OptickMacros.GPUEvent("Image pipeline barrier");
+            using var transitionEvent = Profiler.Event();
 
             if (sourceLayout.Layout == destinationLayout.Layout)
             {
@@ -804,8 +795,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void CopyCubeFace(VulkanCommandBuffer commandBuffer, int face, VulkanImage source, VulkanImageLayout currentLayout, VulkanImageLayout sourceLayout)
         {
-            using var blitEvent = OptickMacros.Event();
-            using var gpuEvent = OptickMacros.GPUEvent("Cube face copy");
+            using var blitEvent = Profiler.Event();
 
             if (Type != DeviceImageType.TypeCube || source.Type != DeviceImageType.Type2D)
             {
@@ -870,7 +860,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         protected override unsafe void BindSets(DescriptorSet[] sets, uint binding, uint arrayElement)
         {
-            using var bindEvent = OptickMacros.Event();
+            using var bindEvent = Profiler.Event();
             fixed (DescriptorImageInfo* imageInfo = &mImageInfo)
             {
                 var writes = new WriteDescriptorSet[sets.Length];

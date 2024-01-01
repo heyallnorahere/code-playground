@@ -5,7 +5,6 @@ using BepuPhysics.Constraints;
 using BepuUtilities;
 using BepuUtilities.Memory;
 using CodePlayground;
-using Optick.NET;
 using Ragdoll.Components;
 using System;
 using System.Collections.Generic;
@@ -215,7 +214,7 @@ namespace Ragdoll
 
         public Scene()
         {
-            using var createdEvent = OptickMacros.Event();
+            using var createdEvent = Profiler.Event();
 
             mDisposed = true;
             mRegistry = new Registry();
@@ -262,7 +261,7 @@ namespace Ragdoll
 
         private void Dispose(bool disposing)
         {
-            using var disposeEvent = OptickMacros.Event();
+            using var disposeEvent = Profiler.Event();
             if (disposing)
             {
                 mSimulation.Dispose();
@@ -273,13 +272,13 @@ namespace Ragdoll
 
         public void Update(double delta)
         {
-            using var updateEvent = OptickMacros.Event(category: Category.GameLogic);
+            using var updateEvent = Profiler.Event();
             if (mUpdatePhysics)
             {
-                using var physicsEvent = OptickMacros.Category("Update physics", Category.Physics);
+                using var physicsEvent = Profiler.Event("Update physics");
                 var entityView = ViewEntities(typeof(RigidBodyComponent), typeof(TransformComponent));
 
-                using (OptickMacros.Category("Pre-physics update", Category.Physics))
+                using (Profiler.Event("Pre-physics update"))
                 {
                     foreach (var entity in entityView)
                     {
@@ -288,12 +287,12 @@ namespace Ragdoll
                     }
                 }
 
-                using (OptickMacros.Category("Physics calculations", Category.Physics))
+                using (Profiler.Event("Physics calculations"))
                 {
                     mSimulation.Timestep((float)delta, null);
                 }
 
-                using (OptickMacros.Category("Post-physics update", Category.Physics))
+                using (Profiler.Event("Post-physics update"))
                 {
                     foreach (var entity in entityView)
                     {
@@ -308,9 +307,7 @@ namespace Ragdoll
 
         public bool InvokeComponentEvent(object component, ulong id, ComponentEventID eventID, object? context = null)
         {
-            using var eventEvent = OptickMacros.Event();
-            OptickMacros.Tag("Event", eventID);
-            OptickMacros.Tag("Component type", component.GetType());
+            using var eventEvent = Profiler.Event();
 
             var type = component.GetType();
             var method = type.GetMethod("OnEvent", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, new Type[]
@@ -338,7 +335,7 @@ namespace Ragdoll
         public IDisposable Lock() => mRegistry.Lock();
         public ulong NewEntity(string tag = "Entity")
         {
-            using var newEvent = OptickMacros.Event();
+            using var newEvent = Profiler.Event();
 
             ulong id = mRegistry.New();
             mCallbackData.Add(id, new EntityCallbackData
@@ -352,7 +349,7 @@ namespace Ragdoll
 
         public void DestroyEntity(ulong id)
         {
-            using var destroyEvent = OptickMacros.Event();
+            using var destroyEvent = Profiler.Event();
 
             var types = ViewComponents(id).Select(component => component.GetType());
             foreach (var type in types)
@@ -380,7 +377,7 @@ namespace Ragdoll
         public T AddComponent<T>(ulong id, params object?[] args) where T : class => (T)AddComponent(id, typeof(T), args);
         public object AddComponent(ulong id, Type type, params object?[] args)
         {
-            using var addEvent = OptickMacros.Event();
+            using var addEvent = Profiler.Event();
             var component = mRegistry.Add(id, type, args);
 
             using (Lock())
@@ -398,7 +395,7 @@ namespace Ragdoll
         public void RemoveComponent<T>(ulong id) where T : class => RemoveComponent(id, typeof(T));
         public void RemoveComponent(ulong id, Type type)
         {
-            using var removeEvent = OptickMacros.Event();
+            using var removeEvent = Profiler.Event();
             if (!TryGetComponent(id, type, out object? component))
             {
                 return;
@@ -418,7 +415,7 @@ namespace Ragdoll
 
         public ulong AddEntityComponentListener(ulong entity, Action<object, bool> callback)
         {
-            using var addListenerEvent = OptickMacros.Event();
+            using var addListenerEvent = Profiler.Event();
 
             ulong id = mCurrentCallbackID++;
             mCallbackData[entity].Callbacks.Add(id, callback);
@@ -428,7 +425,7 @@ namespace Ragdoll
 
         public bool RemoveEntityComponentListener(ulong entity, ulong callback)
         {
-            using var removeListenerEvent = OptickMacros.Event();
+            using var removeListenerEvent = Profiler.Event();
 
             var callbacks = mCallbackData[entity].Callbacks;
             if (!callbacks.ContainsKey(callback))
@@ -442,7 +439,7 @@ namespace Ragdoll
 
         public string GetDisplayedEntityTag(ulong id)
         {
-            using var getTagEvent = OptickMacros.Event();
+            using var getTagEvent = Profiler.Event();
             if (TryGetComponent(id, out TagComponent? tag))
             {
                 return tag.Tag;

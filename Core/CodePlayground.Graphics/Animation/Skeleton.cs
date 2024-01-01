@@ -1,4 +1,3 @@
-using Optick.NET;
 using System.Collections.Generic;
 using System.Numerics;
 
@@ -23,7 +22,7 @@ namespace CodePlayground.Graphics.Animation
 
         public int AddBone(int parent, string name, Matrix4x4 transform, Matrix4x4 offsetMatrix, Matrix4x4 parentTransform)
         {
-            using var addBoneEvent = OptickMacros.Event();
+            using var addBoneEvent = Profiler.Event();
             int id = mBones.Count;
 
             mBones.Add(new Bone

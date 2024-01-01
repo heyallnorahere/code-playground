@@ -1,5 +1,4 @@
-﻿using Optick.NET;
-using Silk.NET.Vulkan;
+﻿using Silk.NET.Vulkan;
 using System;
 using VMASharp;
 
@@ -22,7 +21,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe VulkanBuffer(VulkanDevice device, VulkanMemoryAllocator allocator, DeviceBufferUsage usage, int size)
         {
-            using var constructorEvent = OptickMacros.Event();
+            using var constructorEvent = Profiler.Event();
 
             mDevice = device;
             mAllocator = allocator;
@@ -42,7 +41,7 @@ namespace CodePlayground.Graphics.Vulkan
             var sharingMode = physicalDevice.FindSharingMode(out uint[]? indices, out uint indexCount);
 
             var api = VulkanContext.API;
-            using (OptickMacros.Event("Device buffer creation"))
+            using (Profiler.Event("Device buffer creation"))
             {
                 fixed (uint* indexPtr = indices)
                 {
@@ -57,7 +56,7 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             }
 
-            using (OptickMacros.Event("Memory allocation"))
+            using (Profiler.Event("Memory allocation"))
             {
                 mAllocation = allocator.AllocateMemoryForBuffer(mBuffer, new AllocationCreateInfo
                 {
@@ -106,7 +105,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void CopyFromCPU(void* address, int size, int offset = 0)
         {
-            using var copyEvent = OptickMacros.Event();
+            using var copyEvent = Profiler.Event();
 
             var deviceAddress = (void*)(mAllocation.Map() + offset);
             System.Buffer.MemoryCopy(address, deviceAddress, mSize, size);
@@ -115,7 +114,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void CopyToCPU(void* address, int size, int offset = 0)
         {
-            using var copyEvent = OptickMacros.Event();
+            using var copyEvent = Profiler.Event();
 
             var deviceAddress = (void*)(mAllocation.Map() + offset);
             System.Buffer.MemoryCopy(deviceAddress, address, size, mSize);
@@ -124,7 +123,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void Map(BufferMapCallback callback)
         {
-            using var mapEvent = OptickMacros.Event();
+            using var mapEvent = Profiler.Event();
             nint mapped = mAllocation.Map();
 
             var span = new Span<byte>((void*)mapped, mSize);
@@ -145,8 +144,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void CopyBuffers(VulkanCommandBuffer commandBuffer, VulkanBuffer destination, int size, int srcOffset = 0, int dstOffset = 0)
         {
-            using var copyEvent = OptickMacros.Event();
-            using var gpuEvent = OptickMacros.GPUEvent("Buffer-to-buffer copy");
+            using var copyEvent = Profiler.Event();
 
             var region = VulkanUtilities.Init<BufferCopy>() with
             {
@@ -171,8 +169,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void BindVertices(VulkanCommandBuffer commandBuffer, int index)
         {
-            using var bindEvent = OptickMacros.Event();
-            using var gpuBindEvent = OptickMacros.GPUEvent("Bind vertex buffer");
+            using var bindEvent = Profiler.Event();
 
             var api = VulkanContext.API;
             api.CmdBindVertexBuffers(commandBuffer.Buffer, (uint)index, 1, mBuffer, 0);
@@ -190,8 +187,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void BindIndices(VulkanCommandBuffer commandBuffer, DeviceBufferIndexType indexType)
         {
-            using var bindEvent = OptickMacros.Event();
-            using var gpuBindEvent = OptickMacros.GPUEvent("Bind index buffer");
+            using var bindEvent = Profiler.Event();
 
             var api = VulkanContext.API;
             api.CmdBindIndexBuffer(commandBuffer.Buffer, mBuffer, 0, indexType switch
@@ -204,7 +200,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         unsafe void IBindableVulkanResource.Bind(DescriptorSet[] sets, int set, int binding, int index, VulkanPipeline pipeline, nint dynamicId)
         {
-            using var bindEvent = OptickMacros.Event();
+            using var bindEvent = Profiler.Event();
 
             var bufferInfo = VulkanUtilities.Init<DescriptorBufferInfo>() with
             {

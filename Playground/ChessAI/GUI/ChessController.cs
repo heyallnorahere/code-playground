@@ -1,8 +1,8 @@
-﻿using CodePlayground.Graphics;
+﻿using CodePlayground;
+using CodePlayground.Graphics;
 using ImGuiNET;
 using LibChess;
 using MachineLearning;
-using Optick.NET;
 using Silk.NET.Input;
 using Silk.NET.Windowing;
 using SixLabors.ImageSharp;
@@ -33,7 +33,7 @@ namespace ChessAI.GUI
 
         public ChessController(IInputContext inputContext, IView view, IGraphicsContext graphicsContext, Network network)
         {
-            using var constructorEvent = OptickMacros.Event();
+            using var constructorEvent = Profiler.Event();
             mDisposed = false;
 
             mContext = graphicsContext;
@@ -174,29 +174,26 @@ namespace ChessAI.GUI
             commandList.PushStagingObject(stagingBuffer);
 
             commandList.Begin();
-            using (commandList.Context(GPUQueueType.Transfer))
+            var gridImage = mGridTexture.Image;
+            var layout = gridImage.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
+
+            gridImage.TransitionLayout(commandList, gridImage.Layout, layout);
+            gridImage.CopyFromBuffer(commandList, stagingBuffer, layout);
+
+            gridImage.Layout = layout;
+            for (int i = 0; i < textureCount; i++)
             {
-                var gridImage = mGridTexture.Image;
-                var layout = gridImage.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
+                var pieceStagingBuffer = pieceBuffers[i];
+                commandList.PushStagingObject(pieceStagingBuffer);
 
-                gridImage.TransitionLayout(commandList, gridImage.Layout, layout);
-                gridImage.CopyFromBuffer(commandList, stagingBuffer, layout);
+                var pieceImage = mPieceTextures[i].Image;
+                pieceImage.TransitionLayout(commandList, pieceImage.Layout, layout);
+                pieceImage.CopyFromBuffer(commandList, pieceStagingBuffer, layout);
 
-                gridImage.Layout = layout;
-                for (int i = 0; i < textureCount; i++)
-                {
-                    var pieceStagingBuffer = pieceBuffers[i];
-                    commandList.PushStagingObject(pieceStagingBuffer);
-
-                    var pieceImage = mPieceTextures[i].Image;
-                    pieceImage.TransitionLayout(commandList, pieceImage.Layout, layout);
-                    pieceImage.CopyFromBuffer(commandList, pieceStagingBuffer, layout);
-
-                    pieceImage.Layout = layout;
-                }
-
-                NetworkDispatcher.TransitionImages(commandList, mBufferData);
+                pieceImage.Layout = layout;
             }
+
+            NetworkDispatcher.TransitionImages(commandList, mBufferData);
 
             commandList.AddSemaphore(mSemaphore, SemaphoreUsage.Signal);
             commandList.End();
@@ -225,7 +222,7 @@ namespace ChessAI.GUI
 
         private void Dispose(bool disposing)
         {
-            using var disposeEvent = OptickMacros.Event();
+            using var disposeEvent = Profiler.Event();
             if (disposing)
             {
                 mBoard.Dispose();
@@ -249,8 +246,8 @@ namespace ChessAI.GUI
 
         public void Update()
         {
-            using var updateEvent = OptickMacros.Event();
-            using (OptickMacros.Event("Chess options"))
+            using var updateEvent = Profiler.Event();
+            using (Profiler.Event("Chess options"))
             {
                 ImGui.Begin("Chess options");
                 if (ImGui.BeginCombo("Player color", mColor.ToString()))
@@ -304,87 +301,84 @@ namespace ChessAI.GUI
                 ImGui.End();
             }
 
-            using (OptickMacros.Category("Mouse events", Category.Input))
+            if (!ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow | ImGuiHoveredFlags.AllowWhenBlockedByPopup) && !ImGui.IsAnyItemHovered())
             {
-                if (!ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow | ImGuiHoveredFlags.AllowWhenBlockedByPopup) && !ImGui.IsAnyItemHovered())
+                var size = mView.FramebufferSize;
+                int min = int.Min(size.X, size.Y);
+                int max = int.Max(size.X, size.Y);
+
+                float aspectRatio = (float)max / min;
+                float offset = (aspectRatio - 1f) / 2f;
+
+                var clickOffset = Vector2.Zero;
+                if (size.X > size.Y)
                 {
-                    var size = mView.FramebufferSize;
-                    int min = int.Min(size.X, size.Y);
-                    int max = int.Max(size.X, size.Y);
+                    clickOffset.X = offset;
+                }
+                else
+                {
+                    clickOffset.Y = offset;
+                }
 
-                    float aspectRatio = (float)max / min;
-                    float offset = (aspectRatio - 1f) / 2f;
+                var clickPosition = mMousePosition / min - clickOffset;
+                if (clickPosition.X >= 0f && clickPosition.X <= 1f &&
+                    clickPosition.Y >= 0f && clickPosition.Y <= 1f)
+                {
+                    var mouseBoardPosition = clickPosition / TileWidth;
 
-                    var clickOffset = Vector2.Zero;
-                    if (size.X > size.Y)
+                    int x = (int)float.Floor(mouseBoardPosition.X);
+                    int y = (int)float.Floor(mouseBoardPosition.Y);
+                    var boardPosition = new Coord(x, (mColor != PlayerColor.White) ? y : (Board.Width - (y + 1)));
+
+                    if (mMouseDown && mPromotionFile < 0 && mBoard.GetPiece(boardPosition, out _))
                     {
-                        clickOffset.X = offset;
+                        mDraggedPiece = boardPosition;
                     }
-                    else
+
+                    bool canMove = mBoard.CurrentTurn == mColor || mInvalidMove || mAIType == AIType.Player;
+                    if (mMouseUp && canMove)
                     {
-                        clickOffset.Y = offset;
-                    }
-
-                    var clickPosition = mMousePosition / min - clickOffset;
-                    if (clickPosition.X >= 0f && clickPosition.X <= 1f &&
-                        clickPosition.Y >= 0f && clickPosition.Y <= 1f)
-                    {
-                        var mouseBoardPosition = clickPosition / TileWidth;
-
-                        int x = (int)float.Floor(mouseBoardPosition.X);
-                        int y = (int)float.Floor(mouseBoardPosition.Y);
-                        var boardPosition = new Coord(x, (mColor != PlayerColor.White) ? y : (Board.Width - (y + 1)));
-
-                        if (mMouseDown && mPromotionFile < 0 && mBoard.GetPiece(boardPosition, out _))
+                        if (mDraggedPiece is not null)
                         {
-                            mDraggedPiece = boardPosition;
-                        }
-
-                        bool canMove = mBoard.CurrentTurn == mColor || mInvalidMove || mAIType == AIType.Player;
-                        if (mMouseUp && canMove)
-                        {
-                            if (mDraggedPiece is not null)
+                            var piecePosition = mDraggedPiece.Value;
+                            if (mBoard.GetPiece(piecePosition, out PieceInfo draggedPiece) && draggedPiece.Color == mBoard.CurrentTurn)
                             {
-                                var piecePosition = mDraggedPiece.Value;
-                                if (mBoard.GetPiece(piecePosition, out PieceInfo draggedPiece) && draggedPiece.Color == mBoard.CurrentTurn)
+                                var move = new Move
                                 {
-                                    var move = new Move
-                                    {
-                                        Position = piecePosition,
-                                        Destination = boardPosition
-                                    };
+                                    Position = piecePosition,
+                                    Destination = boardPosition
+                                };
 
-                                    if (mEngine.CommitMove(move))
+                                if (mEngine.CommitMove(move))
+                                {
+                                    mInvalidMove = false;
+                                    if (mEngine.ShouldPromote(mColor, true))
                                     {
-                                        mInvalidMove = false;
-                                        if (mEngine.ShouldPromote(mColor, true))
-                                        {
-                                            mPromotionFile = x;
-                                        }
+                                        mPromotionFile = x;
                                     }
                                 }
                             }
-                            else if (mPromotionFile == x && y < 4)
-                            {
-                                var pieceType = (PieceType)((int)PieceType.Queen + y); // hacky
-                                mEngine.Promote(pieceType);
-
-                                mPromotionFile = -1;
-                            }
                         }
-                    }
+                        else if (mPromotionFile == x && y < 4)
+                        {
+                            var pieceType = (PieceType)((int)PieceType.Queen + y); // hacky
+                            mEngine.Promote(pieceType);
 
-                    if (mMouseUp)
-                    {
-                        mDraggedPiece = null;
+                            mPromotionFile = -1;
+                        }
                     }
                 }
 
-                mMouseDown = false;
-                mMouseUp = false;
+                if (mMouseUp)
+                {
+                    mDraggedPiece = null;
+                }
             }
 
-            using (OptickMacros.Event("AI move"))
+            mMouseDown = false;
+            mMouseUp = false;
+
+            using (Profiler.Event("AI move"))
             {
                 if (!mInvalidMove && mBoard.CurrentTurn != mColor)
                 {
@@ -426,10 +420,7 @@ namespace ChessAI.GUI
                                     var commandList = queue.Release();
 
                                     commandList.Begin();
-                                    using (commandList.Context(GPUQueueType.Compute))
-                                    {
-                                        NetworkDispatcher.ForwardPropagation(commandList, mBufferData, new float[][] { input });
-                                    }
+                                    NetworkDispatcher.ForwardPropagation(commandList, mBufferData, new float[][] { input });
 
                                     commandList.End();
                                     queue.Submit(commandList, fence: mComputeFence);
@@ -446,7 +437,7 @@ namespace ChessAI.GUI
 
         public void Render(BatchRenderer renderer)
         {
-            using var renderEvent = OptickMacros.Event();
+            using var renderEvent = Profiler.Event();
             if (mUseSemaphore)
             {
                 var commandList = renderer.ComamndList;
@@ -498,7 +489,7 @@ namespace ChessAI.GUI
                 });
             }
 
-            using (OptickMacros.Event("Render pieces"))
+            using (Profiler.Event("Render pieces"))
             {
                 IRenderedShape? draggedPiece = null;
                 for (int y = 0; y < Board.Width; y++)

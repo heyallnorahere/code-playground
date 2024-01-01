@@ -16,25 +16,7 @@ Additionally, depending on your system, you may need to build and install the fo
 - [Vulkan-Loader](https://github.com/KhronosGroup/Vulkan-Loader) or the [Vulkan SDK](https://vulkan.lunarg.com/) or `libvulkan1` on Ubuntu/Debian
 - [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) or `libspirv-cross-c-shared0` on Ubuntu/Debian
 - [cimgui](https://github.com/cimgui/cimgui)
-- [Optick](https://github.com/bombomby/optick) with Vulkan & (Windows) DirectX support ([Vulkan validation fix](https://github.com/qbojj/optick/tree/fix-vulkan))
-- `coptick` from my [.NET Optick bindings](https://github.com/yodasoda1219/Optick.NET)
-
-This project uses packages from GitHub package registries. As such, it's required that you use a personal access token to pull packages. To create an appropriate config file for NuGet, paste the following template into a `nuget.config` file in the root directory of the respository, and replace the appropriate sections:
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-    <packageSources>
-        <add key="github" value="https://nuget.pkg.github.com/yodasoda1219/index.json" />
-    </packageSources>
-    <packageSourceCredentials>
-        <github>
-            <add key="Username" value="YOUR_USERNAME" />
-            <add key="ClearTextPassword" value="YOUR_ACCESS_TOKEN" />
-            <!-- token must be a "GitHub Tokens (classic)" token, and must have the "read:packages" permission -->
-        </github>
-    </packageSourceCredentials>
-</configuration>
-```
+- [Tracy profiler](https://github.com/wolfpld/tracy)
 
 To build the project, simply run:
 ```bash
@@ -45,6 +27,8 @@ git submodule update --init --recursive
 
 # building libchess
 # where $GENERATOR is the build system for your machine
+# this is required because the chess AI project relies on my native library
+# todo(nora): include prebuilt binaries
 cd $ROOT_DIR/Libraries/chess
 cmake . -B build -G "$GENERATOR" -DCMAKE_BUILD_TYPE=$CONFIG # required for single-config generators
 cmake --build build -j 8 --config $CONFIG # required for multi-config generators

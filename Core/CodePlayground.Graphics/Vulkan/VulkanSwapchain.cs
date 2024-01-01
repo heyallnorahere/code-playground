@@ -1,5 +1,4 @@
-﻿using Optick.NET;
-using Silk.NET.Core;
+﻿using Silk.NET.Core;
 using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
@@ -81,7 +80,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         internal VulkanSwapchain(SurfaceKHR surface, VulkanContext context, Instance instance, IView view)
         {
-            using var constructorEvent = OptickMacros.Event();
+            using var constructorEvent = Profiler.Event();
 
             mDevice = context.Device;
             mAllocator = context.Allocator;
@@ -136,7 +135,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
-            using var disposeEvent = OptickMacros.Event();
+            using var disposeEvent = Profiler.Event();
             if (disposing)
             {
                 mView.FramebufferResize -= Resize;
@@ -161,7 +160,7 @@ namespace CodePlayground.Graphics.Vulkan
         private void Resize(Vector2D<int> windowSize) => mNewSize = windowSize;
         public unsafe void Invalidate()
         {
-            using var invalidateEvent = OptickMacros.Event();
+            using var invalidateEvent = Profiler.Event();
             mDevice.ClearQueues();
 
             Extent2D newExtent;
@@ -200,7 +199,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private SurfaceFormatKHR ChooseSurfaceFormat()
         {
-            using var chooseEvent = OptickMacros.Event();
+            using var chooseEvent = Profiler.Event();
 
             var formats = QuerySurfaceFormats(mSurfaceExtension, mDevice.PhysicalDevice, mSurface);
             foreach (var format in formats)
@@ -217,7 +216,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private PresentModeKHR ChoosePresentMode()
         {
-            using var chooseEvent = OptickMacros.Event();
+            using var chooseEvent = Profiler.Event();
 
             if (!mVSync)
             {
@@ -236,7 +235,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private static Extent2D ChooseExtent(Extent2D passedExtent, SurfaceCapabilitiesKHR capabilities)
         {
-            using var chooseEvent = OptickMacros.Event();
+            using var chooseEvent = Profiler.Event();
 
             if (capabilities.CurrentExtent.Width != uint.MaxValue)
             {
@@ -259,7 +258,7 @@ namespace CodePlayground.Graphics.Vulkan
         [MemberNotNull(nameof(mImageFences))]
         private unsafe SwapchainKHR Create(Extent2D extent)
         {
-            using var createEvent = OptickMacros.Event();
+            using var createEvent = Profiler.Event();
 
             var queueFamilyIndices = mDevice.PhysicalDevice.FindQueueTypes();
             var graphicsFamily = queueFamilyIndices[CommandQueueFlags.Graphics];
@@ -311,7 +310,7 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             }
 
-            using (OptickMacros.Event("Create render pass"))
+            using (Profiler.Event("Create render pass"))
             {
                 var depthStencilLayout = VulkanImage.GetLayout(DeviceImageLayoutName.DepthStencilAttachment).Layout;
                 mRenderPass ??= new VulkanRenderPass(mDevice, new VulkanRenderPassInfo
@@ -353,7 +352,7 @@ namespace CodePlayground.Graphics.Vulkan
                 });
             }
 
-            using (OptickMacros.Event("Create other swapchain objects"))
+            using (Profiler.Event("Create other swapchain objects"))
             {
                 mSyncObjects ??= CreateSyncObjects();
                 mDepthBuffer = CreateDepthBuffer();
@@ -368,7 +367,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private VulkanImage CreateDepthBuffer()
         {
-            using var createEvent = OptickMacros.Event();
+            using var createEvent = Profiler.Event();
 
             var image = new VulkanImage(mDevice, mAllocator, new VulkanImageCreateInfo
             {
@@ -385,10 +384,7 @@ namespace CodePlayground.Graphics.Vulkan
             commandBuffer.Begin();
 
             var newLayout = VulkanImage.GetLayout(DeviceImageLayoutName.DepthStencilAttachment);
-            using (commandBuffer.Context(GPUQueueType.Transfer))
-            {
-                image.TransitionLayout(commandBuffer, image.Layout, newLayout, 0, 1, 0, 1);
-            }
+            image.TransitionLayout(commandBuffer, image.Layout, newLayout, 0, 1, 0, 1);
 
             commandBuffer.End();
             queue.Submit(commandBuffer, wait: true);
@@ -399,7 +395,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe VulkanSwapchainFrameSyncObjects[] CreateSyncObjects()
         {
-            using var createEvent = OptickMacros.Event();
+            using var createEvent = Profiler.Event();
             var result = new VulkanSwapchainFrameSyncObjects[GraphicsApplication.SynchronizationFrames];
 
             var semaphoreInfo = VulkanUtilities.Init<SemaphoreCreateInfo>();
@@ -425,7 +421,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe VulkanSwapchainFramebuffer[] CreateFramebuffers()
         {
-            using var createEvent = OptickMacros.Event();
+            using var createEvent = Profiler.Event();
 
             uint imageCount = 0;
             mSwapchainExtension.GetSwapchainImages(mDevice.Device, mSwapchain, &imageCount, null);
@@ -475,7 +471,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void DestroyFramebuffers()
         {
-            using var destroyEvent = OptickMacros.Event();
+            using var destroyEvent = Profiler.Event();
 
             var api = VulkanContext.API;
             for (int i = 0; i < mFramebuffers.Length; i++)
@@ -487,7 +483,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void AcquireImage()
         {
-            using var acquireEvent = OptickMacros.Event();
+            using var acquireEvent = Profiler.Event();
 
             var api = VulkanContext.API;
             var currentFrame = mSyncObjects[mCurrentSyncFrame];
@@ -527,7 +523,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void Present(ICommandQueue commandQueue, ICommandList commandList)
         {
-            using var presentEvent = OptickMacros.Event();
+            using var presentEvent = Profiler.Event();
             if (commandQueue is not VulkanQueue || commandList is not VulkanCommandBuffer)
             {
                 throw new ArgumentException("Must pass Vulkan objects!");
@@ -568,12 +564,7 @@ namespace CodePlayground.Graphics.Vulkan
                         PImageIndices = currentImage
                     };
 
-                    if (OptickMacros.IsOptickEnabled)
-                    {
-                        OptickImports.GpuFlip((nint)mSwapchain.Handle);
-                    }
-
-                    using var vulkanPresentEvent = OptickMacros.Category("vkQueuePresentKHR", Category.Wait);
+                    using var vulkanPresentEvent = Profiler.Event("vkQueuePresentKHR");
                     var result = mSwapchainExtension.QueuePresent(mPresentQueue.Queue, &presentInfo);
                     
                     if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr || mNewSize is not null)

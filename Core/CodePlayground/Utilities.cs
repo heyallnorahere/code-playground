@@ -1,5 +1,4 @@
-﻿using Optick.NET;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
@@ -22,7 +21,7 @@ namespace CodePlayground
         public static T CreateDynamicInstance<T>(params object?[] args) => (T)CreateDynamicInstance(typeof(T), args);
         public static object CreateDynamicInstance([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type type, params object?[] args)
         {
-            using var createEvent = OptickMacros.Event();
+            using var createEvent = Profiler.Event();
 
             var constructors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
             foreach (var constructor in constructors)
@@ -89,7 +88,7 @@ namespace CodePlayground
 
         public static IReadOnlySet<T> SplitFlags<T>(this T flags) where T : struct, Enum
         {
-            using var splitEvent = OptickMacros.Event();
+            using var splitEvent = Profiler.Event();
         
             var type = typeof(T);
             if (type.GetCustomAttribute<FlagsAttribute>() is null)
@@ -243,7 +242,7 @@ namespace CodePlayground
 
         public static List<ILInstruction>? GetILAsInstructionList(this MethodBody body, Module module)
         {
-            using var ilParseEvent = OptickMacros.Event();
+            using var ilParseEvent = Profiler.Event();
 
             var code = body.GetILAsByteArray();
             if (code is null)

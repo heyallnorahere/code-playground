@@ -1,6 +1,6 @@
-﻿using Optick.NET;
-using Silk.NET.Maths;
+﻿using Silk.NET.Maths;
 using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.EXT;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -229,48 +229,7 @@ namespace CodePlayground.Graphics.Vulkan
                 mQueues.Add(queueFamily, queue);
             }
 
-            if (OptickMacros.IsOptickEnabled && queueTypes.TryGetValue(CommandQueueFlags.Transfer, out int graphicsFamily))
-            {
-                var graphicsQueue = mQueues[graphicsFamily].Queue.Handle;
-                InitializeOptick(graphicsQueue, (uint)graphicsFamily);
-            }
-        }
-
-        [Conditional("DEBUG")]
-        private unsafe void InitializeOptick(nint graphicsQueue, uint graphicsFamily)
-        {
-            var instanceFunctions = new HashSet<string>
-            {
-                nameof(VulkanFunctions.vkGetPhysicalDeviceProperties)
-            };
-
-            object vulkanFunctions = new VulkanFunctions();
-            var functionType = vulkanFunctions.GetType();
-            var fields = functionType.GetFields(BindingFlags.Public | BindingFlags.Instance);
-
-            var api = VulkanContext.API;
-            foreach (var field in fields)
-            {
-                nint functionAddress;
-                string functionName = field.Name;
-
-                if (instanceFunctions.Contains(functionName))
-                {
-                    functionAddress = api.GetInstanceProcAddr(mPhysicalDevice.Instance, functionName);
-                }
-                else
-                {
-                    functionAddress = api.GetDeviceProcAddr(mDevice, functionName);
-                }
-
-                field.SetValue(vulkanFunctions, functionAddress);
-            }
-
-            nint device = mDevice.Handle;
-            nint physicalDevice = mPhysicalDevice.Device.Handle;
-
-            var vulkanFunctionStructure = (VulkanFunctions)vulkanFunctions;
-            OptickImports.InitGpuVulkan(&device, &physicalDevice, &graphicsQueue, &graphicsFamily, 1, &vulkanFunctionStructure);
+            Profiler.SetGPUProfiler(new VulkanProfiler(this), "Vulkan GPU profiler");
         }
 
         ~VulkanDevice()

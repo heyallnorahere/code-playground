@@ -27,6 +27,7 @@
     <PackageReference Include="Silk.NET.Vulkan.Extensions.NV" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="$(SilkNETVersion)" />
     <PackageReference Include="Silk.NET.Windowing" Version="$(SilkNETVersion)" />
+    <PackageReference Include="Tracy-CSharp" Version="$(TracyCSharpVersion)" />
 
     <PackageReference Include="Ultz.Native.GLFW" Version="$(GLFWVersion)">
       <IncludeAssets>all</IncludeAssets>

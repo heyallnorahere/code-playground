@@ -1,5 +1,4 @@
-﻿using Optick.NET;
-using Silk.NET.Shaderc;
+﻿using Silk.NET.Shaderc;
 using Silk.NET.SPIRV;
 using Silk.NET.SPIRV.Cross;
 using Silk.NET.Vulkan;
@@ -85,7 +84,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Load()
         {
-            using var loadEvent = OptickMacros.Event();
+            using var loadEvent = Profiler.Event();
             fixed (byte* ptr = mSPIRV)
             {
                 var createInfo = VulkanUtilities.Init<ShaderModuleCreateInfo>() with
@@ -107,7 +106,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Reflect()
         {
-            using var reflectEvent = OptickMacros.Event();
+            using var reflectEvent = Profiler.Event();
             mReflectionData = new ShaderReflectionResult
             {
                 StageIO = new List<ReflectedStageIOField>(),
@@ -121,7 +120,7 @@ namespace CodePlayground.Graphics.Vulkan
             SpvCompiler* compiler = null;
             Resources* resources = null;
 
-            using (OptickMacros.Event("Shader SPIRV reflection"))
+            using (Profiler.Event("Shader SPIRV reflection"))
             {
                 spvc.ContextCreate(ref context).Assert();
                 fixed (byte* spirv = mSPIRV)
@@ -133,7 +132,7 @@ namespace CodePlayground.Graphics.Vulkan
                 spvc.CompilerCreateShaderResources(compiler, ref resources).Assert();
             }
 
-            using (OptickMacros.Event("Shader push constant buffer reflection"))
+            using (Profiler.Event("Shader push constant buffer reflection"))
             {
                 ReflectedResource* resourceList;
                 nuint resourceCount;
@@ -142,7 +141,7 @@ namespace CodePlayground.Graphics.Vulkan
                 ProcessPushConstantBuffers(compiler, resourceList, resourceCount);
             }
 
-            using (OptickMacros.Event("Shader resource reflection"))
+            using (Profiler.Event("Shader resource reflection"))
             {
                 foreach (var resourceType in sResourceTypeMap.Keys)
                 {
@@ -155,7 +154,7 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             }
 
-            using (OptickMacros.Event("Shader I/O reflection"))
+            using (Profiler.Event("Shader I/O reflection"))
             {
                 foreach (var resourceType in sResourceTypeIODirections.Keys)
                 {
@@ -173,7 +172,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void ProcessStageIOFields(SpvCompiler* compiler, StageIODirection direction, ReflectedResource* resources, nuint count)
         {
-            using var processEvent = OptickMacros.Event();
+            using var processEvent = Profiler.Event();
             for (nuint i = 0; i < count; i++)
             {
                 var resource = resources[i];
@@ -195,7 +194,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void ProcessResources(SpvCompiler* compiler, ShaderResourceTypeFlags typeFlags, ReflectedResource* resources, nuint count)
         {
-            using var processEvent = OptickMacros.Event();
+            using var processEvent = Profiler.Event();
             for (nuint i = 0; i < count; i++)
             {
                 var resource = resources[i];
@@ -230,7 +229,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void ProcessPushConstantBuffers(SpvCompiler* compiler, ReflectedResource* resources, nuint count)
         {
-            using var processEvent = OptickMacros.Event();
+            using var processEvent = Profiler.Event();
             for (nuint i = 0; i < count; i++)
             {
                 var resource = resources[i];
@@ -250,8 +249,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void ProcessType(SpvCompiler* compiler, uint type, uint? baseType)
         {
-            using var processEvent = OptickMacros.Event();
-            OptickMacros.Tag("Processed type", type);
+            using var processEvent = Profiler.Event();
 
             int typeId = (int)type;
             if (mReflectionData.Types.ContainsKey(typeId))
@@ -469,7 +467,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private Dictionary<string, PushConstantRange> ProcessPushConstantBuffers(out int totalSize, out ShaderStageFlags stages)
         {
-            using var processPushConstantsEvent = OptickMacros.Event();
+            using var processPushConstantsEvent = Profiler.Event();
 
             totalSize = 0;
             stages = ShaderStageFlags.None;
@@ -634,7 +632,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public static Format GetAttributeFormat(ReflectedShaderType attributeType)
         {
-            using var getFormatEvent = OptickMacros.Event();
+            using var getFormatEvent = Profiler.Event();
             if (attributeType.Columns != 1 || (attributeType.ArrayDimensions?.Any() ?? false))
             {
                 throw new InvalidOperationException("Every vertex attribute must be a single vector!");
@@ -662,7 +660,7 @@ namespace CodePlayground.Graphics.Vulkan
         object IReflectionView.CreateVertexAttributeLayout() => CreateVertexAttributeLayout();
         public VulkanVertexAttributeLayout CreateVertexAttributeLayout()
         {
-            using var createLayoutEvent = OptickMacros.Event();
+            using var createLayoutEvent = Profiler.Event();
             var vertexReflectionData = mReflectionData[ShaderStage.Vertex];
 
             var inputs = vertexReflectionData.StageIO.Where(field => field.Direction == StageIODirection.In).ToList();
@@ -963,7 +961,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public byte[] Compile(string source, string path, ShaderLanguage language, ShaderStage stage, string entrypoint)
         {
-            using var compileEvent = OptickMacros.Event();
+            using var compileEvent = Profiler.Event();
             lock (mLock)
             {
                 shaderc.CompileOptionsSetSourceLanguage(mOptions, language switch

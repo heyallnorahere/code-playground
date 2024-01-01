@@ -4,7 +4,6 @@ using CodePlayground;
 using CodePlayground.Graphics;
 using ImGuiNET;
 using MachineLearning;
-using Optick.NET;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -276,12 +275,10 @@ namespace ChessAI
                 CreateGraphicsContext();
             }
 
-            InitializeOptick();
-            using var loadEvent = OptickMacros.Event();
-
+            using var loadEvent = Profiler.Event();
             if (mCommand != CommandLineCommand.LabelData)
             {
-                using var nonLabelLoad = OptickMacros.Event("Graphics context & network initialization");
+                using var nonLabelLoad = Profiler.Event("Graphics context & network initialization");
 
                 var context = GraphicsContext!;
                 mRenderer = context.CreateRenderer();
@@ -310,7 +307,7 @@ namespace ChessAI
             {
                 case CommandLineCommand.Train:
                     {
-                        using var initEvent = OptickMacros.Event("Training initialization");
+                        using var initEvent = Profiler.Event("Training initialization");
 
                         mTrainer = new Trainer(GraphicsContext!, mBatchSize, mLearningRate);
                         mTrainer.OnBatchResults += results =>
@@ -329,7 +326,7 @@ namespace ChessAI
                     break;
                 case CommandLineCommand.GUI:
                     {
-                        using var initEvent = OptickMacros.Event("GUI initialization");
+                        using var initEvent = Profiler.Event("GUI initialization");
 
                         var context = GraphicsContext!;
                         var swapchain = context.Swapchain!;
@@ -351,7 +348,7 @@ namespace ChessAI
 
         private void InitializeImGui()
         {
-            using var initEvent = OptickMacros.Event();
+            using var initEvent = Profiler.Event();
 
             var view = RootView;
             var inputContext = InputContext;
@@ -371,11 +368,8 @@ namespace ChessAI
             var commandList = queue.Release();
 
             commandList.Begin();
-            using (commandList.Context(GPUQueueType.Transfer))
-            {
-                mImGui = new ImGuiController(graphicsContext, inputContext, view, swapchain.RenderTarget, swapchain.FrameCount);
-                mImGui.LoadFontAtlas(commandList);
-            }
+            mImGui = new ImGuiController(graphicsContext, inputContext, view, swapchain.RenderTarget, swapchain.FrameCount);
+            mImGui.LoadFontAtlas(commandList);
 
             mBatchRenderer?.SignalSemaphore(commandList);
             commandList.End();
@@ -384,7 +378,7 @@ namespace ChessAI
 
         private void InitializeChessController()
         {
-            using var initEvent = OptickMacros.Event();
+            using var initEvent = Profiler.Event();
 
             var view = RootView;
             var inputContext = InputContext;
@@ -404,7 +398,7 @@ namespace ChessAI
 
         private void OnClose()
         {
-            using var closeEvent = OptickMacros.Event();
+            using var closeEvent = Profiler.Event();
 
             var context = GraphicsContext;
             context?.Device?.ClearQueues();
@@ -422,14 +416,14 @@ namespace ChessAI
 
         private void OnUpdate(double delta)
         {
-            using var updateEvent = OptickMacros.Event();
+            using var updateEvent = Profiler.Event();
             if (mCommand != CommandLineCommand.GUI || mImGui is null)
             {
                 return;
             }
 
             mImGui.NewFrame(delta);
-            using (OptickMacros.Event("Batch renderer stats menu"))
+            using (Profiler.Event("Batch renderer stats menu"))
             {
                 ImGui.Begin("Batch renderer stats");
 
@@ -459,7 +453,7 @@ namespace ChessAI
 
         private void OnRender(FrameRenderInfo renderInfo)
         {
-            using var renderEvent = OptickMacros.Event();
+            using var renderEvent = Profiler.Event();
 
             const string datasetPath = "dataset.sqlite";
             switch (mCommand)

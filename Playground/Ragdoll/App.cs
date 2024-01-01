@@ -1,7 +1,6 @@
 using CodePlayground;
 using CodePlayground.Graphics;
 using CodePlayground.Graphics.Vulkan;
-using Optick.NET;
 using Ragdoll.Layers;
 using Silk.NET.Vulkan.Extensions.NV;
 using System.Numerics;
@@ -38,6 +37,10 @@ namespace Ragdoll
 
         private void OnLoad()
         {
+#if !DEBUG
+            Profiler.IsOptickEnabled = false;
+#endif
+
             var context = CreateGraphicsContext();
             var swapchain = context.Swapchain;
 
@@ -47,8 +50,7 @@ namespace Ragdoll
             }
 
             // enable profiling
-            InitializeOptick();
-            using var loadEvent = OptickMacros.Event();
+            using var loadEvent = Profiler.Event();
 
             mRenderer = new Renderer(context);
             mModelRegistry = new ModelRegistry(context);
@@ -60,7 +62,7 @@ namespace Ragdoll
         private void OnInputReady() => InitializeImGui();
         private void InitializeImGui()
         {
-            var initializeEvent = OptickMacros.Event();
+            var initializeEvent = Profiler.Event();
 
             var graphicsContext = GraphicsContext;
             var inputContext = InputContext;
@@ -81,7 +83,7 @@ namespace Ragdoll
 
         private void OnClose()
         {
-            using var closeEvent = OptickMacros.Event();
+            using var closeEvent = Profiler.Event();
             mLayerStack.Clear();
 
             var device = GraphicsContext?.Device;

@@ -1,5 +1,4 @@
-﻿using Optick.NET;
-using SixLabors.ImageSharp;
+﻿using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.Reflection;
@@ -63,10 +62,7 @@ namespace CodePlayground.Graphics
             commandList.Begin();
 
             ITexture texture;
-            using (commandList.Context(GPUQueueType.Transfer))
-            {
-                texture = context.LoadTexture(image, format, commandList);
-            }
+            texture = context.LoadTexture(image, format, commandList);
 
             commandList.End();
             queue.Submit(commandList, true);
@@ -239,11 +235,6 @@ namespace CodePlayground.Graphics
             buffer.Map(data => result = Set(node, data, name, value));
 
             return result;
-        }
-
-        public static GPUContextScope Context(this ICommandList commandList, GPUQueueType queueType = GPUQueueType.Graphics, int node = 0)
-        {
-            return new GPUContextScope(commandList.Address, queueType, node);
         }
 
         public static void TransitionLayout(this IDeviceImage image, ICommandList commandList, DeviceImageLayoutName source, DeviceImageLayoutName destination)

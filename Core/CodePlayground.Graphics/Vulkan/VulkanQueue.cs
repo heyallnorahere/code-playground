@@ -1,10 +1,8 @@
-﻿using Optick.NET;
-using Silk.NET.Vulkan;
+﻿using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.NV;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 
 namespace CodePlayground.Graphics.Vulkan
 {
@@ -18,7 +16,7 @@ namespace CodePlayground.Graphics.Vulkan
     {
         public VulkanCommandBuffer(VulkanQueue queue)
         {
-            using var constructorEvent = OptickMacros.Event();
+            using var constructorEvent = Profiler.Event();
 
             mDisposed = false;
             mRecording = false;
@@ -64,7 +62,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private void Dispose(bool disposing)
         {
-            using var disposeEvent = OptickMacros.Event();
+            using var disposeEvent = Profiler.Event();
             if (disposing)
             {
                 Clean();
@@ -76,7 +74,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void Begin()
         {
-            using var beginEvent = OptickMacros.Event();
+            using var beginEvent = Profiler.Event();
 
             var beginInfo = VulkanUtilities.Init<CommandBufferBeginInfo>();
             var api = VulkanContext.API;
@@ -85,7 +83,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void End()
         {
-            using var endEvent = OptickMacros.Event();
+            using var endEvent = Profiler.Event();
 
             var api = VulkanContext.API;
             api.EndCommandBuffer(mBuffer).Assert();
@@ -93,7 +91,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void ExecutionBarrier()
         {
-            using var barrierEvent = OptickMacros.Event();
+            using var barrierEvent = Profiler.Event();
 
             var api = VulkanContext.API;
             api.CmdPipelineBarrier(mBuffer, PipelineStageFlags.BottomOfPipeBit, PipelineStageFlags.TopOfPipeBit, DependencyFlags.None, 0, null, 0, null, 0, null);
@@ -123,7 +121,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void AddSemaphore(VulkanSemaphore semaphore, SemaphoreUsage usage)
         {
-            using var addSemaphoreEvent = OptickMacros.Event();
+            using var addSemaphoreEvent = Profiler.Event();
             mSemaphores.Add(new VulkanSemaphoreInfo
             {
                 Semaphore = semaphore,
@@ -138,7 +136,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         internal void Reset()
         {
-            using var resetEvent = OptickMacros.Event();
+            using var resetEvent = Profiler.Event();
 
             var api = VulkanContext.API;
             api.ResetCommandBuffer(mBuffer, CommandBufferResetFlags.None);
@@ -149,7 +147,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private void Clean()
         {
-            using var cleanEvent = OptickMacros.Event();
+            using var cleanEvent = Profiler.Event();
             if (!mStagingObjects.Any())
             {
                 return;
@@ -290,7 +288,7 @@ namespace CodePlayground.Graphics.Vulkan
     {
         internal unsafe VulkanQueue(int queueFamily, CommandQueueFlags usage, VulkanDevice device)
         {
-            using var constructorEvent = OptickMacros.Event();
+            using var constructorEvent = Profiler.Event();
 
             var api = VulkanContext.API;
             mDevice = device;
@@ -305,7 +303,7 @@ namespace CodePlayground.Graphics.Vulkan
             mBufferCap = -1;
             mDisposed = false;
 
-            using (OptickMacros.Event("Command pool creation"))
+            using (Profiler.Event("Command pool creation"))
             {
                 var createInfo = VulkanUtilities.Init<CommandPoolCreateInfo>() with
                 {
@@ -342,7 +340,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
-            using var disposeEvent = OptickMacros.Event();
+            using var disposeEvent = Profiler.Event();
             ClearCache();
 
             if (disposing)
@@ -389,8 +387,8 @@ namespace CodePlayground.Graphics.Vulkan
                         mFences.Enqueue(fence);
                     }
 
-                    commandBuffer.Reset();
                     mStoredBuffers.Dequeue();
+                    commandBuffer.Reset();
 
                     return commandBuffer;
                 }
@@ -518,7 +516,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void ClearCache()
         {
-            using var clearEvent = OptickMacros.Event();
+            using var clearEvent = Profiler.Event();
             Wait();
 
             var api = VulkanContext.API;

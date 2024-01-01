@@ -1,6 +1,6 @@
-﻿using CodePlayground.Graphics;
+﻿using CodePlayground;
+using CodePlayground.Graphics;
 using MachineLearning.Shaders;
-using Optick.NET;
 using SixLabors.ImageSharp;
 using System;
 using System.Collections.Generic;
@@ -84,7 +84,7 @@ namespace MachineLearning
         {
             AssertInitialized();
 
-            using var createBuffersEvent = OptickMacros.Event();
+            using var createBuffersEvent = Profiler.Event();
             var reflectionView = mLibrary.CreateReflectionView<BackPropagation>(); // backprop shader accesses all resources
 
             var layerSizes = network.LayerSizes;
@@ -187,8 +187,8 @@ namespace MachineLearning
         {
             AssertInitialized();
 
-            using var forwardPropagationEvent = OptickMacros.Event();
-            using var dispatchEvent = OptickMacros.GPUEvent("Forward propagation");
+            using var forwardPropagationEvent = Profiler.Event();
+            using var dispatchEvent = Profiler.GPUEvent(commandList, "Forward propagation");
 
             int inputCount = buffers.LayerSizes[0];
             int neuronTotal = buffers.LayerSizes.Aggregate((a, b) => a + b);
@@ -213,7 +213,7 @@ namespace MachineLearning
 
             buffers.ActivationBuffer.Map(data =>
             {
-                using var copyEvent = OptickMacros.Event("Copy inputs to activation buffer");
+                using var copyEvent = Profiler.Event("Copy inputs to activation buffer");
 
                 for (int i = 0; i < buffers.PassCount; i++)
                 {
@@ -264,8 +264,8 @@ namespace MachineLearning
         {
             AssertInitialized();
 
-            using var backPropagationEvent = OptickMacros.Event();
-            using var dispatchEvent = OptickMacros.GPUEvent("Back propagation");
+            using var backPropagationEvent = Profiler.Event();
+            using var dispatchEvent = Profiler.GPUEvent(commandList, "Back propagation");
 
             int outputCount = buffers.LayerSizes[^1];
             if (expected.Length != buffers.PassCount)
@@ -283,7 +283,7 @@ namespace MachineLearning
 
             buffers.DeltaBuffer.Map(data =>
             {
-                using var copyEvent = OptickMacros.Event("Copy expected outputs to delta buffer");
+                using var copyEvent = Profiler.Event("Copy expected outputs to delta buffer");
 
                 for (int i = 0; i < buffers.PassCount; i++)
                 {
@@ -339,8 +339,8 @@ namespace MachineLearning
         {
             AssertInitialized();
 
-            using var deltaCompositionEvent = OptickMacros.Event();
-            using var gpuEvent = OptickMacros.GPUEvent("Delta composition");
+            using var deltaCompositionEvent = Profiler.Event();
+            using var gpuEvent = Profiler.GPUEvent(commandList, "Delta composition");
 
             var pipeline = mLibrary.LoadPipeline<DeltaComposition>(new PipelineDescription
             {
@@ -369,7 +369,7 @@ namespace MachineLearning
         public static float[][] GetConfidenceValues(DispatcherBufferData buffers)
         {
             AssertInitialized();
-            using var getConfidenceEvent = OptickMacros.Event();
+            using var getConfidenceEvent = Profiler.Event();
 
             int layerCount = buffers.LayerSizes.Length;
             int confidenceCount = buffers.LayerSizes[^1];
@@ -380,7 +380,7 @@ namespace MachineLearning
             var results = new float[buffers.PassCount][];
             buffers.ActivationBuffer.Map(data =>
             {
-                using var copyEvent = OptickMacros.Event("Copy from activation buffer");
+                using var copyEvent = Profiler.Event("Copy from activation buffer");
 
                 for (int i = 0; i < buffers.PassCount; i++)
                 {

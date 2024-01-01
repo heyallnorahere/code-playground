@@ -1,5 +1,5 @@
+using CodePlayground;
 using CodePlayground.Graphics;
-using Optick.NET;
 using System;
 using System.Runtime.InteropServices;
 
@@ -109,16 +109,13 @@ namespace MachineLearning
             commandList.PushStagingObject(outputStaging);
 
             commandList.Begin();
-            using (commandList.Context(GPUQueueType.Compute))
-            {
-                buffers.InputActivationImage.TransitionLayout(commandList, buffers.InputActivationImage.Layout, DeviceImageLayoutName.CopySource);
-                buffers.InputActivationImage.CopyToBuffer(commandList, inputStaging, DeviceImageLayoutName.CopySource);
-                buffers.InputActivationImage.TransitionLayout(commandList, DeviceImageLayoutName.CopySource, buffers.InputActivationImage.Layout);
+            buffers.InputActivationImage.TransitionLayout(commandList, buffers.InputActivationImage.Layout, DeviceImageLayoutName.CopySource);
+            buffers.InputActivationImage.CopyToBuffer(commandList, inputStaging, DeviceImageLayoutName.CopySource);
+            buffers.InputActivationImage.TransitionLayout(commandList, DeviceImageLayoutName.CopySource, buffers.InputActivationImage.Layout);
 
-                buffers.OutputImage.TransitionLayout(commandList, buffers.OutputImage.Layout, DeviceImageLayoutName.CopySource);
-                buffers.OutputImage.CopyToBuffer(commandList, outputStaging, DeviceImageLayoutName.CopySource);
-                buffers.OutputImage.TransitionLayout(commandList, DeviceImageLayoutName.CopySource, buffers.OutputImage.Layout);
-            }
+            buffers.OutputImage.TransitionLayout(commandList, buffers.OutputImage.Layout, DeviceImageLayoutName.CopySource);
+            buffers.OutputImage.CopyToBuffer(commandList, outputStaging, DeviceImageLayoutName.CopySource);
+            buffers.OutputImage.TransitionLayout(commandList, DeviceImageLayoutName.CopySource, buffers.OutputImage.Layout);
 
             commandList.End();
             queue.Submit(commandList, wait: true);
@@ -161,7 +158,7 @@ namespace MachineLearning
         public event Action<TrainerBatchResults>? OnBatchResults;
         public void Update(bool wait = false)
         {
-            using var updateEvent = OptickMacros.Event();
+            using var updateEvent = Profiler.Event();
             var queue = mContext.Device.GetQueue(CommandQueueFlags.Compute);
 
             if (!mState.Initialized)
@@ -172,7 +169,7 @@ namespace MachineLearning
             bool advanceBatch = mState.Batch is null;
             if (mState.Batch is not null && (wait || mFence.IsSignaled()))
             {
-                using var updateBatchEvent = OptickMacros.Event("Check batch");
+                using var updateBatchEvent = Profiler.Event("Check batch");
                 queue.ReleaseFence(mFence, wait);
 
                 var batch = mState.Batch.Value;
@@ -217,7 +214,7 @@ namespace MachineLearning
 
             if (mRunning && advanceBatch)
             {
-                using var advanceBatchEvent = OptickMacros.Event("Advance batch");
+                using var advanceBatchEvent = Profiler.Event("Advance batch");
 
                 int newBatchIndex = (mState.Batch?.BatchIndex ?? -1) + 1;
                 if (newBatchIndex >= GetBatchCount(mState.Phase))
@@ -306,22 +303,19 @@ namespace MachineLearning
                 var commandList = queue.Release();
                 commandList.Begin();
 
-                using (commandList.Context(GPUQueueType.Compute))
+                if (mState.Transition)
                 {
-                    if (mState.Transition)
-                    {
-                        NetworkDispatcher.TransitionImages(commandList, mState.BufferData);
-                        mState.Transition = false;
-                    }
+                    NetworkDispatcher.TransitionImages(commandList, mState.BufferData);
+                    mState.Transition = false;
+                }
 
-                    NetworkDispatcher.ForwardPropagation(commandList, mState.BufferData, inputs);
-                    if (mState.Phase == DatasetGroup.Training)
-                    {
-                        commandList.ExecutionBarrier();
-                        NetworkDispatcher.BackPropagation(commandList, mState.BufferData, expectedOutputs);
-                        commandList.ExecutionBarrier();
-                        NetworkDispatcher.DeltaComposition(commandList, mState.BufferData);
-                    }
+                NetworkDispatcher.ForwardPropagation(commandList, mState.BufferData, inputs);
+                if (mState.Phase == DatasetGroup.Training)
+                {
+                    commandList.ExecutionBarrier();
+                    NetworkDispatcher.BackPropagation(commandList, mState.BufferData, expectedOutputs);
+                    commandList.ExecutionBarrier();
+                    NetworkDispatcher.DeltaComposition(commandList, mState.BufferData);
                 }
 
                 commandList.End();
@@ -330,7 +324,7 @@ namespace MachineLearning
 
             if (!mRunning && mState.Initialized)
             {
-                using var disposeBuffersEvent = OptickMacros.Event("Dispose buffers");
+                using var disposeBuffersEvent = Profiler.Event("Dispose buffers");
 
                 // we dont want to trip any validation layers
                 queue.ReleaseFence(mFence, true);
@@ -393,7 +387,7 @@ namespace MachineLearning
 
         public void Start(IDataset dataset, Network network)
         {
-            using var startEvent = OptickMacros.Event();
+            using var startEvent = Profiler.Event();
             if (mRunning)
             {
                 return;
@@ -440,7 +434,7 @@ namespace MachineLearning
         public void Stop()
         {
             // remove? probably adds more overhead than its worth
-            using var stopEvent = OptickMacros.Event();
+            using var stopEvent = Profiler.Event();
             if (!mRunning)
             {
                 return;

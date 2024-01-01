@@ -1,5 +1,5 @@
+using CodePlayground;
 using ImGuiNET;
-using Optick.NET;
 using System;
 using System.Runtime.InteropServices;
 
@@ -9,7 +9,7 @@ namespace Ragdoll
     {
         public static bool DragDropEntityTarget(string id, Scene scene, ref ulong entity, Func<ulong, bool>? selector = null)
         {
-            using var targetEvent = OptickMacros.Event();
+            using var targetEvent = Profiler.Event();
 
             string value = entity != Scene.Null ? scene.GetDisplayedEntityTag(entity) : "--No entity--";
             ImGui.InputText(id, ref value, (uint)value.Length, ImGuiInputTextFlags.ReadOnly);
@@ -25,7 +25,7 @@ namespace Ragdoll
 
         public static unsafe bool DragDropTarget<T>(string type, out T result, Func<T, bool>? selector = null) where T : unmanaged
         {
-            using var targetEvent = OptickMacros.Event();
+            using var targetEvent = Profiler.Event();
 
             result = default;
             if (!ImGui.BeginDragDropTarget())

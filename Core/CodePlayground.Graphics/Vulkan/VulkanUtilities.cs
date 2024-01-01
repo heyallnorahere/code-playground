@@ -1,4 +1,3 @@
-using Optick.NET;
 using Silk.NET.Core;
 using Silk.NET.Core.Attributes;
 using Silk.NET.Core.Contexts;
@@ -190,7 +189,7 @@ namespace CodePlayground.Graphics.Vulkan
         internal unsafe delegate void StringArrayCallback(byte** result);
         internal unsafe static void CreateNativeStringArray(this IEnumerable<string> data, StringArrayCallback callback, StringMarshal? marshal = null)
         {
-            using var createStringArrayEvent = OptickMacros.Event();
+            using var createStringArrayEvent = Profiler.Event();
             var usedMarshal = marshal ?? new StringMarshal();
 
             var list = new List<string>(data);
@@ -214,7 +213,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private static string GetExtensionName<T>()
         {
-            using var getNameEvent = OptickMacros.Event();
+            using var getNameEvent = Profiler.Event();
 
             var extensionType = typeof(T);
             var extensionAttribute = extensionType.GetCustomAttribute<ExtensionAttribute>();
@@ -229,7 +228,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public static T GetInstanceExtension<T>(this Vk api, Instance instance) where T : NativeExtension<Vk>
         {
-            using var getExtensionEvent = OptickMacros.Event();
+            using var getExtensionEvent = Profiler.Event();
 
             string extensionName = GetExtensionName<T>();
             if (!api.TryGetInstanceExtension(instance, out T extension))
@@ -242,7 +241,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public static T GetDeviceExtension<T>(this Vk api, Instance instance, Device device) where T : NativeExtension<Vk>
         {
-            using var getExtensionEvent = OptickMacros.Event();
+            using var getExtensionEvent = Profiler.Event();
 
 #if __IOS__
             var extension = (T)Activator.CreateInstance(typeof(T), new LamdaNativeContext(name => api.GetDeviceProcAddr(device, name)))!;
@@ -259,7 +258,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe static T? GetProcAddress<T>(Func<string, PfnVoidFunction> api) where T : Delegate
         {
-            using var getAddressEvent = OptickMacros.Event();
+            using var getAddressEvent = Profiler.Event();
             const string prefix = "PFN_";
 
             var name = typeof(T).Name;
@@ -293,7 +292,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public static bool HasStencil(this Format format)
         {
-            using var hasStencilEvent = OptickMacros.Event();
+            using var hasStencilEvent = Profiler.Event();
 
             var formatName = format.ToString();
             return formatName.EndsWith(nameof(Format.S8Uint));
@@ -301,7 +300,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public static SharingMode FindSharingMode(this VulkanPhysicalDevice physicalDevice, out uint[]? familyIndices, out uint indexCount)
         {
-            using var findFamiliesEvent = OptickMacros.Event();
+            using var findFamiliesEvent = Profiler.Event();
 
             familyIndices = null;
             indexCount = 0;

@@ -1,5 +1,4 @@
 ﻿using CodePlayground.Graphics.Vulkan;
-using Optick.NET;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Input;
 using Silk.NET.Maths;
@@ -248,16 +247,13 @@ namespace CodePlayground.Graphics
         // not an event handler - we need to be able to call render under certain circumstances
         private void OnUpdate(double delta)
         {
-            mFrameEvent?.Dispose();
-            mFrameEvent = OptickMacros.Frame(MainThreadName);
-
-            using var updateEvent = OptickMacros.Category("Update", Category.GameLogic);
+            using var updateEvent = Profiler.Event();
             Update?.Invoke(delta);
         }
 
         private void OnRender(double delta)
         {
-            using (OptickMacros.Category("Render", Category.Rendering))
+            using (Profiler.Event())
             {
                 if (mGraphicsContext?.Swapchain is null)
                 {
@@ -281,19 +277,18 @@ namespace CodePlayground.Graphics
 
                         var queue = device.GetQueue(CommandQueueFlags.Graphics);
                         var commandList = queue.Release();
-                        commandList.Begin();
 
-                        using (commandList.Context())
+                        commandList.Begin();
+                        Profiler.CollectCommandList(commandList);
+                        
+                        Render?.Invoke(new FrameRenderInfo
                         {
-                            Render?.Invoke(new FrameRenderInfo
-                            {
-                                Delta = delta,
-                                CommandList = commandList,
-                                RenderTarget = swapchain.RenderTarget,
-                                Framebuffer = swapchain.CurrentFramebuffer,
-                                CurrentImage = swapchain.CurrentFrame
-                            });
-                        }
+                            Delta = delta,
+                            CommandList = commandList,
+                            RenderTarget = swapchain.RenderTarget,
+                            Framebuffer = swapchain.CurrentFramebuffer,
+                            CurrentImage = swapchain.CurrentFrame
+                        });
 
                         commandList.End();
                         swapchain.Present(queue, commandList);
@@ -301,8 +296,7 @@ namespace CodePlayground.Graphics
                 }
             }
 
-            mFrameEvent?.Dispose();
-            mFrameEvent = null;
+            Profiler.ProfileFrame("Frame");
         }
 
         public IGraphicsContext CreateGraphicsContext()
@@ -317,7 +311,7 @@ namespace CodePlayground.Graphics
 
         internal void OnContextDestroyed()
         {
-            ShutdownOptick();
+            Profiler.Shutdown();
             // what else? idk
         }
 

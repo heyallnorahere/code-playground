@@ -1,7 +1,7 @@
-﻿using LibChess;
+﻿using CodePlayground;
+using LibChess;
 using MachineLearning;
 using Newtonsoft.Json;
-using Optick.NET;
 using SQLite;
 using System;
 using System.Collections.Generic;
@@ -62,7 +62,7 @@ namespace ChessAI.Data
 
         public static async Task PullAndLabelAsync(Dataset dataset, string command, int year, int month, int depth)
         {
-            using var pullAndLabelEvent = OptickMacros.Event();
+            using var pullAndLabelEvent = Profiler.Event();
             string url = $"https://database.lichess.org/standard/lichess_db_standard_rated_{year:####}-{month:0#}.pgn.zst";
 
             const string cacheDirectory = "cache";
@@ -71,10 +71,10 @@ namespace ChessAI.Data
 
             if (!File.Exists(plaintextCache))
             {
-                using var decompressEvent = OptickMacros.Event("Decompress database");
+                using var decompressEvent = Profiler.Event("Decompress database");
                 if (!File.Exists(compressedCache))
                 {
-                    using var pullEvent = OptickMacros.Event("Pull database");
+                    using var pullEvent = Profiler.Event("Pull database");
                     if (!Directory.Exists(cacheDirectory))
                     {
                         Directory.CreateDirectory(cacheDirectory);
@@ -145,7 +145,7 @@ namespace ChessAI.Data
             };
 
             int skipped;
-            using (OptickMacros.Event("Split & process PGN file"))
+            using (Profiler.Event("Split & process PGN file"))
             {
                 // start the stockfish worker thread
                 pond.Start();
@@ -194,7 +194,7 @@ namespace ChessAI.Data
 
         public Dataset(string path)
         {
-            using var constructorEvent = OptickMacros.Event();
+            using var constructorEvent = Profiler.Event();
 
             mConnection = new SQLiteConnection(path);
             mConnection.CreateTable<PositionData>();
@@ -248,7 +248,7 @@ namespace ChessAI.Data
 
         public float[] GetInput(DatasetGroup group, int index)
         {
-            using var getInputEvent = OptickMacros.Event();
+            using var getInputEvent = Profiler.Event();
             VerifyCache();
 
             var data = mCache[index + mGroupData[group].Offset];
@@ -259,7 +259,7 @@ namespace ChessAI.Data
 
         public float[] GetExpectedOutput(DatasetGroup group, int index)
         {
-            using var getOutputEvent = OptickMacros.Event();
+            using var getOutputEvent = Profiler.Event();
             VerifyCache();
 
             var data = mCache[index + mGroupData[group].Offset];

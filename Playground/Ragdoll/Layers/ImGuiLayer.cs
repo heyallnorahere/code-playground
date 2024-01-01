@@ -1,5 +1,5 @@
+using CodePlayground;
 using CodePlayground.Graphics;
-using Optick.NET;
 using Silk.NET.Input;
 using Silk.NET.Windowing;
 using System;
@@ -23,7 +23,7 @@ namespace Ragdoll.Layers
 
         public override void OnPushed()
         {
-            using var pushedEvent = OptickMacros.Event();
+            using var pushedEvent = Profiler.Event();
             mController = new ImGuiController(mGraphicsContext, mInputContext, mWindow, mRenderTarget, Renderer.FrameCount);
 
             mUseSemaphore = true;
@@ -36,10 +36,7 @@ namespace Ragdoll.Layers
             commandList.Begin();
             commandList.AddSemaphore(mSemaphore, SemaphoreUsage.Signal);
 
-            using (commandList.Context(GPUQueueType.Transfer))
-            {
-                mController.LoadFontAtlas(commandList);
-            }
+            mController.LoadFontAtlas(commandList);
 
             commandList.End();
             queue.Submit(commandList);
@@ -47,7 +44,7 @@ namespace Ragdoll.Layers
 
         public override void OnPopped()
         {
-            using var poppedEvent = OptickMacros.Event();
+            using var poppedEvent = Profiler.Event();
 
             mController?.Dispose();
             mSemaphore?.Dispose();
@@ -57,13 +54,13 @@ namespace Ragdoll.Layers
 
         public override void OnUpdate(double delta)
         {
-            using var updateEvent = OptickMacros.Event();
+            using var updateEvent = Profiler.Event();
             mController?.NewFrame(delta);
         }
 
         public override void OnRender(Renderer renderer)
         {
-            using var renderEvent = OptickMacros.Event();
+            using var renderEvent = Profiler.Event();
 
             var frameInfo = renderer.FrameInfo;
             var commandList = frameInfo.CommandList;

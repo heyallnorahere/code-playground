@@ -2,7 +2,6 @@ using BepuPhysics;
 using BepuPhysics.Collidables;
 using CodePlayground;
 using ImGuiNET;
-using Optick.NET;
 using Ragdoll.Layers;
 using Ragdoll.Physics;
 using System;
@@ -80,7 +79,7 @@ namespace Ragdoll.Components
         [MemberNotNull(nameof(mCollider))]
         public Collider CreateCollider(ColliderType collider)
         {
-            using var createEvent = OptickMacros.Event();
+            using var createEvent = Profiler.Event();
 
             if (mScene is null)
             {
@@ -99,7 +98,7 @@ namespace Ragdoll.Components
 
         private void OnColliderChanged(TypedIndex index, Func<float, BodyInertia> computeInertia)
         {
-            using var changedEvent = OptickMacros.Event();
+            using var changedEvent = Profiler.Event();
 
             mShapeIndex = index;
             mComputeInertia = computeInertia;
@@ -162,7 +161,7 @@ namespace Ragdoll.Components
 
         private void OnComponentAdded(Scene scene, ulong id)
         {
-            using var addedEvent = OptickMacros.Event();
+            using var addedEvent = Profiler.Event();
 
             mScene = scene;
             mEntity = id;
@@ -211,7 +210,7 @@ namespace Ragdoll.Components
                 return;
             }
 
-            using var invalidateEvent = OptickMacros.Event();
+            using var invalidateEvent = Profiler.Event();
             DestroyBody(previousBodyType);
 
             if (isBody)
@@ -226,7 +225,7 @@ namespace Ragdoll.Components
 
         private void OnComponentRemoved()
         {
-            using var removedEvent = OptickMacros.Event();
+            using var removedEvent = Profiler.Event();
 
             mColliderInitialized = false;
             CleanupCollider();
@@ -236,7 +235,7 @@ namespace Ragdoll.Components
 
         private void OnEdit()
         {
-            using var editedEvent = OptickMacros.Event();
+            using var editedEvent = Profiler.Event();
             var simulation = mScene!.Simulation;
 
             var bodyTypes = Enum.GetValues<BodyType>().Select(type => type.ToString()).ToArray();
@@ -422,7 +421,7 @@ namespace Ragdoll.Components
 
         public void PrePhysicsUpdate()
         {
-            using var prePhysicsUpdateEvent = OptickMacros.Event();
+            using var prePhysicsUpdateEvent = Profiler.Event();
 
             if (mScene!.TryGetComponent(mEntity, out TransformComponent? transform))
             {
@@ -458,7 +457,7 @@ namespace Ragdoll.Components
                 return;
             }
 
-            using var postPhysicsUpdateEvent = OptickMacros.Event();
+            using var postPhysicsUpdateEvent = Profiler.Event();
             if (!mScene!.TryGetComponent(mEntity, out TransformComponent? transform))
             {
                 return;

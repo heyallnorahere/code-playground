@@ -1,5 +1,4 @@
-﻿using Optick.NET;
-using Silk.NET.Vulkan;
+﻿using Silk.NET.Vulkan;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -72,7 +71,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe VulkanPipeline(VulkanContext context, PipelineDescription description)
         {
-            using var constructorEvent = OptickMacros.Event();
+            using var constructorEvent = Profiler.Event();
 
             mDesc = description;
             mReflectionView = null;
@@ -90,7 +89,7 @@ namespace CodePlayground.Graphics.Vulkan
             mLoaded = false;
             mDisposed = false;
 
-            using (OptickMacros.Event("Descriptor pool creation"))
+            using (Profiler.Event("Descriptor pool creation"))
             {
                 const uint maxSets = 50; // placeholder value
                 const uint descriptorTypeCount = 10; // see VkDescriptorType
@@ -146,7 +145,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Dispose(bool disposing)
         {
-            using var disposeEvent = OptickMacros.Event();
+            using var disposeEvent = Profiler.Event();
 
             if (disposing)
             {
@@ -179,7 +178,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void Cleanup()
         {
-            using var cleanupEvent = OptickMacros.Event();
+            using var cleanupEvent = Profiler.Event();
             if (!mLoaded)
             {
                 return;
@@ -227,8 +226,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void Bind(VulkanCommandBuffer commandBuffer, int frame)
         {
-            using var bindEvent = OptickMacros.Event();
-            using var gpuBindEvent = OptickMacros.GPUEvent("Bind pipeline");
+            using var bindEvent = Profiler.Event();
 
             AssertLoaded();
 
@@ -242,18 +240,15 @@ namespace CodePlayground.Graphics.Vulkan
             };
 
             api.CmdBindPipeline(buffer, bindPoint, mPipeline);
-            using (OptickMacros.GPUEvent("Bind pipeline descriptor sets"))
+            foreach (int set in mDescriptorSets.Keys)
             {
-                foreach (int set in mDescriptorSets.Keys)
+                if (!mBoundResources.ContainsKey(set))
                 {
-                    if (!mBoundResources.ContainsKey(set))
-                    {
-                        continue;
-                    }
-
-                    var setData = mDescriptorSets[set];
-                    api.CmdBindDescriptorSets(buffer, bindPoint, mLayout, (uint)set, 1, setData.Sets[frame], 0, 0);
+                    continue;
                 }
+
+                var setData = mDescriptorSets[set];
+                api.CmdBindDescriptorSets(buffer, bindPoint, mLayout, (uint)set, 1, setData.Sets[frame], 0, 0);
             }
         }
 
@@ -269,8 +264,8 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void Bind(VulkanCommandBuffer commandBuffer, nint id)
         {
-            using var bindEvent = OptickMacros.Event();
-            using var gpuBindEvent = OptickMacros.Event("Bind pipeline dynamic ID descriptor set");
+            using var bindEvent = Profiler.Event();
+            using var gpuBindEvent = Profiler.Event("Bind pipeline dynamic ID descriptor set");
 
             if (!mDynamicIDs.TryGetValue(id, out DynamicID data))
             {
@@ -300,8 +295,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void PushConstants(VulkanCommandBuffer commandBuffer, BufferMapCallback callback)
         {
-            using var pushConstantsEvent = OptickMacros.Event();
-            using var gpuPushConstantsEvent = OptickMacros.GPUEvent("Push constants");
+            using var pushConstantsEvent = Profiler.Event();
 
             int totalSize = mReflectionView!.TotalPushConstantSize;
             var stages = mReflectionView!.PushConstantStages;
@@ -323,7 +317,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private static T BindObject<T>(object passedObject, string name, int index, Func<IBindableVulkanResource, string, int, T> callback)
         {
-            using var bindEvent = OptickMacros.Event();
+            using var bindEvent = Profiler.Event();
             if (passedObject is IBindableVulkanResource resource)
             {
                 return callback.Invoke(resource, name, index);
@@ -363,7 +357,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public bool Bind(IBindableVulkanResource resource, string name, int index)
         {
-            using var bindEvent = OptickMacros.Event();
+            using var bindEvent = Profiler.Event();
             if (!FindResource(name, out _, out int set, out int binding))
             {
                 return false;
@@ -375,7 +369,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private bool BindResource(int set, int binding, int index, IBindableVulkanResource resource)
         {
-            using var bindResourceEvent = OptickMacros.Event();
+            using var bindResourceEvent = Profiler.Event();
             if (!mBoundResources.TryGetValue(set, out DescriptorSetPipelineResources setData))
             {
                 mBoundResources.Add(set, setData = new DescriptorSetPipelineResources
@@ -408,7 +402,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void Bind(IBindableVulkanResource resource, int set, int binding, int index)
         {
-            using var bindEvent = OptickMacros.Event();
+            using var bindEvent = Profiler.Event();
 
             AssertLoaded();
             if (!BindResource(set, binding, index, resource))
@@ -425,7 +419,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe DescriptorSet AllocateDescriptorSet(int set)
         {
-            using var allocateEvent = OptickMacros.Event();
+            using var allocateEvent = Profiler.Event();
             if (!mDescriptorSets.TryGetValue(set, out VulkanPipelineDescriptorSet setData))
             {
                 return default;
@@ -446,7 +440,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public nint CreateDynamicID(IBindableVulkanResource resource, string name, int index)
         {
-            using var createEvent = OptickMacros.Event();
+            using var createEvent = Profiler.Event();
             foreach (nint existingId in mDynamicIDs.Keys)
             {
                 var existingData = mDynamicIDs[existingId];
@@ -485,7 +479,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void UpdateDynamicID(nint id)
         {
-            using var updateEvent = OptickMacros.Event();
+            using var updateEvent = Profiler.Event();
             if (!mDynamicIDs.ContainsKey(id))
             {
                 throw new ArgumentException($"No such ID: 0x{id:X}");
@@ -497,7 +491,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void DestroyDynamicID(nint id)
         {
-            using var destroyEvent = OptickMacros.Event();
+            using var destroyEvent = Profiler.Event();
             if (!mDynamicIDs.ContainsKey(id))
             {
                 return;
@@ -517,7 +511,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void Load(IReadOnlyDictionary<ShaderStage, IShader> shaders)
         {
-            using var loadEvent = OptickMacros.Event();
+            using var loadEvent = Profiler.Event();
             Cleanup();
 
             var filteredStages = shaders.Keys.Where(stage => mDesc.Type switch
@@ -557,12 +551,12 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void CreateDescriptorSets()
         {
-            using var createEvent = OptickMacros.Event();
+            using var createEvent = Profiler.Event();
 
             var layoutBindings = new Dictionary<int, List<DescriptorSetLayoutBinding>>();
             var reflectionData = mReflectionView!.ReflectionData;
 
-            using (OptickMacros.Event("Parse reflection data"))
+            using (Profiler.Event("Parse reflection data"))
             {
                 foreach (var stage in reflectionData.Keys)
                 {
@@ -622,7 +616,7 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             }
 
-            using (OptickMacros.Event("Allocate main sets"))
+            using (Profiler.Event("Allocate main sets"))
             {
                 mDescriptorSets.Clear();
                 foreach (int set in layoutBindings.Keys)
@@ -668,7 +662,7 @@ namespace CodePlayground.Graphics.Vulkan
                 }
             }
 
-            using (OptickMacros.Event("Reallocate dynamic ID sets"))
+            using (Profiler.Event("Reallocate dynamic ID sets"))
             {
                 var destroyedIds = new HashSet<nint>();
                 foreach (nint id in mDynamicIDs.Keys)
@@ -699,7 +693,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void CreatePipelineLayout()
         {
-            using var createEvent = OptickMacros.Event();
+            using var createEvent = Profiler.Event();
             mPushConstantBufferOffsets.Clear();
 
             var setIndices = mDescriptorSets.Keys.ToList();
@@ -736,7 +730,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void CreateGraphicsPipeline(IReadOnlyDictionary<ShaderStage, IShader> shaders)
         {
-            using var createEvent = OptickMacros.Event();
+            using var createEvent = Profiler.Event();
             if (!shaders.ContainsKey(ShaderStage.Vertex) || !shaders.ContainsKey(ShaderStage.Fragment))
             {
                 throw new ArgumentException("A graphics pipeline must consist of both a vertex & fragment shader!");
@@ -751,7 +745,7 @@ namespace CodePlayground.Graphics.Vulkan
             var shaderStageInfo = new PipelineShaderStageCreateInfo[stages.Count];
 
             using var marshal = new StringMarshal();
-            using (OptickMacros.Event("Pipeline shader modules"))
+            using (Profiler.Event("Pipeline shader modules"))
             {
                 for (int i = 0; i < stages.Count; i++)
                 {
@@ -862,7 +856,7 @@ namespace CodePlayground.Graphics.Vulkan
                             ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit
                         };
 
-                        using (OptickMacros.Event("Pipeline color blend settings"))
+                        using (Profiler.Event("Pipeline color blend settings"))
                         {
                             if (blendMode != PipelineBlendMode.None)
                             {
@@ -940,7 +934,7 @@ namespace CodePlayground.Graphics.Vulkan
                             BasePipelineIndex = 0
                         };
 
-                        using (OptickMacros.Event("Pipeline creation"))
+                        using (Profiler.Event("Pipeline creation"))
                         {
                             fixed (Pipeline* pipeline = &mPipeline)
                             {
@@ -955,7 +949,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         private unsafe void CreateComputePipeline(IShader shader)
         {
-            using var createEvent = OptickMacros.Event();
+            using var createEvent = Profiler.Event();
 
             using var marshal = new StringMarshal();
             if (shader is VulkanShader vulkanShader)

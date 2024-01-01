@@ -1,6 +1,6 @@
 using ChessAI.Shaders;
+using CodePlayground;
 using CodePlayground.Graphics;
-using Optick.NET;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -210,7 +210,7 @@ namespace ChessAI.GUI
 
         public BatchRenderer(IGraphicsContext context, IRenderer renderer, IFrameSynchronizationManager synchronizationManager)
         {
-            using var constructorEvent = OptickMacros.Event();
+            using var constructorEvent = Profiler.Event();
             mDisposed = false;
 
             mContext = context;
@@ -267,16 +267,13 @@ namespace ChessAI.GUI
             commandList.PushStagingObject(stagingBuffer);
             SignalSemaphore(commandList);
 
-            using (commandList.Context(GPUQueueType.Transfer))
-            {
-                var image = mWhiteTexture.Image;
-                var layout = image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
+            var image = mWhiteTexture.Image;
+            var layout = image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
 
-                image.TransitionLayout(commandList, image.Layout, layout);
-                image.CopyFromBuffer(commandList, stagingBuffer, layout);
+            image.TransitionLayout(commandList, image.Layout, layout);
+            image.CopyFromBuffer(commandList, stagingBuffer, layout);
 
-                image.Layout = layout;
-            }
+            image.Layout = layout;
 
             commandList.End();
             queue.Submit(commandList);
@@ -304,7 +301,7 @@ namespace ChessAI.GUI
 
         private void Dispose(bool disposing)
         {
-            using var disposeEvent = OptickMacros.Event();
+            using var disposeEvent = Profiler.Event();
             if (mCurrentScene.Active)
             {
                 throw new InvalidOperationException("A scene is currently rendering!");
@@ -355,7 +352,7 @@ namespace ChessAI.GUI
 
         public void BeginFrame(ICommandList commandList)
         {
-            using var beginFrameEvent = OptickMacros.Event();
+            using var beginFrameEvent = Profiler.Event();
             if (mCommandList is not null)
             {
                 throw new InvalidOperationException("A frame is already active!");
@@ -381,7 +378,7 @@ namespace ChessAI.GUI
 
         public void EndFrame()
         {
-            using var endFrameEvent = OptickMacros.Event();
+            using var endFrameEvent = Profiler.Event();
             if (mCommandList is null)
             {
                 throw new InvalidOperationException("No frame is active!");
@@ -404,7 +401,7 @@ namespace ChessAI.GUI
 
         public void BeginScene(Matrix4x4 viewProjection)
         {
-            using var beginSceneEvent = OptickMacros.Event();
+            using var beginSceneEvent = Profiler.Event();
             if (mCurrentScene.Active)
             {
                 throw new InvalidOperationException("A scene is already active!");
@@ -425,7 +422,7 @@ namespace ChessAI.GUI
 
         public void EndScene()
         {
-            using var endSceneEvent = OptickMacros.Event();
+            using var endSceneEvent = Profiler.Event();
             if (!mCurrentScene.Active)
             {
                 throw new InvalidOperationException("No scene is active!");
@@ -468,7 +465,7 @@ namespace ChessAI.GUI
 
         private void BeginBatch()
         {
-            using var beginBatchEvent = OptickMacros.Event();
+            using var beginBatchEvent = Profiler.Event();
 
             mCurrentScene.CurrentBatch.Shapes.Clear();
             mCurrentScene.CurrentBatch.Textures.Clear();
@@ -477,7 +474,7 @@ namespace ChessAI.GUI
 
         private static IDeviceBuffer PopOrCreateBuffer(RendererVertexData vertexData, IGraphicsContext context, DeviceBufferUsage usage, int size)
         {
-            using var popOrCreateEvent = OptickMacros.Event();
+            using var popOrCreateEvent = Profiler.Event();
 
             var buffer = vertexData.PopBuffer(usage, size);
             buffer ??= context.CreateDeviceBuffer(usage, size);
@@ -486,7 +483,7 @@ namespace ChessAI.GUI
 
         private void SubmitScenePipeline(ulong renderTarget, Type shader, IPipeline pipeline)
         {
-            using var submitPipelineEvent = OptickMacros.Event();
+            using var submitPipelineEvent = Profiler.Event();
             if (!mCurrentScene.UsedPipelines.TryGetValue(renderTarget, out List<SceneUsedPipelineData>? renderTargetPipelineData))
             {
                 renderTargetPipelineData = mCurrentScene.UsedPipelines[renderTarget] = new List<SceneUsedPipelineData>();
@@ -501,7 +498,7 @@ namespace ChessAI.GUI
 
         private void FlushBatch()
         {
-            using var flushBatchEvent = OptickMacros.Event();
+            using var flushBatchEvent = Profiler.Event();
             if (mCommandList is null)
             {
                 throw new InvalidOperationException("No frame is active!");
@@ -529,7 +526,7 @@ namespace ChessAI.GUI
             var indices = new List<uint>();
 
             int quadCount = 0;
-            using (OptickMacros.Event("Generate batch vertices"))
+            using (Profiler.Event("Generate batch vertices"))
             {
                 foreach (var shape in mCurrentScene.CurrentBatch.Shapes)
                 {
@@ -550,7 +547,7 @@ namespace ChessAI.GUI
             IDeviceBuffer vertexStagingBuffer, vertexBuffer;
             IDeviceBuffer indexStagingBuffer, indexBuffer;
 
-            using (OptickMacros.Event("Create batch vertex & index buffers"))
+            using (Profiler.Event("Create batch vertex & index buffers"))
             {
                 vertexBufferSize = vertices.Count * Marshal.SizeOf<RendererVertex>();
                 vertexStagingBuffer = PopOrCreateBuffer(frameData.VertexData, mContext, DeviceBufferUsage.Staging, vertexBufferSize);
@@ -564,17 +561,14 @@ namespace ChessAI.GUI
                 indexStagingBuffer.CopyFromCPU(indices.ToArray());
             }
 
-            using (OptickMacros.Event("Submit vertex & index buffer transfer list"))
+            using (Profiler.Event("Submit vertex & index buffer transfer list"))
             {
                 var transferQueue = mContext.Device.GetQueue(CommandQueueFlags.Transfer);
                 var transferList = transferQueue.Release();
 
                 transferList.Begin();
-                using (transferList.Context(GPUQueueType.Transfer))
-                {
-                    vertexStagingBuffer.CopyBuffers(transferList, vertexBuffer, vertexBufferSize);
-                    indexStagingBuffer.CopyBuffers(transferList, indexBuffer, indexBufferSize);
-                }
+                vertexStagingBuffer.CopyBuffers(transferList, vertexBuffer, vertexBufferSize);
+                indexStagingBuffer.CopyBuffers(transferList, indexBuffer, indexBufferSize);
 
                 SignalSemaphore(transferList);
                 transferList.End();
@@ -582,7 +576,7 @@ namespace ChessAI.GUI
             }
 
             IPipeline? pipeline = null;
-            using (OptickMacros.Event("Acquire pipeline"))
+            using (Profiler.Event("Acquire pipeline"))
             {
                 if (frameData.Pipelines.TryGetValue(renderTargetID, out RenderTargetPipelineData renderTargetPipelines))
                 {
@@ -609,7 +603,7 @@ namespace ChessAI.GUI
                 }
             }
 
-            using (OptickMacros.Event("Bind batch resources"))
+            using (Profiler.Event("Bind batch resources"))
             {
                 if (mCurrentScene.CurrentBatch.Textures.Count > BatchRender.MaxTextures)
                 {
@@ -624,10 +618,8 @@ namespace ChessAI.GUI
                 }
             }
 
-            using (OptickMacros.Event("Submit batch render commands"))
+            using (Profiler.Event("Submit batch render commands"))
             {
-                using var gpuEvent = OptickMacros.GPUEvent("Render batch");
-
                 // the "frame" parameter only applies to pipelines used multiple frames in a row
                 pipeline.Bind(mCommandList, 0);
                 vertexBuffer.BindVertices(mCommandList, 0);
@@ -635,7 +627,7 @@ namespace ChessAI.GUI
                 mRenderer.RenderIndexed(mCommandList, 0, indices.Count);
             }
 
-            using (OptickMacros.Event("Increment stats"))
+            using (Profiler.Event("Increment stats"))
             {
                 mStats.DrawCalls++;
                 mStats.QuadCount += quadCount;
@@ -645,7 +637,7 @@ namespace ChessAI.GUI
                 mStats.IndexCount += indices.Count;
             }
 
-            using (OptickMacros.Event("Submit batch buffers & pipeline to scene"))
+            using (Profiler.Event("Submit batch buffers & pipeline to scene"))
             {
                 mCurrentScene.VertexData.PushBuffer(DeviceBufferUsage.Staging, vertexStagingBuffer);
                 mCurrentScene.VertexData.PushBuffer(DeviceBufferUsage.Staging, indexStagingBuffer);
@@ -659,7 +651,7 @@ namespace ChessAI.GUI
 
         public void NextBatch()
         {
-            using var nextBatchEvent = OptickMacros.Event();
+            using var nextBatchEvent = Profiler.Event();
 
             FlushBatch();
             BeginBatch();
@@ -668,7 +660,7 @@ namespace ChessAI.GUI
         public void SetShader<T>() => SetShader(typeof(T));
         public void SetShader(Type type)
         {
-            using var setShaderEvent = OptickMacros.Event();
+            using var setShaderEvent = Profiler.Event();
             if (!mCurrentScene.Active)
             {
                 throw new InvalidOperationException("No scene is active!");
@@ -683,7 +675,7 @@ namespace ChessAI.GUI
 
         public void PushRenderTarget(IRenderTarget renderTarget, IFramebuffer framebuffer, Vector4 clearColor)
         {
-            using var pushEvent = OptickMacros.Event();
+            using var pushEvent = Profiler.Event();
             if (mCommandList is null)
             {
                 throw new InvalidOperationException("No frame is active!");
@@ -711,7 +703,7 @@ namespace ChessAI.GUI
 
         public void PopRenderTarget()
         {
-            using var popEvent = OptickMacros.Event();
+            using var popEvent = Profiler.Event();
             if (mCommandList is null)
             {
                 throw new InvalidOperationException("No frame is active!");
@@ -726,7 +718,7 @@ namespace ChessAI.GUI
 
         public void BeginRender()
         {
-            using var beginRenderEvent = OptickMacros.Event();
+            using var beginRenderEvent = Profiler.Event();
             if (mCommandList is null)
             {
                 throw new InvalidOperationException("No frame is active!");
@@ -747,7 +739,7 @@ namespace ChessAI.GUI
 
         public int PushBatchTexture(ITexture texture)
         {
-            using var pushTextureEvent = OptickMacros.Event();
+            using var pushTextureEvent = Profiler.Event();
             if (!mCurrentScene.Active)
             {
                 throw new InvalidOperationException("No scene is active!");
@@ -765,7 +757,7 @@ namespace ChessAI.GUI
 
         public void Submit(IRenderedShape shape)
         {
-            using var submitEvent = OptickMacros.Event();
+            using var submitEvent = Profiler.Event();
             if (!mCurrentScene.Active)
             {
                 throw new InvalidOperationException("No scene is active!");
@@ -776,7 +768,7 @@ namespace ChessAI.GUI
 
         private IDisposable GetSemaphore()
         {
-            using var getSemaphoreEvent = OptickMacros.Event();
+            using var getSemaphoreEvent = Profiler.Event();
             if (!mUsedSemaphores.TryDequeue(out IDisposable? semaphore))
             {
                 semaphore = mContext.CreateSemaphore();
@@ -787,7 +779,7 @@ namespace ChessAI.GUI
 
         public void SignalSemaphore(ICommandList commandList)
         {
-            using var signalEvent = OptickMacros.Event();
+            using var signalEvent = Profiler.Event();
             var semaphore = GetSemaphore();
 
             commandList.AddSemaphore(semaphore, SemaphoreUsage.Signal);
@@ -849,7 +841,7 @@ namespace ChessAI.GUI
 
         public RenderedQuad()
         {
-            using var constructorEvent = OptickMacros.Event();
+            using var constructorEvent = Profiler.Event();
 
             mCenter = Vector2.Zero;
             mHalfSize = Vector2.One * 0.5f;
@@ -897,14 +889,14 @@ namespace ChessAI.GUI
 
         public void GetVertices(PipelineFrontFace frontFace, BatchRenderer renderer, IList<RendererVertex> vertices, IList<uint> indices, out int quadCount)
         {
-            using var getVerticesEvent = OptickMacros.Event();
+            using var getVerticesEvent = Profiler.Event();
             quadCount = 1;
 
             int textureIndex = renderer.PushBatchTexture(mTexture ?? renderer.WhiteTexture);
             float cos = MathF.Cos(mRotation);
             float sin = MathF.Sin(mRotation);
 
-            using (OptickMacros.Event("Compute vertices"))
+            using (Profiler.Event("Compute vertices"))
             {
                 for (int i = 0; i < sFactors.Length; i++)
                 {
@@ -926,7 +918,7 @@ namespace ChessAI.GUI
                 }
             }
 
-            using (OptickMacros.Event("Determine indices"))
+            using (Profiler.Event("Determine indices"))
             {
                 var quadIndices = frontFace switch
                 {
