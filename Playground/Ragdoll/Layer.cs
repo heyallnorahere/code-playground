@@ -48,7 +48,7 @@ namespace Ragdoll
         public T? FindLayer<T>() where T : Layer => (T?)FindLayer(typeof(T));
         public Layer? FindLayer(Type layerType)
         {
-            var findEvent = Profiler.Event();
+            using var findEvent = Profiler.Event();
             if (!layerType.Extends(typeof(Layer)))
             {
                 throw new ArgumentException("The passed type is not derived from Layer!");
@@ -67,7 +67,7 @@ namespace Ragdoll
 
         public void EnumerateLayers(Action<Layer> callback, LayerType? type = null)
         {
-            var enumerateEvent = Profiler.Event();
+            using var enumerateEvent = Profiler.Event();
 
             int nextOffset, count;
             if (type is not null)
@@ -92,7 +92,7 @@ namespace Ragdoll
 
         public int GetLayerCount(LayerType type)
         {
-            var getCountEvent = Profiler.Event();
+            using var getCountEvent = Profiler.Event();
             int index = (int)type;
 
             int offset = GetOffset(index);
@@ -103,13 +103,13 @@ namespace Ragdoll
 
         private int GetOffset(int layerType)
         {
-            var getOffsetEvent = Profiler.Event();
+            using var getOffsetEvent = Profiler.Event();
             return layerType < mLayerTypeOffsets.Length ? mLayerTypeOffsets[layerType] : mLayers.Count;
         }
 
         public void PushLayer<T>(LayerType type, params object?[] args) where T : Layer
         {
-            var pushEvent = Profiler.Event();
+            using var pushEvent = Profiler.Event();
 
             var layer = Utilities.CreateDynamicInstance<T>(args);
             PushLayer(type, layer);
@@ -117,7 +117,7 @@ namespace Ragdoll
 
         public void PushLayer(LayerType type, Layer layer)
         {
-            var pushEvent = Profiler.Event();
+            using var pushEvent = Profiler.Event();
             int offsetIndex = (int)type;
 
             int index = GetOffset(offsetIndex);
@@ -133,7 +133,7 @@ namespace Ragdoll
 
         public void PopLayer(LayerType type)
         {
-            var popEvent = Profiler.Event();
+            using var popEvent = Profiler.Event();
             int offsetIndex = (int)type;
 
             int index = GetOffset(offsetIndex);
@@ -149,7 +149,7 @@ namespace Ragdoll
 
         public void Clear()
         {
-            var clearEvent = Profiler.Event();
+            using var clearEvent = Profiler.Event();
             foreach (var layer in mLayers)
             {
                 layer.OnPopped();

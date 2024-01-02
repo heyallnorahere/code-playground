@@ -18,11 +18,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NETCore.Platforms" Version="$(MicrosoftNETCorePlatformsVersion)" />
     <PackageReference Include="Newtonsoft.Json" Version="$(NewtonsoftJsonVersion)" />
-<<<<<<< HEAD
     <PackageReference Include="Varena" Version="$(VarenaVersion)" />
-=======
     <PackageReference Include="Tracy-CSharp" Version="$(TracyCSharpVersion)" />
->>>>>>> 8ad2601 (replace optick with tracy (checkpoint))
 
     <InternalsVisibleTo Include="CodePlayground.Runtime" />
   </ItemGroup>

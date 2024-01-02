@@ -62,7 +62,7 @@ namespace Ragdoll
         private void OnInputReady() => InitializeImGui();
         private void InitializeImGui()
         {
-            var initializeEvent = Profiler.Event();
+            using var initializeEvent = Profiler.Event();
 
             var graphicsContext = GraphicsContext;
             var inputContext = InputContext;

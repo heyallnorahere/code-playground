@@ -123,7 +123,7 @@ namespace Ragdoll
 
         public void RenderMesh(IDeviceBuffer vertices, IDeviceBuffer indices, IPipeline pipeline, int indexOffset, int indexCount, DeviceBufferIndexType indexType, BufferMapCallback? pushConstantCallback = null)
         {
-            using var renderEvent = Profiler.GPUEvent(mFrameInfo.CommandList, "Render mesh");
+            using var renderEvent = Profiler.GPUEvent(mFrameInfo.CommandList);
             using var cpuEvent = Profiler.Event();
             
             if (mFrameInfo.RenderInfo is null)

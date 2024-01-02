@@ -28,7 +28,7 @@ namespace CodePlayground
 
         public bool Modify<U>(RegistryHandleModifyCallback<U> callback)
         {
-            using var modifyEvent = OptickMacros.Event(category: Category.Scene);
+            using var modifyEvent = Profiler.Event();
 
             if (*mPointer is not U argument)
             {
@@ -43,7 +43,7 @@ namespace CodePlayground
 
         void IRegistryHandle.Modify(Action<object> callback)
         {
-            using var modifyEvent = OptickMacros.Event(category: Category.Scene);
+            using var modifyEvent = Profiler.Event();
 
             ref T reference = ref Unsafe.AsRef<T>(mPointer);
             object data = reference;
@@ -86,7 +86,7 @@ namespace CodePlayground
         IRegistryHandle IRegistryComponentSystem.Add(ulong entity, object data) => Add(entity, (T)data);
         public unsafe RegistryHandle<T> Add(ulong entity, T data)
         {
-            using var addEvent = OptickMacros.Event(category: Category.Scene);
+            using var addEvent = Profiler.Event();
 
             if (!mFreeIndices.TryDequeue(out nint address))
             {
@@ -106,7 +106,7 @@ namespace CodePlayground
         IRegistryHandle IRegistryComponentSystem.Get(ulong entity) => Get(entity);
         public unsafe RegistryHandle<T> Get(ulong entity)
         {
-            using var getEvent = OptickMacros.Event(category: Category.Scene);
+            using var getEvent = Profiler.Event();
 
             nint pointer = mComponents[entity];
             return new RegistryHandle<T>((T*)pointer);
@@ -126,7 +126,7 @@ namespace CodePlayground
 
         public unsafe bool TryGet(ulong entity, out RegistryHandle<T> handle)
         {
-            using var tryGetEvent = OptickMacros.Event(category: Category.Scene);
+            using var tryGetEvent = Profiler.Event();
 
             if (!mComponents.TryGetValue(entity, out nint address))
             {
@@ -140,7 +140,7 @@ namespace CodePlayground
 
         public bool Remove(ulong entity)
         {
-            using var removeEvent = OptickMacros.Event(category: Category.Scene);
+            using var removeEvent = Profiler.Event();
 
             if (!mComponents.TryGetValue(entity, out nint address))
             {

@@ -39,7 +39,7 @@ namespace CodePlayground
         public string Name { set; }
 
         public void Collect(object commandList);
-        public Action? BeginEvent(object commandList, ProfilerColor color, ulong sourceLocation);
+        public Action? BeginEvent(object commandList, ulong sourceLocation);
     }
 
     /// <summary>
@@ -48,6 +48,7 @@ namespace CodePlayground
     public static class Profiler
     {
         private static readonly Dictionary<string, Tuple<CString, CString>> sAllocDict;
+        private static readonly Dictionary<string, CString> sStringDict;
         private static CString sFrameName;
         private static IGPUProfiler? sGPUProfiler;
         private static byte sContextCounter;
@@ -55,6 +56,7 @@ namespace CodePlayground
         static Profiler()
         {
             sAllocDict = new Dictionary<string, Tuple<CString, CString>>();
+            sStringDict = new Dictionary<string, CString>();
 
             sFrameName = default;
             sGPUProfiler = null;
@@ -79,9 +81,19 @@ namespace CodePlayground
         public static long GetTime() => Stopwatch.GetTimestamp();
         public static byte ContextCounter() => sContextCounter++;
 
+        public static CString GetString(string data)
+        {
+            if (!sStringDict.TryGetValue(data, out CString result))
+            {
+                sStringDict[data] = result = (CString)data;
+            }
+
+            return result;
+        }
+
         public static void Message(string message)
         {
-            TracyEmitMessage((CString)message, (ulong)message.Length, 0);
+            TracyEmitMessage(GetString(message), (ulong)message.Length, 0);
         }
 
         // i had absolutely no idea these attributes existed
@@ -92,7 +104,7 @@ namespace CodePlayground
 
             if (!string.IsNullOrEmpty(zoneName))
             {
-                TracyEmitZoneName(context, (CString)zoneName, (ulong)zoneName.Length);
+                TracyEmitZoneName(context, GetString(zoneName), (ulong)zoneName.Length);
             }
 
             if (color != default)
@@ -103,10 +115,10 @@ namespace CodePlayground
             return new ProfilerScope(() => TracyEmitZoneEnd(context));
         }
 
-        public static ProfilerScope GPUEvent(object commandList, [CallerMemberName] string functionName = "", ProfilerColor color = default, [CallerFilePath] string path = "", [CallerLineNumber] int lineNumber = 0)
+        public static ProfilerScope GPUEvent(object commandList, [CallerMemberName] string functionName = "",[CallerFilePath] string path = "", [CallerLineNumber] int lineNumber = 0)
         {
             ulong location = SourceLocation(functionName, path, lineNumber);
-            var callback = sGPUProfiler?.BeginEvent(commandList, color, location);
+            var callback = sGPUProfiler?.BeginEvent(commandList, location);
 
             return new ProfilerScope(callback);
         }
@@ -145,7 +157,14 @@ namespace CodePlayground
                 pair.Item2.Dispose();
             }
 
+            foreach (var data in sStringDict.Values)
+            {
+                data.Dispose();
+            }
+
             sAllocDict.Clear();
+            sStringDict.Clear();
+
             sFrameName = default;
         }
     }

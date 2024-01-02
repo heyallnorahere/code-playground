@@ -964,6 +964,7 @@ namespace Ragdoll.Layers
         #endregion
 
         public Scene Scene => mScene!;
+        public bool Attached => mAttached;
 
         private ulong mSelectedEntity;
         private Scene? mScene;

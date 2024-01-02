@@ -117,42 +117,6 @@ namespace CodePlayground
             // nothing
         }
 
-<<<<<<< HEAD
-        protected void InitializeOptick(bool debug = false)
-        {
-            StateCallback callback = OnStateChanged;
-            OptickImports.SetStateChangedCallback(callback);
-            OptickMacros.IsDebug = debug;
-
-            mOptickCallbackHandle?.Free();
-            mOptickCallbackHandle = GCHandle.Alloc(callback);
-
-            mOptickApp ??= new OptickApp(Title);
-        }
-
-        private bool OnStateChanged(State state)
-        {
-            OptickStateChanged?.Invoke(state);
-            return true;
-        }
-
-        protected void ShutdownOptick()
-        {
-            mOptickApp?.Dispose();
-            mOptickCallbackHandle?.Free();
-
-            if (mOptickApp is not null)
-            {
-                OptickMacros.Shutdown();
-            }
-
-            mOptickApp = null;
-            mOptickCallbackHandle = null;
-        }
-
-        public event Action<State>? OptickStateChanged;
-=======
->>>>>>> 8ad2601 (replace optick with tracy (checkpoint))
         public string Title { get; internal set; }
         public Version Version { get; internal set; }
         public abstract bool IsRunning { get; }

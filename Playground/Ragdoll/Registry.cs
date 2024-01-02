@@ -1,5 +1,4 @@
 ﻿using CodePlayground;
-using Optick.NET;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -74,7 +73,7 @@ namespace Ragdoll
 
         public ulong New()
         {
-            using var newEvent = OptickMacros.Event();
+            using var newEvent = Profiler.Event();
 
             VerifyUnlocked();
             ulong id = ++mCurrentID;
@@ -86,7 +85,7 @@ namespace Ragdoll
         public bool Exists(ulong id) => mEntities.ContainsKey(id);
         public void Destroy(ulong id)
         {
-            using var destroyEvent = OptickMacros.Event();
+            using var destroyEvent = Profiler.Event();
 
             VerifyUnlocked();
             if (!mEntities.ContainsKey(id))
@@ -104,7 +103,7 @@ namespace Ragdoll
 
         public IEnumerable<object> View(ulong id)
         {
-            using var viewEvent = OptickMacros.Event();
+            using var viewEvent = Profiler.Event();
 
             if (!mEntities.TryGetValue(id, out ulong flags))
             {
@@ -128,7 +127,7 @@ namespace Ragdoll
 
         public IEnumerable<ulong> View(params Type[] types)
         {
-            using var viewEvent = OptickMacros.Event();
+            using var viewEvent = Profiler.Event();
 
             ulong mask = 0;
             foreach (var type in types)
@@ -158,7 +157,7 @@ namespace Ragdoll
         public bool Has<T>(ulong id) where T : class => Has(id, typeof(T));
         public bool Has(ulong id, Type type)
         {
-            using var hasEvent = OptickMacros.Event();
+            using var hasEvent = Profiler.Event();
 
             if (!mEntities.TryGetValue(id, out ulong flags))
             {
@@ -176,7 +175,7 @@ namespace Ragdoll
 
         public bool TryGet<T>(ulong id, [NotNullWhen(true)] out T? component) where T : class
         {
-            using var tryGetEvent = OptickMacros.Event();
+            using var tryGetEvent = Profiler.Event();
 
             if (TryGet(id, typeof(T), out object? componentObject))
             {
@@ -190,7 +189,7 @@ namespace Ragdoll
 
         public bool TryGet(ulong id, Type type, [NotNullWhen(true)] out object? component)
         {
-            using var tryGetEvent = OptickMacros.Event();
+            using var tryGetEvent = Profiler.Event();
 
             if (!mComponentTypeIDs.TryGetValue(type, out int bit))
             {
@@ -210,7 +209,7 @@ namespace Ragdoll
         public T Get<T>(ulong id) where T : class => (T)Get(id, typeof(T));
         public object Get(ulong id, Type type)
         {
-            using var getEvent = OptickMacros.Event();
+            using var getEvent = Profiler.Event();
 
             if (TryGet(id, type, out object? component))
             {
@@ -231,7 +230,7 @@ namespace Ragdoll
 
         public void Add(ulong id, object component)
         {
-            using var addEvent = OptickMacros.Event();
+            using var addEvent = Profiler.Event();
 
             VerifyUnlocked();
             if (!mEntities.TryGetValue(id, out ulong flags))
@@ -269,7 +268,7 @@ namespace Ragdoll
 
         public void Remove(ulong id, Type type)
         {
-            using var removeEvent = OptickMacros.Event();
+            using var removeEvent = Profiler.Event();
 
             VerifyUnlocked();
             if (!mComponentTypeIDs.TryGetValue(type, out int bit))

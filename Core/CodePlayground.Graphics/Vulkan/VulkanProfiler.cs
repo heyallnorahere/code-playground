@@ -80,7 +80,7 @@ namespace CodePlayground.Graphics.Vulkan
             return query;
         }
 
-        public Action? BeginEvent(object commandList, ProfilerColor color, ulong sourceLocation)
+        public Action? BeginEvent(object commandList, ulong sourceLocation)
         {
             if (commandList is not VulkanCommandBuffer commandBuffer)
             {

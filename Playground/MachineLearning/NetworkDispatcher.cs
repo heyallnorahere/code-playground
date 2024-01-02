@@ -188,7 +188,7 @@ namespace MachineLearning
             AssertInitialized();
 
             using var forwardPropagationEvent = Profiler.Event();
-            using var dispatchEvent = Profiler.GPUEvent(commandList, "Forward propagation");
+            using var dispatchEvent = Profiler.GPUEvent(commandList);
 
             int inputCount = buffers.LayerSizes[0];
             int neuronTotal = buffers.LayerSizes.Aggregate((a, b) => a + b);
@@ -265,7 +265,7 @@ namespace MachineLearning
             AssertInitialized();
 
             using var backPropagationEvent = Profiler.Event();
-            using var dispatchEvent = Profiler.GPUEvent(commandList, "Back propagation");
+            using var dispatchEvent = Profiler.GPUEvent(commandList);
 
             int outputCount = buffers.LayerSizes[^1];
             if (expected.Length != buffers.PassCount)
@@ -340,7 +340,7 @@ namespace MachineLearning
             AssertInitialized();
 
             using var deltaCompositionEvent = Profiler.Event();
-            using var gpuEvent = Profiler.GPUEvent(commandList, "Delta composition");
+            using var gpuEvent = Profiler.GPUEvent(commandList);
 
             var pipeline = mLibrary.LoadPipeline<DeltaComposition>(new PipelineDescription
             {
