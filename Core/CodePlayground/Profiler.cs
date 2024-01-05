@@ -47,7 +47,6 @@ namespace CodePlayground
     /// </summary>
     public static class Profiler
     {
-        private static readonly Dictionary<string, Tuple<CString, CString>> sAllocDict;
         private static readonly Dictionary<string, CString> sStringDict;
         private static CString sFrameName;
         private static IGPUProfiler? sGPUProfiler;
@@ -55,7 +54,6 @@ namespace CodePlayground
 
         static Profiler()
         {
-            sAllocDict = new Dictionary<string, Tuple<CString, CString>>();
             sStringDict = new Dictionary<string, CString>();
 
             sFrameName = default;
@@ -127,15 +125,7 @@ namespace CodePlayground
 
         private static ulong SourceLocation(string functionName, string path, int lineNumber)
         {
-            if (!sAllocDict.TryGetValue(functionName, out var tuple))
-            {
-                var source = (CString)path;
-                var function = (CString)functionName;
-
-                sAllocDict[functionName] = tuple = new Tuple<CString, CString>(source, function);
-            }
-
-            return TracyAllocSrcloc((uint)lineNumber, tuple.Item1, (ulong)path.Length, tuple.Item2, (ulong)functionName.Length);
+            return TracyAllocSrcloc((uint)lineNumber, GetString(path), (ulong)path.Length, GetString(functionName), (ulong)functionName.Length);
         }
 
         public static void ProfileFrame(string name)
@@ -151,20 +141,12 @@ namespace CodePlayground
         public static void Shutdown()
         {
             CleanupGPUProfiler();
-            foreach (var pair in sAllocDict.Values)
-            {
-                pair.Item1.Dispose();
-                pair.Item2.Dispose();
-            }
-
             foreach (var data in sStringDict.Values)
             {
                 data.Dispose();
             }
 
-            sAllocDict.Clear();
             sStringDict.Clear();
-
             sFrameName = default;
         }
     }

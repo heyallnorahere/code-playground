@@ -62,7 +62,7 @@ namespace CodePlayground.Graphics.Vulkan
         {
             set
             {
-                TracyEmitGpuContextName(new TracyGpuContextNameData
+                TracyEmitGpuContextNameSerial(new TracyGpuContextNameData
                 {
                     Context = mContext,
                     Name = value

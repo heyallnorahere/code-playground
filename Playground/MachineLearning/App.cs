@@ -151,18 +151,21 @@ namespace MachineLearning
             var network = new Network(new int[]
             {
                     dataset.InputCount, // input
-                    64, // arbitrary hidden layer sizes
-                    16,
+                    256,
+                    128,
+                    64,
+                    32,
                     dataset.OutputCount
             });
 
-            /*
             network.SetActivationFunctions(new ActivationFunction[]
             {
                 ActivationFunction.LeakyReLU,
                 ActivationFunction.LeakyReLU,
+                ActivationFunction.LeakyReLU,
+                ActivationFunction.LeakyReLU,
                 ActivationFunction.NormalizedHyperbolicTangent
-            });*/
+            });
 
             return network;
         }

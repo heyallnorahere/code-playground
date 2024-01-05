@@ -3,6 +3,7 @@ using Silk.NET.Vulkan.Extensions.NV;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 
 namespace CodePlayground.Graphics.Vulkan
 {
@@ -76,17 +77,31 @@ namespace CodePlayground.Graphics.Vulkan
         {
             using var beginEvent = Profiler.Event();
 
+            if (mRecording)
+            {
+                return;
+            }
+
             var beginInfo = VulkanUtilities.Init<CommandBufferBeginInfo>();
             var api = VulkanContext.API;
             api.BeginCommandBuffer(mBuffer, beginInfo).Assert();
+
+            mRecording = true;
         }
 
         public void End()
         {
             using var endEvent = Profiler.Event();
 
+            if (!mRecording)
+            {
+                return;
+            }
+
             var api = VulkanContext.API;
             api.EndCommandBuffer(mBuffer).Assert();
+
+            mRecording = false;
         }
 
         public unsafe void ExecutionBarrier()
