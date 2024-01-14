@@ -1,4 +1,5 @@
 using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.EXT;
 using System;
 using System.Runtime.InteropServices;
 
@@ -30,6 +31,21 @@ namespace CodePlayground.Graphics.Vulkan
 
             long tgpu;
             api.GetQueryPoolResults(mDevice.Device, mQueryPool, 0, 1, sizeof(long), &tgpu, sizeof(long), QueryResultFlags.Result64Bit | QueryResultFlags.ResultWaitBit).Assert();
+
+            mHostReset = api.TryGetDeviceExtension<ExtHostQueryReset>(mDevice.PhysicalDevice.Instance, mDevice.Device, out _);
+            if (Application.Instance is GraphicsApplication graphicsApp && graphicsApp.GraphicsContext is VulkanContext context)
+            {
+                var version = context.Version;
+                if (version >= new Version(1, 2, 0))
+                {
+                    var features12 = VulkanUtilities.Init<PhysicalDeviceVulkan12Features>();
+                    var features = VulkanUtilities.Init<PhysicalDeviceFeatures2>();
+                    features.SetNext(ref features12, true);
+
+                    mDevice.PhysicalDevice.GetFeatures2(ref features);
+                    mHostReset = features12.HostQueryReset;
+                }
+            }
 
             mDevice.PhysicalDevice.GetProperties(out PhysicalDeviceProperties properties);
             TracyEmitGpuNewContextSerial(new TracyGpuNewContextData
@@ -101,14 +117,9 @@ namespace CodePlayground.Graphics.Vulkan
             });
         }
 
-        public void Collect(object commandList)
+        public void Collect()
         {
             using var collectEvent = Profiler.Event(color: ProfilerColor.Red4);
-            if (commandList is not VulkanCommandBuffer commandBuffer)
-            {
-                throw new ArgumentException("No Vulkan command buffer passed!");
-            }
-
             if (mCurrentQuery == mPreviousQuery)
             {
                 return;
@@ -162,7 +173,22 @@ namespace CodePlayground.Graphics.Vulkan
                 });
             }
 
-            api.CmdResetQueryPool(commandBuffer.Buffer, mQueryPool, wrappedTail, timestampCount);
+            if (mHostReset)
+            {
+                api.ResetQueryPool(mDevice.Device, mQueryPool, wrappedTail, timestampCount);
+            }
+            else
+            {
+                var queue = mDevice.GetQueue(CommandQueueFlags.Graphics);
+                var commandBuffer = queue.Release();
+
+                commandBuffer.Begin();
+                api.CmdResetQueryPool(commandBuffer.Buffer, mQueryPool, wrappedTail, timestampCount);
+                commandBuffer.End();
+
+                queue.Submit(commandBuffer);
+            }
+
             mPreviousQuery += timestampCount;
         }
 
@@ -212,5 +238,6 @@ namespace CodePlayground.Graphics.Vulkan
         private readonly QueryPool mQueryPool;
         private readonly uint mQueryCount;
         private readonly byte mContext;
+        private readonly bool mHostReset;
     }
 }

@@ -1,11 +1,8 @@
 ﻿using Silk.NET.Maths;
 using Silk.NET.Vulkan;
-using Silk.NET.Vulkan.Extensions.EXT;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace CodePlayground.Graphics.Vulkan
@@ -39,7 +36,21 @@ namespace CodePlayground.Graphics.Vulkan
         public void GetFeatures(out PhysicalDeviceFeatures features)
         {
             var api = VulkanContext.API;
-            features = api.GetPhysicalDeviceFeatures(Device);
+            api.GetPhysicalDeviceFeatures(Device, out features);
+        }
+
+        public unsafe void GetFeatures2(ref PhysicalDeviceFeatures2 features)
+        {
+            fixed (PhysicalDeviceFeatures2* ptr = &features)
+            {
+                GetFeatures2(ptr);
+            }
+        }
+
+        public unsafe void GetFeatures2(PhysicalDeviceFeatures2* features)
+        {
+            var api = VulkanContext.API;
+            api.GetPhysicalDeviceFeatures2(Device, features);
         }
 
         public void GetFormatProperties(Format format, out FormatProperties properties)
@@ -197,7 +208,12 @@ namespace CodePlayground.Graphics.Vulkan
                 {
                     fixed (DeviceQueueCreateInfo* queuePtr = queueInfo)
                     {
-                        PhysicalDevice.GetFeatures(out PhysicalDeviceFeatures features);
+                        var features11 = VulkanUtilities.Init<PhysicalDeviceVulkan11Features>();
+                        var features12 = VulkanUtilities.Init<PhysicalDeviceVulkan12Features>();
+                        var features13 = VulkanUtilities.Init<PhysicalDeviceVulkan13Features>();
+                        var features2 = VulkanUtilities.Init<PhysicalDeviceFeatures2>();
+
+                        mPhysicalDevice.GetFeatures(out PhysicalDeviceFeatures features);
                         var createInfo = VulkanUtilities.Init<DeviceCreateInfo>() with
                         {
                             QueueCreateInfoCount = (uint)queueInfo.Length,
@@ -208,6 +224,27 @@ namespace CodePlayground.Graphics.Vulkan
                             PpEnabledExtensionNames = extensions,
                             PEnabledFeatures = &features
                         };
+
+                        if (Application.Instance is GraphicsApplication graphicsApp && graphicsApp.GraphicsContext is VulkanContext context)
+                        {
+                            var version = context.Version;
+                            if (version >= new Version(1, 1, 0))
+                            {
+                                features2.SetNext(ref features11, true);
+                                createInfo.SetNext(ref features2);
+                                if (version >= new Version(1, 2, 0))
+                                {
+                                    features2.SetNext(ref features12, true);
+                                    if (version >= new Version(1, 3, 0))
+                                    {
+                                        features2.SetNext(ref features13, true);
+                                    }
+                                }
+
+                                mPhysicalDevice.GetFeatures2(ref features2);
+                                createInfo.PEnabledFeatures = null;
+                            }
+                        }
 
                         fixed (Device* devicePtr = &mDevice)
                         {

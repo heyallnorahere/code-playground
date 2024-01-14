@@ -37,10 +37,6 @@ namespace Ragdoll
 
         private void OnLoad()
         {
-#if !DEBUG
-            Profiler.IsOptickEnabled = false;
-#endif
-
             var context = CreateGraphicsContext();
             var swapchain = context.Swapchain;
 

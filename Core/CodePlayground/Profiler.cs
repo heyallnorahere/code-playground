@@ -38,7 +38,7 @@ namespace CodePlayground
     {
         public string Name { set; }
 
-        public void Collect(object commandList);
+        public void Collect();
         public Action? BeginEvent(object commandList, ulong sourceLocation);
     }
 
@@ -113,7 +113,7 @@ namespace CodePlayground
             return new ProfilerScope(() => TracyEmitZoneEnd(context));
         }
 
-        public static ProfilerScope GPUEvent(object commandList, [CallerMemberName] string functionName = "",[CallerFilePath] string path = "", [CallerLineNumber] int lineNumber = 0)
+        public static ProfilerScope GPUEvent(object commandList, [CallerMemberName] string functionName = "", [CallerFilePath] string path = "", [CallerLineNumber] int lineNumber = 0)
         {
             ulong location = SourceLocation(functionName, path, lineNumber);
             var callback = sGPUProfiler?.BeginEvent(commandList, location);
@@ -121,7 +121,7 @@ namespace CodePlayground
             return new ProfilerScope(callback);
         }
 
-        public static void CollectCommandList(object commandList) => sGPUProfiler?.Collect(commandList);
+        public static void CollectTimestamps() => sGPUProfiler?.Collect();
 
         private static ulong SourceLocation(string functionName, string path, int lineNumber)
         {

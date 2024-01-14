@@ -278,9 +278,7 @@ namespace CodePlayground.Graphics
                         var queue = device.GetQueue(CommandQueueFlags.Graphics);
                         var commandList = queue.Release();
 
-                        commandList.Begin();
-                        Profiler.CollectCommandList(commandList);
-                        
+                        commandList.Begin();                        
                         Render?.Invoke(new FrameRenderInfo
                         {
                             Delta = delta,
@@ -297,6 +295,7 @@ namespace CodePlayground.Graphics
             }
 
             Profiler.ProfileFrame("Frame");
+            Profiler.CollectTimestamps();
         }
 
         public IGraphicsContext CreateGraphicsContext()
@@ -335,9 +334,10 @@ namespace CodePlayground.Graphics
             }
 
             OnContextCreation(context);
-            context.Initialize(mView, this);
 
             mGraphicsContext = context;
+            context.Initialize(mView, this);
+
             return context;
         }
 

@@ -809,6 +809,7 @@ namespace CodePlayground.Graphics.Vulkan
         public VulkanDevice Device => mDevice!;
         public VulkanSwapchain? Swapchain => mSwapchain;
         public VulkanMemoryAllocator Allocator => mAllocator!;
+        public Version Version => mVulkanVersion!;
 
         public bool FlipUVs => true;
         public bool LeftHanded => true;
