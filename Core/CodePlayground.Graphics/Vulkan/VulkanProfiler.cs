@@ -81,7 +81,7 @@ namespace CodePlayground.Graphics.Vulkan
                 TracyEmitGpuContextNameSerial(new TracyGpuContextNameData
                 {
                     Context = mContext,
-                    Name = value
+                    _Name = Profiler.GetString(value)
                 });
             }
         }
@@ -103,7 +103,7 @@ namespace CodePlayground.Graphics.Vulkan
                 return null;
             }
 
-            TracyEmitGpuZoneBeginSerial(new TracyGpuZoneBeginData
+            TracyEmitGpuZoneBeginAllocSerial(new TracyGpuZoneBeginData
             {
                 Srcloc = sourceLocation,
                 QueryId = (ushort)WriteTimestamp(commandBuffer),

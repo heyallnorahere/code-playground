@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text;
+using Varena;
 
 using static Tracy.PInvoke;
 
@@ -47,6 +49,7 @@ namespace CodePlayground
     /// </summary>
     public static class Profiler
     {
+        private static VirtualArray<byte> sStringAllocator;
         private static readonly Dictionary<string, CString> sStringDict;
         private static CString sFrameName;
         private static IGPUProfiler? sGPUProfiler;
@@ -55,6 +58,7 @@ namespace CodePlayground
         static Profiler()
         {
             sStringDict = new Dictionary<string, CString>();
+            sStringAllocator = Application.ArenaManager.CreateArray<byte>("Profiler strings", (nuint)Math.Pow(2, 10)); // 2 kb
 
             sFrameName = default;
             sGPUProfiler = null;
@@ -79,11 +83,17 @@ namespace CodePlayground
         public static long GetTime() => Stopwatch.GetTimestamp();
         public static byte ContextCounter() => sContextCounter++;
 
-        public static CString GetString(string data)
+        public static unsafe CString GetString(string data)
         {
             if (!sStringDict.TryGetValue(data, out CString result))
             {
-                sStringDict[data] = result = (CString)data;
+                var bytes = Encoding.ASCII.GetBytes(data);
+                var span = sStringAllocator.AllocateRange(data.Length + 1);
+                bytes.CopyTo(span);
+                span[^1] = 0;
+
+                void* ptr = Unsafe.AsPointer(ref span[0]);
+                sStringDict[data] = result = new CString((byte*)ptr);
             }
 
             return result;
@@ -113,9 +123,9 @@ namespace CodePlayground
             return new ProfilerScope(() => TracyEmitZoneEnd(context));
         }
 
-        public static ProfilerScope GPUEvent(object commandList, [CallerMemberName] string functionName = "", [CallerFilePath] string path = "", [CallerLineNumber] int lineNumber = 0)
+        public static ProfilerScope GPUEvent(object commandList, string name, [CallerMemberName] string functionName = "", [CallerFilePath] string path = "", [CallerLineNumber] int lineNumber = 0)
         {
-            ulong location = SourceLocation(functionName, path, lineNumber);
+            ulong location = SourceLocation(functionName, path, lineNumber, name);
             var callback = sGPUProfiler?.BeginEvent(commandList, location);
 
             return new ProfilerScope(callback);
@@ -123,9 +133,20 @@ namespace CodePlayground
 
         public static void CollectTimestamps() => sGPUProfiler?.Collect();
 
-        private static ulong SourceLocation(string functionName, string path, int lineNumber)
+        private static ulong SourceLocation(string functionName, string path, int lineNumber, string? name = null)
         {
-            return TracyAllocSrcloc((uint)lineNumber, GetString(path), (ulong)path.Length, GetString(functionName), (ulong)functionName.Length);
+            var pathString = GetString(path);
+            var functionString = GetString(functionName);
+
+            if (string.IsNullOrEmpty(name))
+            {
+                return TracyAllocSrcloc((uint)lineNumber, pathString, (ulong)path.Length, functionString, (ulong)functionName.Length);
+            }
+            else
+            {
+                var nameString = GetString(name);
+                return TracyAllocSrclocName((uint)lineNumber, pathString, (ulong)path.Length, functionString, (ulong)functionName.Length, nameString, (ulong)name.Length);
+            }
         }
 
         public static void ProfileFrame(string name)
@@ -141,11 +162,8 @@ namespace CodePlayground
         public static void Shutdown()
         {
             CleanupGPUProfiler();
-            foreach (var data in sStringDict.Values)
-            {
-                data.Dispose();
-            }
 
+            sStringAllocator.Reset();
             sStringDict.Clear();
             sFrameName = default;
         }
