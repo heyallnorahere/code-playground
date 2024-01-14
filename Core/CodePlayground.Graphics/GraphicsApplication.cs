@@ -288,6 +288,7 @@ namespace CodePlayground.Graphics
                             CurrentImage = swapchain.CurrentFrame
                         });
 
+                        Profiler.CollectTimestamps();
                         commandList.End();
                         swapchain.Present(queue, commandList);
                     }
@@ -295,7 +296,6 @@ namespace CodePlayground.Graphics
             }
 
             Profiler.ProfileFrame("Frame");
-            Profiler.CollectTimestamps();
         }
 
         public IGraphicsContext CreateGraphicsContext()
