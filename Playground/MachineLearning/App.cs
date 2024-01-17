@@ -1017,7 +1017,7 @@ namespace MachineLearning
                                 {
                                     Size = new Size(mnist.Width, mnist.Height),
                                     ImageType = DeviceImageType.Type2D,
-                                    Format = DeviceImageFormat.R8_UNORM,
+                                    Format = DeviceImageFormat.R32_SFLOAT,
                                     Usage = DeviceImageUsageFlags.CopySource | DeviceImageUsageFlags.CopyDestination | DeviceImageUsageFlags.Render,
                                     MipLevels = 1
                                 });
@@ -1031,7 +1031,7 @@ namespace MachineLearning
                             doodleImage.TransitionLayout(commandList, DeviceImageLayoutName.CopySource, doodleImage.Layout);
 
                             frame.StagingImage.TransitionLayout(commandList, frame.StagingImage.Layout, DeviceImageLayoutName.CopySource);
-                            frame.StagingImage.CopyToBuffer(commandList, frame.BufferData.ActivationOffset, frame.BufferData.ActivationStride, frame.BufferData.ActivationBuffer, DeviceImageLayoutName.CopySource);
+                            frame.StagingImage.CopyToBuffer(commandList, frame.BufferData.ActivationOffset, frame.BufferData.ActivationStride / Marshal.SizeOf<float>(), frame.BufferData.ActivationBuffer, DeviceImageLayoutName.CopySource);
                             frame.StagingImage.TransitionLayout(commandList, DeviceImageLayoutName.CopySource, frame.StagingImage.Layout);
 
                             if (frame.Transition)

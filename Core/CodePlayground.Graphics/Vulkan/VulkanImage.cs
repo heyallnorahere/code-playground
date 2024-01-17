@@ -280,6 +280,7 @@ namespace CodePlayground.Graphics.Vulkan
                     DeviceImageFormat.R8_UNORM => Format.R8Unorm,
                     DeviceImageFormat.R16_UNORM => Format.R16Unorm,
                     DeviceImageFormat.RG16_UNORM => Format.R16G16Unorm,
+                    DeviceImageFormat.R32_SFLOAT => Format.R32Sfloat,
                     _ => throw new ArgumentException("Invalid image format!")
                 };
             }

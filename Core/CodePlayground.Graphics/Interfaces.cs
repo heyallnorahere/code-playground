@@ -79,7 +79,8 @@ namespace CodePlayground.Graphics
 
         R8_UNORM,
         R16_UNORM,
-        RG16_UNORM
+        RG16_UNORM,
+        R32_SFLOAT
     }
 
     public enum DeviceImageLayoutName
