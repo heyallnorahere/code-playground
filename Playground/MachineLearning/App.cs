@@ -43,6 +43,7 @@ namespace MachineLearning
         public DispatcherBufferData BufferData;
         public IDeviceImage? StagingImage;
         public IFence Fence;
+        public IDisposable? Semaphore;
         public bool Transition;
     }
 
@@ -374,6 +375,7 @@ namespace MachineLearning
                     frame.BufferData.Dispose();
                     frame.Fence.Dispose();
                     frame.StagingImage?.Dispose();
+                    frame.Semaphore?.Dispose();
                 }
             }
 
@@ -928,7 +930,12 @@ namespace MachineLearning
             {
                 mDoodleHovered = true;
                 DoodleTool? tool = null;
-                if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
+
+                if (ImGui.IsKeyPressed(ImGuiKey.C))
+                {
+                    tool = DoodleTool.Clear;
+                }
+                else if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
                 {
                     tool = DoodleTool.Brush;
                 }
@@ -1033,7 +1040,19 @@ namespace MachineLearning
                                 frame.Transition = false;
                             }
 
+                            commandList.ExecutionBarrier();
                             NetworkDispatcher.ForwardPropagation(commandList, frame.BufferData, null);
+                        }
+
+                        frame.Semaphore ??= context.CreateSemaphore();
+                        commandList.AddSemaphore(frame.Semaphore, SemaphoreUsage.Signal);
+
+                        int previousFrameIndex = (mDoodleFrame > 0 ? mDoodleFrame : doodleFrameCount) - 1;
+                        ref var previousFrame = ref mDoodleBuffers[previousFrameIndex];
+
+                        if (previousFrame.Semaphore is not null)
+                        {
+                            commandList.AddSemaphore(previousFrame.Semaphore, SemaphoreUsage.Wait);
                         }
 
                         frame.Fence.Reset();

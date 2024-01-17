@@ -100,7 +100,9 @@ namespace MachineLearning
         {
             var queue = mContext.Device.GetQueue(CommandQueueFlags.Compute);
             var commandList = queue.Release();
-            var buffers = mState.Frames[mState.CurrentFrame - 1].BufferData;
+
+            int previousFrame = (mState.CurrentFrame > 0 ? mState.CurrentFrame : mState.Frames.Length) - 1;
+            var buffers = mState.Frames[previousFrame].BufferData;
 
             int inputCount = buffers.LayerSizes[0];
             int outputCount = buffers.LayerSizes[^1];
