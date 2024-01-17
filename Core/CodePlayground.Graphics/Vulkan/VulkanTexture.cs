@@ -75,6 +75,14 @@ namespace CodePlayground.Graphics.Vulkan
             Rebind();
         }
 
+        public static Filter ParseSamplerFilter(SamplerFilter filter) => filter switch
+        {
+            SamplerFilter.Linear => Filter.Linear,
+            SamplerFilter.Nearest => Filter.Nearest,
+            SamplerFilter.Cubic => Filter.CubicExt,
+            _ => throw new ArgumentException("Invalid sampler filter!")
+        };
+
         public unsafe void InvalidateSampler()
         {
             using var invalidateEvent = Profiler.Event();
@@ -98,14 +106,7 @@ namespace CodePlayground.Graphics.Vulkan
                 _ => throw new ArgumentException("Invalid address mode!")
             };
 
-            var filter = (SamplerSettings?.Filter ?? default) switch
-            {
-                SamplerFilter.Linear => Filter.Linear,
-                SamplerFilter.Nearest => Filter.Nearest,
-                SamplerFilter.Cubic => Filter.CubicExt,
-                _ => throw new ArgumentException("Invalid sampler filter!")
-            };
-
+            var filter = ParseSamplerFilter(SamplerSettings?.Filter ?? default);
             var createInfo = VulkanUtilities.Init<SamplerCreateInfo>() with
             {
                 MagFilter = filter,

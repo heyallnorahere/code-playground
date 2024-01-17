@@ -1,4 +1,3 @@
-using System.Numerics;
 using CodePlayground.Graphics;
 using CodePlayground.Graphics.Shaders;
 

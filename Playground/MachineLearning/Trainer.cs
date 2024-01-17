@@ -1,5 +1,6 @@
 using CodePlayground;
 using CodePlayground.Graphics;
+using Silk.NET.Vulkan;
 using System;
 using System.Runtime.InteropServices;
 
@@ -19,13 +20,21 @@ namespace MachineLearning
         public float[][] Expected;
     }
 
+    internal struct TrainerFrameData
+    {
+        public DispatcherBufferData BufferData;
+        public IFence Fence;
+        public bool Transition;
+    }
+
     internal struct TrainerState
     {
         public IDataset Data;
         public Network Network;
 
-        public DispatcherBufferData BufferData;
-        public bool Initialized, Transition;
+        public int CurrentFrame;
+        public TrainerFrameData[] Frames;
+        public bool Initialized;
 
         public TrainerBatchData? Batch;
         public int[] ShuffledIndices;
@@ -54,8 +63,6 @@ namespace MachineLearning
             mMinimumAverageCost = -1f;
 
             mContext = context;
-            mFence = mContext.CreateFence(true);
-
             mRNG = new Random();
         }
 
@@ -76,7 +83,6 @@ namespace MachineLearning
                 Update(true);
             }
 
-            mFence.Dispose();
             mDisposed = true;
         }
 
@@ -94,7 +100,7 @@ namespace MachineLearning
         {
             var queue = mContext.Device.GetQueue(CommandQueueFlags.Compute);
             var commandList = queue.Release();
-            var buffers = mState.BufferData;
+            var buffers = mState.Frames[mState.CurrentFrame - 1].BufferData;
 
             int inputCount = buffers.LayerSizes[0];
             int outputCount = buffers.LayerSizes[^1];
@@ -167,13 +173,14 @@ namespace MachineLearning
             }
 
             bool advanceBatch = mState.Batch is null;
-            if (mState.Batch is not null && (wait || mFence.IsSignaled()))
+            var fence = mState.Frames[mState.CurrentFrame].Fence;
+            if (mState.Batch is not null && (wait || fence.IsSignaled()))
             {
                 using var updateBatchEvent = Profiler.Event("Check batch");
-                queue.ReleaseFence(mFence, wait);
+                queue.ReleaseFence(fence, wait);
 
                 var batch = mState.Batch.Value;
-                var confidences = NetworkDispatcher.GetConfidenceValues(mState.BufferData);
+                var confidences = NetworkDispatcher.GetConfidenceValues(mState.Frames[mState.CurrentFrame].BufferData);
 
                 int outputCount = mState.Network.LayerSizes[^1];
                 float scale = 1f / (outputCount * mBatchSize);
@@ -217,6 +224,9 @@ namespace MachineLearning
                 using var advanceBatchEvent = Profiler.Event("Advance batch");
 
                 int newBatchIndex = (mState.Batch?.BatchIndex ?? -1) + 1;
+                mState.CurrentFrame++;
+                mState.CurrentFrame %= mState.Frames.Length;
+
                 if (newBatchIndex >= GetBatchCount(mState.Phase))
                 {
                     switch (mState.Phase)
@@ -292,7 +302,10 @@ namespace MachineLearning
                     imageIndices[i] = index;
                 }
 
-                mFence.Reset();
+                ref var frame = ref mState.Frames[mState.CurrentFrame];
+                fence = frame.Fence;
+                fence.Reset();
+
                 mState.Batch = new TrainerBatchData
                 {
                     BatchIndex = newBatchIndex,
@@ -303,35 +316,39 @@ namespace MachineLearning
                 var commandList = queue.Release();
                 commandList.Begin();
 
-                if (mState.Transition)
+                if (frame.Transition)
                 {
-                    NetworkDispatcher.TransitionImages(commandList, mState.BufferData);
-                    mState.Transition = false;
+                    NetworkDispatcher.TransitionImages(commandList, frame.BufferData);
+                    frame.Transition = false;
                 }
 
-                NetworkDispatcher.ForwardPropagation(commandList, mState.BufferData, inputs);
+                NetworkDispatcher.ForwardPropagation(commandList, frame.BufferData, inputs);
                 if (mState.Phase == DatasetGroup.Training)
                 {
                     commandList.ExecutionBarrier();
-                    NetworkDispatcher.BackPropagation(commandList, mState.BufferData, expectedOutputs);
+                    NetworkDispatcher.BackPropagation(commandList, frame.BufferData, expectedOutputs);
                     commandList.ExecutionBarrier();
-                    NetworkDispatcher.DeltaComposition(commandList, mState.BufferData);
+                    NetworkDispatcher.DeltaComposition(commandList, frame.BufferData);
                 }
 
                 commandList.End();
-                queue.Submit(commandList, fence: mFence);
+                queue.Submit(commandList, fence: fence);
             }
 
             if (!mRunning && mState.Initialized)
             {
                 using var disposeBuffersEvent = Profiler.Event("Dispose buffers");
 
-                // we dont want to trip any validation layers
-                queue.ReleaseFence(mFence, true);
+                foreach (var frameData in mState.Frames)
+                {
+                    // we dont want to trip any validation layers
+                    queue.ReleaseFence(frameData.Fence, true);
 
-                // update network & dispose buffers
-                mState.Network.UpdateNetwork(mState.BufferData.DataBuffer, mState.BufferData.DataStride, mState.BufferData.DataOffset);
-                mState.BufferData.Dispose();
+                    // update network & dispose buffers
+                    mState.Network.UpdateNetwork(frameData.BufferData.DataBuffer, frameData.BufferData.DataStride, frameData.BufferData.DataOffset);
+                    frameData.BufferData.Dispose();
+                    frameData.Fence.Dispose();
+                }
 
                 // reset flags
                 mState.Batch = null;
@@ -413,15 +430,28 @@ namespace MachineLearning
                 indices[i] = i;
             }
 
+            const int frameCount = 3;
+            var frames = new TrainerFrameData[frameCount];
+
+            for (int i = 0; i < frameCount; i++)
+            {
+                frames[i] = new TrainerFrameData
+                {
+                    BufferData = NetworkDispatcher.CreateBuffers(network, mBatchSize, mLearningRate),
+                    Fence = mContext.CreateFence(true),
+                    Transition = true
+                };
+            }
+
             Shuffle(indices);
             mState = new TrainerState
             {
                 Data = dataset,
                 Network = network,
 
-                BufferData = NetworkDispatcher.CreateBuffers(network, mBatchSize, mLearningRate),
+                CurrentFrame = 0,
+                Frames = frames,
                 Initialized = true,
-                Transition = true,
 
                 Batch = null,
                 ShuffledIndices = indices,
@@ -444,7 +474,6 @@ namespace MachineLearning
         }
 
         private readonly IGraphicsContext mContext;
-        private readonly IFence mFence;
 
         private TrainerState mState;
         private int mBatchSize;

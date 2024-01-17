@@ -295,5 +295,30 @@ namespace CodePlayground.Graphics
             var layout = image.GetLayout(currentLayout);
             image.CopyFromBuffer(commandList, source, layout);
         }
+
+        public static void CopyToBuffer(this IDeviceImage image, ICommandList commandList, int bufferOffset, int pixelStride, IDeviceBuffer destination, DeviceImageLayoutName currentLayout)
+        {
+            var layout = image.GetLayout(currentLayout);
+            image.CopyToBuffer(commandList, bufferOffset, pixelStride, destination, layout);
+        }
+
+        public static void BlitImage(this IDeviceImage image, ICommandList commandList, IDeviceImage destination, DeviceImageLayoutName sourceLayout, IDeviceImageLayout destinationLayout, SamplerFilter filter)
+        {
+            var layout = image.GetLayout(sourceLayout);
+            image.BlitImage(commandList, destination, layout, destinationLayout, filter);
+        }
+
+        public static void BlitImage(this IDeviceImage image, ICommandList commandList, IDeviceImage destination, IDeviceImageLayout sourceLayout, DeviceImageLayoutName destinationLayout, SamplerFilter filter)
+        {
+            var layout = image.GetLayout(destinationLayout);
+            image.BlitImage(commandList, destination, sourceLayout, layout, filter);
+        }
+
+        public static void BlitImage(this IDeviceImage image, ICommandList commandList, IDeviceImage destination, DeviceImageLayoutName sourceLayout, DeviceImageLayoutName destinationLayout, SamplerFilter filter)
+        {
+            var sourceLayoutData = image.GetLayout(sourceLayout);
+            var destinationLayoutData = image.GetLayout(destinationLayout);
+            image.BlitImage(commandList, destination, sourceLayoutData, destinationLayoutData, filter);
+        }
     }
 }

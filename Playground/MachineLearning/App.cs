@@ -1,6 +1,8 @@
 using CodePlayground;
 using CodePlayground.Graphics;
 using ImGuiNET;
+using MachineLearning.Shaders;
+using Silk.NET.Maths;
 using SixLabors.ImageSharp;
 using System;
 using System.Collections.Generic;
@@ -28,6 +30,20 @@ namespace MachineLearning
     {
         public ITexture Texture;
         public float[] Outputs, ExpectedOutputs;
+    }
+
+    internal struct DoodleConfidence
+    {
+        public int LabelIndex;
+        public float Confidence;
+    }
+
+    internal struct DoodleFrameData
+    {
+        public DispatcherBufferData BufferData;
+        public IDeviceImage? StagingImage;
+        public IFence Fence;
+        public bool Transition;
     }
 
     [ApplicationTitle("Machine learning test")]
@@ -62,10 +78,12 @@ namespace MachineLearning
         {
             mExistingSemaphores = new Queue<IDisposable>();
             mSignaledSemaphores = new List<IDisposable>();
+            mDoodleConfidence = new List<DoodleConfidence>();
 
             mPassIndex = -1;
             mSelectedImage = 0;
             mInputString = string.Empty;
+            mWantDoodleResults = -1;
 
             // load testing dataset as default
             mSelectedDataset = DatasetGroup.Testing;
@@ -349,6 +367,19 @@ namespace MachineLearning
             mBufferData?.Dispose();
             mTrainer?.Dispose();
 
+            if (mDoodleBuffers is not null)
+            {
+                foreach (var frame in mDoodleBuffers)
+                {
+                    frame.BufferData.Dispose();
+                    frame.Fence.Dispose();
+                    frame.StagingImage?.Dispose();
+                }
+            }
+
+            mDoodledTexture?.Dispose();
+            mDoodlePipeline?.Dispose();
+
             mLibrary?.Dispose();
             GraphicsContext?.Dispose();
         }
@@ -361,6 +392,7 @@ namespace MachineLearning
             DatasetMenu();
             NetworkMenu();
             TrainingMenu();
+            DoodleMenu();
         }
 
         private void RunNeuralNetwork(int[] imageNumbers)
@@ -646,6 +678,7 @@ namespace MachineLearning
 
         private void TrainingMenu()
         {
+            using var trainingEvent = Profiler.Event();
             ImGui.Begin("Training");
 
             bool training = mTrainer!.IsRunning;
@@ -805,6 +838,238 @@ namespace MachineLearning
             ImGui.End();
         }
 
+        private void DoodleMenu()
+        {
+            using var doodleEvent = Profiler.Event();
+            if (mDataset is not MNISTDatabase mnist)
+            {
+                return;
+            }
+
+            const int doodleFrameCount = 3;
+            var context = GraphicsContext!;
+            if (mDoodleBuffers is null)
+            {
+                mDoodleBuffers = new DoodleFrameData[doodleFrameCount];
+                for (int i = 0; i < doodleFrameCount; i++)
+                {
+                    mDoodleBuffers[i] = new DoodleFrameData
+                    {
+                        BufferData = NetworkDispatcher.CreateBuffers(mNetwork!, 1),
+                        Fence = context.CreateFence(true),
+                        Transition = true
+                    };
+                }
+            }
+
+            if (mWantDoodleResults >= 0)
+            {
+                ref var frame = ref mDoodleBuffers[mWantDoodleResults];
+                if (frame.Fence.IsSignaled())
+                {
+                    var confidences = NetworkDispatcher.GetConfidenceValues(frame.BufferData);
+                    var confidence = confidences[0];
+
+                    mDoodleConfidence.Clear();
+                    for (int i = 0; i < confidence.Length; i++)
+                    {
+                        mDoodleConfidence.Add(new DoodleConfidence
+                        {
+                            LabelIndex = i,
+                            Confidence = confidence[i]
+                        });
+                    }
+
+                    mDoodleConfidence.Sort((a, b) => -a.Confidence.CompareTo(b.Confidence));
+                    mWantDoodleResults = -1;
+                }
+            }
+
+            var flags = ImGuiWindowFlags.None;
+            if (mDoodleHovered)
+            {
+                flags |= ImGuiWindowFlags.NoMove;
+            }
+
+            ImGui.Begin("Draw", flags);
+            ImGui.Columns(2, "doodle-and-results");
+
+            var queue = context.Device.GetQueue(CommandQueueFlags.Compute | CommandQueueFlags.Transfer);
+            if (mDoodledTexture is null)
+            {
+                var image = context.CreateDeviceImage(new DeviceImageInfo
+                {
+                    Size = new Size(1024, 1024),
+                    ImageType = DeviceImageType.Type2D,
+                    Usage = DeviceImageUsageFlags.Render | DeviceImageUsageFlags.Storage | DeviceImageUsageFlags.CopySource,
+                    Format = DeviceImageFormat.RGBA8_UNORM,
+                    MipLevels = 1
+                });
+
+                var commandList = queue.Release();
+                commandList.Begin();
+
+                var layout = image.GetLayout(DeviceImageLayoutName.ShaderReadOnly);
+                image.TransitionLayout(commandList, image.Layout, layout);
+                image.Layout = layout;
+
+                commandList.End();
+                queue.Submit(commandList);
+
+                mDoodledTexture = image.CreateTexture(true, new DatasetImageSampler());
+            }
+
+            var available = ImGui.GetContentRegionAvail();
+            var cursorPos = ImGui.GetCursorScreenPos();
+            ImGui.Image(mImGui!.GetTextureID(mDoodledTexture), Vector2.One * available.X);
+
+            mDoodleHovered = false;
+            if (ImGui.IsItemHovered())
+            {
+                mDoodleHovered = true;
+                DoodleTool? tool = null;
+                if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
+                {
+                    tool = DoodleTool.Brush;
+                }
+                else if (ImGui.IsMouseDown(ImGuiMouseButton.Right))
+                {
+                    tool = DoodleTool.Eraser;
+                }
+
+                if (tool is not null)
+                {
+                    ref var frame = ref mDoodleBuffers[mDoodleFrame];
+                    if (queue.ReleaseFence(frame.Fence, false))
+                    {
+                        if (mDoodlePipeline is null)
+                        {
+                            mDoodlePipeline = mLibrary!.LoadPipeline<DoodleShader>(new PipelineDescription
+                            {
+                                Type = PipelineType.Compute,
+                                FrameCount = doodleFrameCount
+                            });
+
+                            mDoodlePipeline.Bind(mDoodledTexture.Image, nameof(DoodleShader.u_Result));
+                        }
+
+                        var io = ImGui.GetIO();
+                        var position = io.MousePos;
+                        var relativePosition = position - cursorPos;
+
+                        var imageSize = mDoodledTexture.Image.Size;
+                        var imagePosition = relativePosition * new Vector2(imageSize.Width, imageSize.Height) / available.X;
+
+                        var commandList = queue.Release();
+                        commandList.Begin();
+
+                        using (Profiler.GPUEvent(commandList, "Doodle stroke"))
+                        {
+                            var doodleImage = mDoodledTexture.Image;
+                            doodleImage.TransitionLayout(commandList, doodleImage.Layout, DeviceImageLayoutName.ComputeStorage);
+
+                            using (Profiler.GPUEvent(commandList, "Doodle shader/write to image"))
+                            {
+                                int groupsX = (int)float.Ceiling((float)doodleImage.Size.Width / DoodleShader.KernelSize);
+                                int groupsY = (int)float.Ceiling((float)doodleImage.Size.Height / DoodleShader.KernelSize);
+
+                                mDoodlePipeline.Bind(commandList, mDoodleFrame);
+                                mDoodlePipeline.PushConstants(commandList, data =>
+                                {
+                                    var view = mDoodlePipeline.ReflectionView;
+                                    var node = view.GetResourceNode(nameof(DoodleShader.u_PushConstants));
+
+                                    if (node is null)
+                                    {
+                                        return;
+                                    }
+
+                                    node.Set(data, nameof(DoodleShader.PushConstants.Tool), tool.Value);
+                                    node.Set(data, nameof(DoodleShader.PushConstants.ToolSize), 100f);
+
+                                    node.Set(data, nameof(DoodleShader.PushConstants.Position), new Vector2D<int>
+                                    {
+                                        X = (int)float.Floor(imagePosition.X),
+                                        Y = (int)float.Floor(imagePosition.Y)
+                                    });
+
+                                    node.Set(data, nameof(DoodleShader.PushConstants.ImageSize), new Vector2D<int>
+                                    {
+                                        X = imageSize.Width,
+                                        Y = imageSize.Height
+                                    });
+                                });
+
+                                mRenderer?.DispatchCompute(commandList, groupsX, groupsY, 1);
+                            }
+
+                            doodleImage.TransitionLayout(commandList, DeviceImageLayoutName.ComputeStorage, DeviceImageLayoutName.CopySource);
+                            if (frame.StagingImage is null)
+                            {
+                                frame.StagingImage = context.CreateDeviceImage(new DeviceImageInfo
+                                {
+                                    Size = new Size(mnist.Width, mnist.Height),
+                                    ImageType = DeviceImageType.Type2D,
+                                    Format = DeviceImageFormat.R8_UNORM,
+                                    Usage = DeviceImageUsageFlags.CopySource | DeviceImageUsageFlags.CopyDestination | DeviceImageUsageFlags.Render,
+                                    MipLevels = 1
+                                });
+
+                                var stagingLayout = frame.StagingImage.GetLayout(DeviceImageLayoutName.CopyDestination);
+                                frame.StagingImage.TransitionLayout(commandList, frame.StagingImage.Layout, stagingLayout);
+                                frame.StagingImage.Layout = stagingLayout;
+                            }
+
+                            doodleImage.BlitImage(commandList, frame.StagingImage, DeviceImageLayoutName.CopySource, frame.StagingImage.Layout, SamplerFilter.Linear);
+                            doodleImage.TransitionLayout(commandList, DeviceImageLayoutName.CopySource, doodleImage.Layout);
+
+                            frame.StagingImage.TransitionLayout(commandList, frame.StagingImage.Layout, DeviceImageLayoutName.CopySource);
+                            frame.StagingImage.CopyToBuffer(commandList, frame.BufferData.ActivationOffset, frame.BufferData.ActivationStride, frame.BufferData.ActivationBuffer, DeviceImageLayoutName.CopySource);
+                            frame.StagingImage.TransitionLayout(commandList, DeviceImageLayoutName.CopySource, frame.StagingImage.Layout);
+
+                            if (frame.Transition)
+                            {
+                                NetworkDispatcher.TransitionImages(commandList, frame.BufferData);
+                                frame.Transition = false;
+                            }
+
+                            NetworkDispatcher.ForwardPropagation(commandList, frame.BufferData, null);
+                        }
+
+                        frame.Fence.Reset();
+                        commandList.End();
+                        queue.Submit(commandList, fence: frame.Fence);
+
+                        mWantDoodleResults = mDoodleFrame;
+                        mDoodleFrame++;
+                        mDoodleFrame %= doodleFrameCount;
+                    }
+                }
+            }
+
+            ImGui.NextColumn();
+            for (int i = 0; i < mDoodleConfidence.Count; i++)
+            {
+                bool popStyle = false;
+                if (i > 0)
+                {
+                    popStyle = true;
+                    ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.7f, 0.7f, 0.7f, 1f));
+                }
+
+                var confidence = mDoodleConfidence[i];
+                ImGui.TextUnformatted($"{confidence.LabelIndex}: {confidence.Confidence * 100f}%");
+
+                if (popStyle)
+                {
+                    ImGui.PopStyleColor();
+                }
+            }
+
+            ImGui.Columns();
+            ImGui.End();
+        }
+
         #endregion
 
         public ShaderLibrary Library => mLibrary!;
@@ -825,6 +1090,14 @@ namespace MachineLearning
 
         private int mSelectedImage;
         private ITexture? mDisplayedTexture;
+
+        private int mDoodleFrame;
+        private ITexture? mDoodledTexture;
+        private IPipeline? mDoodlePipeline;
+        private bool mDoodleHovered;
+        private int mWantDoodleResults;
+        private DoodleFrameData[]? mDoodleBuffers;
+        private readonly List<DoodleConfidence> mDoodleConfidence;
 
         private string mInputString;
         private float[][]? mOutputs;

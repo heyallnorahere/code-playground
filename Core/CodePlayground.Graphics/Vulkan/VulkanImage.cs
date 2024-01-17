@@ -277,6 +277,7 @@ namespace CodePlayground.Graphics.Vulkan
                     DeviceImageFormat.RGB8_SRGB => Format.R8G8B8Srgb,
                     DeviceImageFormat.RGB8_UNORM => Format.R8G8B8Unorm,
                     DeviceImageFormat.DepthStencil => FindSupportedDepthFormat(device.PhysicalDevice, info.Tiling),
+                    DeviceImageFormat.R8_UNORM => Format.R8Unorm,
                     DeviceImageFormat.R16_UNORM => Format.R16Unorm,
                     DeviceImageFormat.RG16_UNORM => Format.R16G16Unorm,
                     _ => throw new ArgumentException("Invalid image format!")
@@ -574,7 +575,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void CopyFromBuffer(VulkanCommandBuffer commandBuffer, VulkanBuffer source, ImageSelection destination, VulkanImageLayout currentLayout, int arrayLayer, int layerCount)
         {
-            using var copyEvent = Profiler.Event();
+            using var copyEvent = Profiler.GPUEvent(commandBuffer, "Copy buffer to image");
 
             var api = VulkanContext.API;
             var transferDst = GetLayout(DeviceImageLayoutName.CopyDestination);
@@ -619,6 +620,8 @@ namespace CodePlayground.Graphics.Vulkan
         /// </summary>
         private void GenerateMipmaps(VulkanCommandBuffer commandBuffer, VulkanImageLayout currentLayout, int arrayLayer, int layerCount)
         {
+            using var generateEvent = Profiler.GPUEvent(commandBuffer, "Generate mipmaps");
+
             if (MipLevels <= 1)
             {
                 return;
@@ -704,7 +707,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public void CopyToBuffer(VulkanCommandBuffer commandBuffer, ImageSelection source, VulkanBuffer destination, VulkanImageLayout currentLayout, int arrayLayer, int layerCount)
         {
-            using var copyEvent = Profiler.Event();
+            using var copyEvent = Profiler.GPUEvent(commandBuffer, "Copy image to buffer");
 
             var api = VulkanContext.API;
             var transferDst = GetLayout(DeviceImageLayoutName.CopySource);
@@ -740,6 +743,54 @@ namespace CodePlayground.Graphics.Vulkan
             TransitionLayout(commandBuffer, transferDst, currentLayout, 0, 1, arrayLayer, layerCount);
         }
 
+        void IDeviceImage.CopyToBuffer(ICommandList commandList, int bufferOffset, int pixelStride, IDeviceBuffer destination, IDeviceImageLayout currentLayout)
+        {
+            if (commandList is not VulkanCommandBuffer commandBuffer || destination is not VulkanBuffer destinationBuffer || currentLayout is not VulkanImageLayout layout)
+            {
+                throw new ArgumentException("Must pass Vulkan objects!");
+            }
+
+            CopyToBuffer(commandBuffer, bufferOffset, pixelStride, destinationBuffer, layout, 0, ArrayLayers);
+        }
+
+        public void CopyToBuffer(VulkanCommandBuffer commandBuffer, int bufferOffset, int pixelStride, VulkanBuffer destination, VulkanImageLayout currentLayout, int arrayLayer, int layerCount)
+        {
+            using var copyEvent = Profiler.GPUEvent(commandBuffer, "Copy image to buffer");
+
+            var api = VulkanContext.API;
+            var transferDst = GetLayout(DeviceImageLayoutName.CopySource);
+
+            var copyRegion = VulkanUtilities.Init<BufferImageCopy>() with
+            {
+                BufferOffset = (uint)bufferOffset,
+                BufferImageHeight = (uint)Size.Height,
+                BufferRowLength = (uint)(pixelStride * Size.Width),
+                ImageSubresource = VulkanUtilities.Init<ImageSubresourceLayers>() with
+                {
+                    AspectMask = AspectMask,
+                    MipLevel = 0,
+                    BaseArrayLayer = (uint)arrayLayer,
+                    LayerCount = (uint)layerCount
+                },
+                ImageOffset = new Offset3D
+                {
+                    X = 0,
+                    Y = 0,
+                    Z = 0
+                },
+                ImageExtent = new Extent3D
+                {
+                    Width = (uint)Size.Width,
+                    Height = (uint)Size.Height,
+                    Depth = 1
+                }
+            };
+
+            TransitionLayout(commandBuffer, currentLayout, transferDst, 0, 1, arrayLayer, layerCount);
+            api.CmdCopyImageToBuffer(commandBuffer.Buffer, mImage, transferDst.Layout, destination.Buffer, 1, copyRegion);
+            TransitionLayout(commandBuffer, transferDst, currentLayout, 0, 1, arrayLayer, layerCount);
+        }
+
         void IDeviceImage.TransitionLayout(ICommandList commandList, IDeviceImageLayout srcLayout, IDeviceImageLayout dstLayout)
         {
             if (commandList is not VulkanCommandBuffer || srcLayout is not VulkanImageLayout || dstLayout is not VulkanImageLayout)
@@ -752,7 +803,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void TransitionLayout(VulkanCommandBuffer commandBuffer, VulkanImageLayout sourceLayout, VulkanImageLayout destinationLayout, int baseMipLevel, int levelCount, int arrayLayer, int layerCount)
         {
-            using var transitionEvent = Profiler.Event();
+            using var transitionEvent = Profiler.GPUEvent(commandBuffer, "Transition layout");
 
             if (sourceLayout.Layout == destinationLayout.Layout)
             {
@@ -795,7 +846,7 @@ namespace CodePlayground.Graphics.Vulkan
 
         public unsafe void CopyCubeFace(VulkanCommandBuffer commandBuffer, int face, VulkanImage source, VulkanImageLayout currentLayout, VulkanImageLayout sourceLayout)
         {
-            using var blitEvent = Profiler.Event();
+            using var blitEvent = Profiler.GPUEvent(commandBuffer, "Copy cube face");
 
             if (Type != DeviceImageType.TypeCube || source.Type != DeviceImageType.Type2D)
             {
@@ -852,6 +903,59 @@ namespace CodePlayground.Graphics.Vulkan
             TransitionLayout(commandBuffer, transferDst, currentLayout, MipLevels - 1, 1, face, 1);
         }
 
+        void IDeviceImage.BlitImage(ICommandList commandList, IDeviceImage destination, IDeviceImageLayout sourceLayout, IDeviceImageLayout destinationLayout, SamplerFilter filter)
+        {
+            if (commandList is not VulkanCommandBuffer commandBuffer || destination is not VulkanImage vulkanImage ||
+                sourceLayout is not VulkanImageLayout sourceVulkanLayout || destinationLayout is not VulkanImageLayout destinationVulkanLayout)
+            {
+                throw new ArgumentException("Must pass Vulkan objects!");
+            }
+
+            BlitImage(commandBuffer, vulkanImage, 0, 1, sourceVulkanLayout, destinationVulkanLayout, filter);
+        }
+
+        public void BlitImage(VulkanCommandBuffer commandBuffer, VulkanImage destination, int baseLayer, int layerCount, VulkanImageLayout sourceLayout, VulkanImageLayout destinationLayout, SamplerFilter filter)
+        {
+            using var blitEvent = Profiler.GPUEvent(commandBuffer, "Blit image");
+
+            var blit = VulkanUtilities.Init<ImageBlit>() with
+            {
+                SrcSubresource = new ImageSubresourceLayers
+                {
+                    AspectMask = AspectMask,
+                    MipLevel = 0,
+                    BaseArrayLayer = (uint)baseLayer,
+                    LayerCount = (uint)layerCount
+                },
+                DstSubresource = new ImageSubresourceLayers
+                {
+                    AspectMask = destination.AspectMask,
+                    MipLevel = 0,
+                    BaseArrayLayer = (uint)baseLayer,
+                    LayerCount = (uint)layerCount
+                }
+            };
+
+            blit.SrcOffsets[1] = new Offset3D
+            {
+                X = Size.Width,
+                Y = Size.Height,
+                Z = 1
+            };
+
+            blit.DstOffsets[1] = new Offset3D
+            {
+                X = destination.Size.Width,
+                Y = destination.Size.Height,
+                Z = 1
+            };
+
+            var api = VulkanContext.API;
+            var blitFilter = VulkanTexture.ParseSamplerFilter(filter);
+            api.CmdBlitImage(commandBuffer.Buffer, mImage, sourceLayout.Layout, destination.Image, destinationLayout.Layout, 1, blit, blitFilter);
+
+            destination.GenerateMipmaps(commandBuffer, destinationLayout, baseLayer, layerCount);
+        }
 
         ITexture IDeviceImage.CreateTexture(bool ownsImage, ISamplerSettings? samplerSettings)
         {

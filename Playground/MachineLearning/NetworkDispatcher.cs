@@ -183,7 +183,7 @@ namespace MachineLearning
             bufferData.OutputImage.Layout = storageLayout;
         }
 
-        public static void ForwardPropagation(ICommandList commandList, DispatcherBufferData buffers, float[][] inputs)
+        public static void ForwardPropagation(ICommandList commandList, DispatcherBufferData buffers, float[][]? inputs)
         {
             AssertInitialized();
 
@@ -193,14 +193,37 @@ namespace MachineLearning
             int inputCount = buffers.LayerSizes[0];
             int neuronTotal = buffers.LayerSizes.Aggregate((a, b) => a + b);
 
-            if (inputs.Length != buffers.PassCount)
-            {
-                throw new ArgumentException("Inconsistent pass count!");
-            }
-
             if (buffers.PassCount > mMaxConcurrentPasses)
             {
                 throw new ArgumentException($"Cannot execute more than {mMaxConcurrentPasses} passes at a time!");
+            }
+
+            if (inputs is not null)
+            {
+                if (inputs.Length != buffers.PassCount)
+                {
+                    throw new ArgumentException("Inconsistent pass count!");
+                }
+
+                buffers.ActivationBuffer.Map(data =>
+                {
+                    using var copyEvent = Profiler.Event("Copy inputs to activation buffer");
+
+                    for (int i = 0; i < buffers.PassCount; i++)
+                    {
+                        var layerActivations = inputs[i];
+                        if (layerActivations.Length != inputCount)
+                        {
+                            throw new ArgumentException("Input size mismatch!");
+                        }
+
+                        for (int j = 0; j < inputCount; j++)
+                        {
+                            int offset = (i * neuronTotal + j) * buffers.ActivationStride + buffers.ActivationOffset;
+                            BitConverter.GetBytes(layerActivations[j]).CopyTo(data[offset..]);
+                        }
+                    }
+                });
             }
 
             var pipeline = mLibrary.LoadPipeline<ForwardPropagation>(new PipelineDescription
@@ -209,26 +232,6 @@ namespace MachineLearning
                 Type = PipelineType.Compute,
                 FrameCount = 1,
                 Specification = null
-            });
-
-            buffers.ActivationBuffer.Map(data =>
-            {
-                using var copyEvent = Profiler.Event("Copy inputs to activation buffer");
-
-                for (int i = 0; i < buffers.PassCount; i++)
-                {
-                    var layerActivations = inputs[i];
-                    if (layerActivations.Length != inputCount)
-                    {
-                        throw new ArgumentException("Input size mismatch!");
-                    }
-
-                    for (int j = 0; j < inputCount; j++)
-                    {
-                        int offset = (i * neuronTotal + j) * buffers.ActivationStride + buffers.ActivationOffset;
-                        BitConverter.GetBytes(layerActivations[j]).CopyTo(data[offset..]);
-                    }
-                }
             });
 
             pipeline.Bind(buffers.SizeBuffer, ShaderResources.SizeBufferName);
@@ -247,6 +250,7 @@ namespace MachineLearning
                     commandList.ExecutionBarrier();
                 }
 
+                using var layerEvent = Profiler.GPUEvent(commandList, "Forward propagation layer");
                 pipeline.PushConstants(commandList, data =>
                 {
                     pipeline.ReflectionView.MapStructure(data, ShaderResources.PushConstantBufferName, new NetworkPushConstantData
@@ -322,6 +326,7 @@ namespace MachineLearning
                     commandList.ExecutionBarrier();
                 }
 
+                using var layerEvent = Profiler.GPUEvent(commandList, "Back propagation layer");
                 pipeline.PushConstants(commandList, data =>
                 {
                     pipeline.ReflectionView.MapStructure(data, ShaderResources.PushConstantBufferName, new NetworkPushConstantData

@@ -13,7 +13,7 @@ namespace CodePlayground.Graphics.Vulkan
                 DeviceBufferUsage.Vertex => BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit,
                 DeviceBufferUsage.Index => BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit,
                 DeviceBufferUsage.Uniform => BufferUsageFlags.UniformBufferBit,
-                DeviceBufferUsage.Storage => BufferUsageFlags.StorageBufferBit,
+                DeviceBufferUsage.Storage => BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit,
                 DeviceBufferUsage.Staging => BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit,
                 _ => throw new ArgumentException("Invalid buffer usage!")
             };

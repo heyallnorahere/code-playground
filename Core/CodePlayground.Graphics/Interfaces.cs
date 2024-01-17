@@ -77,6 +77,7 @@ namespace CodePlayground.Graphics
         RGB8_UNORM,
         DepthStencil,
 
+        R8_UNORM,
         R16_UNORM,
         RG16_UNORM
     }
@@ -457,8 +458,10 @@ namespace CodePlayground.Graphics
         public void CopyFromBuffer(ICommandList commandList, IDeviceBuffer source, ImageSelection destination, IDeviceImageLayout currentLayout);
         public void CopyToBuffer(ICommandList commandList, IDeviceBuffer destination, IDeviceImageLayout currentLayout);
         public void CopyToBuffer(ICommandList commandList, ImageSelection source, IDeviceBuffer destination, IDeviceImageLayout currentLayout);
+        public void CopyToBuffer(ICommandList commandList, int bufferOffset, int pixelStride, IDeviceBuffer destination, IDeviceImageLayout currentLayout);
         public void TransitionLayout(ICommandList commandList, IDeviceImageLayout srcLayout, IDeviceImageLayout dstLayout);
         public void CopyCubeFace(ICommandList commandList, int face, IDeviceImage source, IDeviceImageLayout currentLayout, IDeviceImageLayout sourceLayout);
+        public void BlitImage(ICommandList commandList, IDeviceImage destination, IDeviceImageLayout sourceLayout, IDeviceImageLayout destinationLayout, SamplerFilter filter);
 
         public ITexture CreateTexture(bool ownsImage, ISamplerSettings? samplerSettings = null);
     }

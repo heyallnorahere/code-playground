@@ -1103,7 +1103,7 @@ namespace CodePlayground.Graphics.Shaders.Transpilers
                             // type is either 1 or 2 characters
                             // not clear at all, had to delve into opcodes
                             int end = typeIndex + 1;
-                            if (name.Length > end && name[end] != '_')
+                            if (name.Length > end && name[end] != '_' && name[end] != '.')
                             {
                                 end++;
                             }
