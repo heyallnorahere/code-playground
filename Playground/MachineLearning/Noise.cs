@@ -24,7 +24,7 @@ namespace MachineLearning.Noise
             for (int i = 0; i < data.Length; i++)
             {
                 float value = data[i];
-                value += 0.05f * random.NextSingle();
+                value += 0.02f * random.NextSingle();
                 result[i] = float.Min(value, 1f);
             }
 
