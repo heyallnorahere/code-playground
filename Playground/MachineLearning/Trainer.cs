@@ -1,7 +1,8 @@
 using CodePlayground;
 using CodePlayground.Graphics;
-using Silk.NET.Vulkan;
+using MachineLearning.Noise;
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace MachineLearning
@@ -64,6 +65,7 @@ namespace MachineLearning
 
             mContext = context;
             mRNG = new Random();
+            mNoise = new List<IDatasetNoise>();
         }
 
         public void Dispose()
@@ -299,7 +301,13 @@ namespace MachineLearning
                 {
                     int index = mState.ShuffledIndices[newBatchIndex * mBatchSize + i];
 
-                    inputs[i] = mState.Data.GetInput(mState.Phase, index);
+                    var input = mState.Data.GetInput(mState.Phase, index);
+                    foreach (var noise in mNoise)
+                    {
+                        input = noise.Apply(mRNG, input);
+                    }
+
+                    inputs[i] = input;
                     expectedOutputs[i] = mState.Data.GetExpectedOutput(mState.Phase, index);
                     imageIndices[i] = index;
                 }
@@ -358,14 +366,13 @@ namespace MachineLearning
             }
         }
 
-        public bool IsRunning => mRunning;
-
         public int GetBatchCount(DatasetGroup group)
         {
             int datasetCount = mState.Data.GetGroupEntryCount(group);
             return (datasetCount - (datasetCount % mBatchSize)) / mBatchSize;
         }
 
+        public bool IsRunning => mRunning;
         private void VerifyStopped()
         {
             if (mRunning)
@@ -402,6 +409,21 @@ namespace MachineLearning
                 VerifyStopped();
                 mMinimumAverageCost = value;
             }
+        }
+
+        public IReadOnlyList<IDatasetNoise> NoiseGenerators => mNoise;
+        public void AddNoiseGenerator<T>(params object[] args) where T : IDatasetNoise
+        {
+            foreach (var generator in mNoise)
+            {
+                if (generator is T)
+                {
+                    return;
+                }
+            }
+
+            var instance = Utilities.CreateDynamicInstance<T>(args);
+            mNoise.Add(instance);
         }
 
         public void Start(IDataset dataset, Network network)
@@ -481,6 +503,7 @@ namespace MachineLearning
         private int mBatchSize;
         private float mLearningRate, mMinimumAverageCost;
         private bool mDisposed, mRunning;
+        private List<IDatasetNoise> mNoise;
 
         private readonly Random mRNG;
     }

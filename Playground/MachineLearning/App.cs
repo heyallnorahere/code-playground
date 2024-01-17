@@ -1,6 +1,7 @@
 using CodePlayground;
 using CodePlayground.Graphics;
 using ImGuiNET;
+using MachineLearning.Noise;
 using MachineLearning.Shaders;
 using Silk.NET.Maths;
 using SixLabors.ImageSharp;
@@ -231,6 +232,9 @@ namespace MachineLearning
                 var data = MNISTGroup.Load(imageSource, labelSource);
                 mDataset.SetGroup(group, data);
             }
+
+            mTrainer.AddNoiseGenerator<StaticNoise>();
+            mTrainer.AddNoiseGenerator<RotationNoise>(mDataset.Width, mDataset.Height);
 
             mComputeFence = context.CreateFence(true);
             mDisplayedTexture = context.CreateDeviceImage(new DeviceImageInfo
