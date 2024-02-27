@@ -171,7 +171,6 @@ namespace MachineLearning
             var network = new Network(new int[]
             {
                     dataset.InputCount, // input
-                    128,
                     64,
                     32,
                     dataset.OutputCount
@@ -179,10 +178,9 @@ namespace MachineLearning
 
             network.SetActivationFunctions(new ActivationFunction[]
             {
-                ActivationFunction.LeakyReLU,
-                ActivationFunction.LeakyReLU,
-                ActivationFunction.LeakyReLU,
-                ActivationFunction.NormalizedHyperbolicTangent
+                ActivationFunction.Sigmoid,
+                ActivationFunction.Sigmoid,
+                ActivationFunction.Sigmoid
             });
 
             return network;
@@ -208,6 +206,7 @@ namespace MachineLearning
             mTrainer = new Trainer(context, 100, 0.1f); // initial batch size and learning rate
             mTrainer.MinimumAverageCost = mMinimumAverageCost;
             mTrainer.OnBatchResults += OnBatchResults;
+            mTrainer.OnResourcesDestroyed += OnTrainerResourcesDestroyed;
 
             mDataset = new MNISTDatabase();
             foreach (var group in sDatasetSources.Keys)
@@ -368,7 +367,12 @@ namespace MachineLearning
             mDisplayedTexture?.Dispose();
             mComputeFence?.Dispose();
             mBufferData?.Dispose();
-            mTrainer?.Dispose();
+
+            if (mTrainer is not null)
+            {
+                mTrainer.OnResourcesDestroyed -= OnTrainerResourcesDestroyed;
+                mTrainer.Dispose();
+            }
 
             if (mDoodleBuffers is not null)
             {
@@ -397,6 +401,7 @@ namespace MachineLearning
             NetworkMenu();
             TrainingMenu();
             DoodleMenu();
+            NoiseSettingsMenu();
         }
 
         private void RunNeuralNetwork(int[] imageNumbers)
@@ -680,6 +685,69 @@ namespace MachineLearning
             ImGui.End();
         }
 
+        private void OnTrainerResourcesDestroyed()
+        {
+            if (mDiagnosticData is null || mTrainer is null)
+            {
+                return;
+            }
+            var interpretedData = mTrainer.RetrieveInterpretedData();
+
+            var context = GraphicsContext!;
+            var queue = context.Device.GetQueue(CommandQueueFlags.Transfer);
+
+            var commandList = queue.Release();
+            SignalSemaphore(commandList);
+
+            commandList.Begin();
+            int width = mDataset!.Width;
+            int height = mDataset!.Height;
+
+            for (int i = 0; i < mDiagnosticData.Length; i++)
+            {
+                var diagnosticData = mDiagnosticData[i];
+                var data = i < interpretedData.Length ? interpretedData[^(i + 1)] : new InterpretedPassDetails
+                {
+                    Inputs = new float[width * height],
+                    Outputs = new float[diagnosticData.Outputs.Length],
+                    ExpectedOutputs = new float[diagnosticData.ExpectedOutputs.Length]
+                };
+
+                data.Outputs.CopyTo(diagnosticData.Outputs, 0);
+                data.ExpectedOutputs.CopyTo(diagnosticData.ExpectedOutputs, 0);
+
+                const int channels = 4;
+                var inputData = data.Inputs;
+                var imageData = new byte[inputData.Length * channels];
+
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        int pixel = y * width + x;
+                        int pixelOffset = pixel * channels;
+
+                        for (int j = 0; j < channels; j++)
+                        {
+                            imageData[pixelOffset + j] = j < 3 ? (byte)(inputData[pixel] * byte.MaxValue) : byte.MaxValue;
+                        }
+                    }
+                }
+
+                var stagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, imageData.Length);
+                var image = mDiagnosticData[i].Texture.Image;
+
+                commandList.PushStagingObject(stagingBuffer);
+                stagingBuffer.CopyFromCPU(imageData);
+                image.TransitionLayout(commandList, image.Layout, DeviceImageLayoutName.CopyDestination);
+                image.CopyFromBuffer(commandList, stagingBuffer, DeviceImageLayoutName.CopyDestination);
+                image.TransitionLayout(commandList, DeviceImageLayoutName.CopyDestination, image.Layout);
+            }
+
+            commandList.End();
+            queue.Submit(commandList);
+        }
+
         private void TrainingMenu()
         {
             using var trainingEvent = Profiler.Event();
@@ -726,66 +794,8 @@ namespace MachineLearning
             {
                 if (training)
                 {
-                    if (mDiagnosticData is not null)
-                    {
-                        var interpretedData = mTrainer.RetrieveInterpretedData();
-
-                        var context = GraphicsContext!;
-                        var queue = context.Device.GetQueue(CommandQueueFlags.Transfer);
-
-                        var commandList = queue.Release();
-                        SignalSemaphore(commandList);
-
-                        commandList.Begin();
-                        int width = mDataset!.Width;
-                        int height = mDataset!.Height;
-
-                        for (int i = 0; i < mDiagnosticData.Length; i++)
-                        {
-                            var diagnosticData = mDiagnosticData[i];
-                            var data = i < interpretedData.Length ? interpretedData[^(i + 1)] : new InterpretedPassDetails
-                            {
-                                Inputs = new float[width * height],
-                                Outputs = new float[diagnosticData.Outputs.Length],
-                                ExpectedOutputs = new float[diagnosticData.ExpectedOutputs.Length]
-                            };
-
-                            data.Outputs.CopyTo(diagnosticData.Outputs, 0);
-                            data.ExpectedOutputs.CopyTo(diagnosticData.ExpectedOutputs, 0);
-
-                            const int channels = 4;
-                            var inputData = data.Inputs;
-                            var imageData = new byte[inputData.Length * channels];
-
-                            for (int y = 0; y < height; y++)
-                            {
-                                for (int x = 0; x < width; x++)
-                                {
-                                    int pixel = y * width + x;
-                                    int pixelOffset = pixel * channels;
-
-                                    for (int j = 0; j < channels; j++)
-                                    {
-                                        imageData[pixelOffset + j] = j < 3 ? (byte)(inputData[pixel] * byte.MaxValue) : byte.MaxValue;
-                                    }
-                                }
-                            }
-
-                            var stagingBuffer = context.CreateDeviceBuffer(DeviceBufferUsage.Staging, imageData.Length);
-                            var image = mDiagnosticData[i].Texture.Image;
-
-                            commandList.PushStagingObject(stagingBuffer);
-                            stagingBuffer.CopyFromCPU(imageData);
-                            image.TransitionLayout(commandList, image.Layout, DeviceImageLayoutName.CopyDestination);
-                            image.CopyFromBuffer(commandList, stagingBuffer, DeviceImageLayoutName.CopyDestination);
-                            image.TransitionLayout(commandList, DeviceImageLayoutName.CopyDestination, image.Layout);
-                        }
-
-                        commandList.End();
-                        queue.Submit(commandList);
-                    }
-
                     mTrainer.Stop();
+                    mTrainer.Update(true);
                 }
                 else
                 {
@@ -1088,6 +1098,23 @@ namespace MachineLearning
             }
 
             ImGui.Columns();
+            ImGui.End();
+        }
+
+        private void NoiseSettingsMenu()
+        {
+            using var noiseSettingsEvent = Profiler.Event();
+            if (mTrainer is null)
+            {
+                return;
+            }
+
+            ImGui.Begin("Noise settings");
+            foreach (var generator in mTrainer.NoiseGenerators)
+            {
+                generator.ImGuiSettings();
+            }
+
             ImGui.End();
         }
 

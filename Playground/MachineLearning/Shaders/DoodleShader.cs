@@ -45,6 +45,7 @@ namespace MachineLearning.Shaders
             if (u_PushConstants.Tool == DoodleTool.Brush)
             {
                 value += new Vector4<float>(normalizedStrength);
+                value = BuiltinFunctions.Min(value, new Vector4<float>(1f));
             }
             else if (u_PushConstants.Tool == DoodleTool.Eraser)
             {

@@ -91,6 +91,7 @@ namespace CodePlayground.Graphics.Vulkan
             uint query = mCurrentQuery++ % mQueryCount;
             
             var api = VulkanContext.API;
+            api.CmdResetQueryPool(commandBuffer.Buffer, mQueryPool, query, 1);
             api.CmdWriteTimestamp(commandBuffer.Buffer, PipelineStageFlags.BottomOfPipeBit, mQueryPool, query);
 
             return query;
@@ -140,7 +141,10 @@ namespace CodePlayground.Graphics.Vulkan
                     throw new InvalidOperationException($"More than {mQueryCount} timestamps written in a frame!");
                 }
 
-                timestampCount = uint.Min(timestampCount, mQueryCount - wrappedTail);
+                if (wrappedTail + timestampCount > mQueryCount)
+                {
+                    timestampCount = mQueryCount - wrappedTail;
+                }
             }
 
             if (mCurrentQuery % mQueryCount - wrappedTail < timestampCount)
@@ -171,22 +175,6 @@ namespace CodePlayground.Graphics.Vulkan
                     QueryId = (ushort)query,
                     Context = mContext
                 });
-            }
-
-            if (mHostReset)
-            {
-                api.ResetQueryPool(mDevice.Device, mQueryPool, wrappedTail, timestampCount);
-            }
-            else
-            {
-                var queue = mDevice.GetQueue(CommandQueueFlags.Graphics);
-                var commandBuffer = queue.Release();
-
-                commandBuffer.Begin();
-                api.CmdResetQueryPool(commandBuffer.Buffer, mQueryPool, wrappedTail, timestampCount);
-                commandBuffer.End();
-
-                queue.Submit(commandBuffer);
             }
 
             mPreviousQuery += timestampCount;

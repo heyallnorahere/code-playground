@@ -250,7 +250,6 @@ namespace MachineLearning
                     commandList.ExecutionBarrier();
                 }
 
-                using var layerEvent = Profiler.GPUEvent(commandList, "Forward propagation layer");
                 pipeline.PushConstants(commandList, data =>
                 {
                     pipeline.ReflectionView.MapStructure(data, ShaderResources.PushConstantBufferName, new NetworkPushConstantData
@@ -326,7 +325,6 @@ namespace MachineLearning
                     commandList.ExecutionBarrier();
                 }
 
-                using var layerEvent = Profiler.GPUEvent(commandList, "Back propagation layer");
                 pipeline.PushConstants(commandList, data =>
                 {
                     pipeline.ReflectionView.MapStructure(data, ShaderResources.PushConstantBufferName, new NetworkPushConstantData
